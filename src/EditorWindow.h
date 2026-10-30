@@ -50,6 +50,10 @@ struct EditorPanel {
     bool bTabPressed = false;
     bool bMoving = false;
 };
+// Dock slots of the main window. aSlotPanel maps each slot to the panel shown
+// there; dropping a floating panel on a slot swaps it with that slot's panel.
+constexpr int SLOT_LEFT = 0, SLOT_CENTER = 1, SLOT_RIGHT = 2, SLOT_BOTTOM = 3, SLOT_COUNT = 4;
+inline const wchar_t* DOCK_SLOT_NAMES[SLOT_COUNT] = {L"left", L"centre", L"right", L"bottom"};
 inline const wchar_t* const DRAW_MODE_NAMES[] = {L"Shaded", L"Wireframe", L"Shaded Wireframe"};
 inline const wchar_t* const ASPECT_NAMES[] = {L"Free Aspect", L"16:9", L"16:10", L"4:3", L"1:1"};
 constexpr float ASPECT_RATIOS[] = {0.0f, 16.0f / 9.0f, 16.0f / 10.0f, 4.0f / 3.0f, 1.0f};
@@ -82,6 +86,9 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     HWND drawModeButton{}, aspectButton{};
     DrawMode drawMode = DrawMode::SHADED;
     int nGameAspect = 0;
+    // Docking: slot -> panel index, and the translucent drop preview window.
+    int aSlotPanel[SLOT_COUNT] = {0, 1, 2, 3};
+    HWND dockPreview{};
     // Label scrubbing (drag the X / Y / Z / R / G / B / A label horizontally).
     int nScrubField = -1;
     int nScrubStartX = 0;
@@ -251,6 +258,14 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     void ShowViewDropdown(int id);
     void SetDrawMode(int index);
     void SetGameAspect(int index);
+    EditorPanel& SlotPanel(int slot) { return panels[aSlotPanel[slot]]; }
+    int PanelSlot(int panelIndex) const;
+    // Screen rectangle of a dock slot, used for hit testing and the preview.
+    RECT DockSlotRect(int slot) const;
+    // Slot under a screen point, or -1 outside the dock area.
+    int DockSlotAt(POINT screen) const;
+    void ShowDockPreview(int slot);
+    void DockPanelInSlot(int panelIndex, int slot);
     void AttachToSelection(const std::string& name);
     // Reads <project>/ProjectSettings.dxsettings (missing file = defaults).
     void LoadSettings();

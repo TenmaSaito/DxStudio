@@ -185,14 +185,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         GetClientRect(hwnd, &client);
         const int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
         const int lower = client.bottom - theme::STATUS_BAR_HEIGHT -
-                          (e->panels[3].hidden || e->panels[3].floating
+                          (e->SlotPanel(SLOT_BOTTOM).hidden || e->SlotPanel(SLOT_BOTTOM).floating
                                ? 0
-                               : (e->panels[3].collapsed ? theme::PANEL_HEADER_HEIGHT : e->nDockProject));
-        if (!e->panels[0].hidden && !e->panels[0].floating && std::abs(x - e->nDockLeft) <= 6)
+                               : (e->SlotPanel(SLOT_BOTTOM).collapsed ? theme::PANEL_HEADER_HEIGHT : e->nDockProject));
+        if (!e->SlotPanel(SLOT_LEFT).hidden && !e->SlotPanel(SLOT_LEFT).floating && std::abs(x - e->nDockLeft) <= 6)
             e->layoutDrag = Editor::LayoutDrag::Left;
-        else if (!e->panels[2].hidden && !e->panels[2].floating && std::abs(x - (client.right - e->nDockRight)) <= 6)
+        else if (!e->SlotPanel(SLOT_RIGHT).hidden && !e->SlotPanel(SLOT_RIGHT).floating && std::abs(x - (client.right - e->nDockRight)) <= 6)
             e->layoutDrag = Editor::LayoutDrag::Right;
-        else if (!e->panels[3].hidden && !e->panels[3].floating && std::abs(y - lower) <= 6)
+        else if (!e->SlotPanel(SLOT_BOTTOM).hidden && !e->SlotPanel(SLOT_BOTTOM).floating && std::abs(y - lower) <= 6)
             e->layoutDrag = Editor::LayoutDrag::Project;
         if (e->layoutDrag != Editor::LayoutDrag::None) {
             SetCapture(hwnd);

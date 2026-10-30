@@ -22,6 +22,10 @@ DxStudio のエディターUIが、Unity 2022 LTS（Dark スキン）と Unreal 
 | --- | --- |
 | ![Wireframe](images/editor-wireframe.png) | ![Game 4:3](images/editor-game-4x3.png) |
 
+| ドッキングのプレビュー（Hierarchy を右へドラッグ中） | ドロップ後（Hierarchy と Inspector が入れ替わる） |
+| --- | --- |
+| ![Dock preview](images/editor-dock-preview.png) | ![Docked](images/editor-dock-swapped.png) |
+
 ## 配色（`src/EditorTheme.h`）
 
 | 要素 | Unity 2022 Dark | DxStudio のトークン | 値 |
@@ -60,7 +64,7 @@ DxStudio のエディターUIが、Unity 2022 LTS（Dark スキン）と Unreal 
 | Scene | 描画モードの切り替え（Shaded / Wireframe / Shaded Wireframe） | 同じ3モード。DX12 / 11 / 9 の各バックエンドにワイヤーフレーム用のパイプラインを追加 | `SetDrawMode` / `PipelineKind::SCENE_WIREFRAME` |
 | Game | 縦横比の指定（Free Aspect / 16:9 / 16:10 / 4:3 / 1:1） | 同じ選択肢。周囲に黒帯を付けて縦横比を固定 | `SetGameAspect` |
 | Inspector | 数値ラベルのドラッグで値を変える | X / Y / Z / R / G / B / A のラベルを左右にドラッグ（Shift で10倍、Alt で0.1倍） | `LabelDragSubclassProc` |
-| ドック | タブを引き出して分離、戻して再ドッキング | タブ見出しをドラッグするとフローティングになり、そのまま移動。エディターの上で離すと元の位置に戻る（Ctrl を押しながら離すとフローティングのまま） | `PanelProc` の `WM_MOUSEMOVE` / `WM_EXITSIZEMOVE` |
+| ドック | タブを引き出して分離、ドロップ位置のプレビュー付きで再ドッキング | タブ見出しをドラッグするとフローティングになり、そのまま移動。エディターの上では、ドロップ先の領域（左・中央・右・下）が青く表示される。離すとその領域に入り、元の領域にあったパネルと入れ替わる（Ctrl を押しながら離すとフローティングのまま）。左右の入れ替えでは列の幅も入れ替わり、配置は `EditorLayout.dxl`（バージョン2。バージョン1も読み込み可）に保存される | `DockSlotAt` / `ShowDockPreview` / `DockPanelInSlot` |
 | Inspector | アイコン、有効チェック、名前、Tag / Layer の欄 | 同じ並び（チェックボックスは自前描画） | `DrawInspectorStatic` |
 | Inspector | コンポーネント見出し（▼、アイコン、太字、⋮） | `ButtonRole::HEADER` | `theme::DrawButton` |
 | Inspector | （UE）X / Y / Z 入力欄の色付きバー | 各入力欄の左に軸色のバー | `PanelProc`（index 2） |
@@ -76,7 +80,7 @@ DxStudio のエディターUIが、Unity 2022 LTS（Dark スキン）と Unreal 
 | 要素 | 理由 |
 | --- | --- |
 | Unity / UE のアイコン画像そのもの | 商標と著作物のため使わず、同じ意味の図形を GDI+ でアンチエイリアス描画しています（`theme::DrawIcon`）。 |
-| 任意の位置に挿入するドッキング（分割位置のプレビュー表示） | 再ドッキングは元の位置に戻る方式です。既存の固定4領域とレイアウト保存の形式（`EditorLayout.dxl`）を変えないためです。 |
+| 1つの領域を分割して2つ以上のパネルを並べるドッキング | ドッキング先は4つの領域（左・中央・右・下）で、パネル同士を入れ替える方式です。既存の4パネル構成とスプリッターの操作を変えないためです。 |
 
 ## 命名規則（cpp_TKG `NAMING_RULES.md`）の適用範囲
 

@@ -93,6 +93,7 @@ bool Editor::ShellCommand(int id) {
             if (panels[i].floating) FloatPanel(i);
             panels[i].hidden = panels[i].collapsed = false;
         }
+        for (int slot = 0; slot < SLOT_COUNT; ++slot) aSlotPanel[slot] = slot;
         Layout();
         return true;
     }
@@ -105,9 +106,11 @@ bool Editor::ShellCommand(int id) {
             Error(window, "Could not save the workspace layout.");
             return true;
         }
-        file << "DXLAYOUT 1 " << nDockLeft << ' ' << nDockRight << ' ' << nDockProject << '\n';
+        file << "DXLAYOUT 2 " << nDockLeft << ' ' << nDockRight << ' ' << nDockProject << '\n';
         for (const auto& panel : panels)
             file << (panel.floating ? 1 : 0) << ' ' << (panel.hidden ? 1 : 0) << ' ' << (panel.collapsed ? 1 : 0) << '\n';
+        for (const int panelIndex : aSlotPanel) file << panelIndex << ' ';
+        file << '\n';
         file.close();
         if (!file || !MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
             Error(window, "Could not finalize the workspace layout.");
@@ -122,7 +125,8 @@ bool Editor::ShellCommand(int id) {
         std::string magic;
         unsigned version{};
         int left{}, right{}, project{}, floating[4]{}, hidden[4]{}, collapsed[4]{};
-        if (!file || !(file >> magic >> version >> left >> right >> project) || magic != "DXLAYOUT" || version != 1) {
+        int slots[SLOT_COUNT] = {0, 1, 2, 3};
+        if (!file || !(file >> magic >> version >> left >> right >> project) || magic != "DXLAYOUT" || version < 1 || version > 2) {
             Error(window, "No valid saved workspace layout was found.");
             return true;
         }
@@ -132,6 +136,17 @@ bool Editor::ShellCommand(int id) {
                 Error(window, "The saved workspace layout is invalid.");
                 return true;
             }
+        if (version >= 2) {
+            bool seen[SLOT_COUNT]{};
+            for (int& panelIndex : slots) {
+                if (!(file >> panelIndex) || panelIndex < 0 || panelIndex >= SLOT_COUNT || seen[panelIndex]) {
+                    Error(window, "The saved workspace layout is invalid.");
+                    return true;
+                }
+                seen[panelIndex] = true;
+            }
+        }
+        std::copy(std::begin(slots), std::end(slots), std::begin(aSlotPanel));
         nDockLeft = left;
         nDockRight = right;
         nDockProject = project;

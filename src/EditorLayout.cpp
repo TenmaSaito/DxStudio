@@ -56,6 +56,77 @@ void Editor::SelectViewTab(bool game) {
                        : L"Scene view: RMB + WASD/QE fly | Alt + RMB orbit | MMB pan | W/E/R tools");
 }
 
+int Editor::PanelSlot(int panelIndex) const {
+    for (int slot = 0; slot < SLOT_COUNT; ++slot)
+        if (aSlotPanel[slot] == panelIndex) return slot;
+    return panelIndex;
+}
+
+RECT Editor::DockSlotRect(int slot) const {
+    RECT client{};
+    GetClientRect(window, &client);
+    const int top = TOP_CHROME_HEIGHT + 3, bottom = static_cast<int>(client.bottom) - theme::STATUS_BAR_HEIGHT;
+    const int w = static_cast<int>(client.right);
+    const int left = std::clamp(nDockLeft, 160, std::max(160, w / 2));
+    const int right = w - std::clamp(nDockRight, 240, std::max(240, w / 2));
+    const int lower = bottom - std::clamp(nDockProject, 120, std::max(120, bottom - top - 140));
+    RECT rect{};
+    switch (slot) {
+    case SLOT_LEFT: rect = {0, top, left, lower}; break;
+    case SLOT_RIGHT: rect = {right, top, w, bottom}; break;
+    case SLOT_BOTTOM: rect = {0, lower, right, bottom}; break;
+    default: rect = {left, top, right, lower}; break;
+    }
+    MapWindowPoints(window, nullptr, reinterpret_cast<POINT*>(&rect), 2);
+    return rect;
+}
+
+int Editor::DockSlotAt(POINT screen) const {
+    for (const int slot : {SLOT_LEFT, SLOT_RIGHT, SLOT_BOTTOM, SLOT_CENTER}) {
+        const RECT rect = DockSlotRect(slot);
+        if (PtInRect(&rect, screen)) return slot;
+    }
+    return -1;
+}
+
+// Unity / UE style drop preview: a translucent accent rectangle over the slot.
+void Editor::ShowDockPreview(int slot) {
+    if (slot < 0) {
+        if (dockPreview) ShowWindow(dockPreview, SW_HIDE);
+        return;
+    }
+    if (!dockPreview) {
+        WNDCLASSEXW previewClass{sizeof(previewClass)};
+        previewClass.lpfnWndProc = DefWindowProcW;
+        previewClass.hInstance = instance;
+        previewClass.hbrBackground = theme::Brush(theme::COLOR_ACCENT);
+        previewClass.lpszClassName = L"DxStudioDockPreview";
+        RegisterClassExW(&previewClass);
+        dockPreview = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
+                                      previewClass.lpszClassName, L"", WS_POPUP, 0, 0, 1, 1, window, nullptr, instance, nullptr);
+        SetLayeredWindowAttributes(dockPreview, 0, 90, LWA_ALPHA);
+    }
+    const RECT rect = DockSlotRect(slot);
+    SetWindowPos(dockPreview, HWND_TOPMOST, rect.left + 4, rect.top + 4, rect.right - rect.left - 8, rect.bottom - rect.top - 8,
+                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+// Docks a floating panel into slot; the panel that occupied the slot moves
+// to the slot the dropped panel came from.
+void Editor::DockPanelInSlot(int panelIndex, int slot) {
+    ShowDockPreview(-1);
+    const int fromSlot = PanelSlot(panelIndex);
+    if (slot >= 0 && slot != fromSlot) {
+        std::swap(aSlotPanel[slot], aSlotPanel[fromSlot]);
+        // Side columns keep their content width when panels trade sides.
+        if ((slot == SLOT_LEFT && fromSlot == SLOT_RIGHT) || (slot == SLOT_RIGHT && fromSlot == SLOT_LEFT)) std::swap(nDockLeft, nDockRight);
+    }
+    if (panels[panelIndex].floating) FloatPanel(panelIndex); // toggles back to docked
+    else Layout();
+    const std::wstring message = std::wstring(PANEL_NAMES[panelIndex]) + L" docked to the " + DOCK_SLOT_NAMES[PanelSlot(panelIndex)] + L" slot.";
+    SetStatus(message.c_str());
+}
+
 void Editor::SetDrawMode(int index) {
     drawMode = static_cast<DrawMode>(std::clamp(index, 0, 2));
     SetWindowTextW(drawModeButton, DRAW_MODE_NAMES[static_cast<int>(drawMode)]);
@@ -86,26 +157,30 @@ void Editor::Layout() {
     GetClientRect(window, &r);
     const int w = r.right, h = r.bottom, top = TOP_CHROME_HEIGHT + 3, bottom = theme::STATUS_BAR_HEIGHT, gap = 3;
     const int header = theme::PANEL_HEADER_HEIGHT;
-    auto docked = [&](int i) {
-        return !panels[i].floating && !panels[i].hidden;
+    // Geometry is computed per dock slot; aSlotPanel decides which panel fills it.
+    auto docked = [&](int slot) {
+        const auto& panel = SlotPanel(slot);
+        return !panel.floating && !panel.hidden;
     };
-    const int left = docked(0) ? std::clamp(nDockLeft, 160, std::max(160, w / 2)) : 0;
-    const int right = docked(2) ? std::clamp(nDockRight, 240, std::max(240, w / 2)) : 0;
+    const int left = docked(SLOT_LEFT) ? std::clamp(nDockLeft, 160, std::max(160, w / 2)) : 0;
+    const int right = docked(SLOT_RIGHT) ? std::clamp(nDockRight, 240, std::max(240, w / 2)) : 0;
     const int projectHeight =
-        docked(3) ? (panels[3].collapsed ? header : std::clamp(nDockProject, 120, std::max(120, h - top - bottom - 140))) : 0;
+        docked(SLOT_BOTTOM) ? (SlotPanel(SLOT_BOTTOM).collapsed ? header : std::clamp(nDockProject, 120, std::max(120, h - top - bottom - 140))) : 0;
     const int lower = h - bottom - projectHeight;
-    if (docked(0))
-        MoveWindow(panels[0].window, gap, top, left - gap, panels[0].collapsed ? header : std::max(header, lower - top - gap),
-                   TRUE);
-    if (docked(2))
-        MoveWindow(panels[2].window, w - right, top, right - gap,
-                   panels[2].collapsed ? header : std::max(header, h - top - bottom), TRUE);
-    if (docked(1))
-        MoveWindow(panels[1].window, left + gap, top, std::max(1, w - left - right - gap * 2),
-                   panels[1].collapsed ? header : std::max(header, lower - top - gap), TRUE);
-    if (docked(3)) MoveWindow(panels[3].window, gap, lower, std::max(1, w - right - gap * 2), projectHeight, TRUE);
-    const bool showLeft = docked(0) && docked(1), showRight = docked(2) && (docked(1) || docked(3)),
-               showProject = docked(3) && (docked(0) || docked(1));
+    if (docked(SLOT_LEFT))
+        MoveWindow(SlotPanel(SLOT_LEFT).window, gap, top, left - gap,
+                   SlotPanel(SLOT_LEFT).collapsed ? header : std::max(header, lower - top - gap), TRUE);
+    if (docked(SLOT_RIGHT))
+        MoveWindow(SlotPanel(SLOT_RIGHT).window, w - right, top, right - gap,
+                   SlotPanel(SLOT_RIGHT).collapsed ? header : std::max(header, h - top - bottom), TRUE);
+    if (docked(SLOT_CENTER))
+        MoveWindow(SlotPanel(SLOT_CENTER).window, left + gap, top, std::max(1, w - left - right - gap * 2),
+                   SlotPanel(SLOT_CENTER).collapsed ? header : std::max(header, lower - top - gap), TRUE);
+    if (docked(SLOT_BOTTOM))
+        MoveWindow(SlotPanel(SLOT_BOTTOM).window, gap, lower, std::max(1, w - right - gap * 2), projectHeight, TRUE);
+    const bool showLeft = docked(SLOT_LEFT) && docked(SLOT_CENTER),
+               showRight = docked(SLOT_RIGHT) && (docked(SLOT_CENTER) || docked(SLOT_BOTTOM)),
+               showProject = docked(SLOT_BOTTOM) && (docked(SLOT_LEFT) || docked(SLOT_CENTER));
     for (int i = 0; i < 4; ++i) {
         ShowWindow(panels[i].window, panels[i].hidden ? SW_HIDE : SW_SHOWNA);
         LayoutPanel(i);

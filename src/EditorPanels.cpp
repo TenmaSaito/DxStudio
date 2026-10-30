@@ -314,7 +314,9 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             GetClientRect(e->window, &dock);
             MapWindowPoints(e->window, nullptr, reinterpret_cast<POINT*>(&dock), 2);
             dock.top += TOP_CHROME_HEIGHT;
-            e->SetStatus(PtInRect(&dock, cursor) ? L"Release over the editor to dock the panel." : L"Floating panel.");
+            const int slot = GetAsyncKeyState(VK_CONTROL) < 0 ? -1 : e->DockSlotAt(cursor);
+            e->ShowDockPreview(slot);
+            e->SetStatus(slot >= 0 ? L"Release to dock the panel in the highlighted slot (Ctrl: keep floating)." : L"Floating panel.");
         }
         break;
     case WM_EXITSIZEMOVE:
@@ -326,10 +328,9 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             GetClientRect(e->window, &dock);
             MapWindowPoints(e->window, nullptr, reinterpret_cast<POINT*>(&dock), 2);
             dock.top += TOP_CHROME_HEIGHT;
-            if (PtInRect(&dock, cursor) && GetAsyncKeyState(VK_CONTROL) >= 0) { // Ctrl keeps it floating
-                e->FloatPanel(p->index);
-                e->SetStatus(L"Panel docked.");
-            }
+            const int slot = GetAsyncKeyState(VK_CONTROL) < 0 ? -1 : e->DockSlotAt(cursor); // Ctrl keeps it floating
+            e->ShowDockPreview(-1);
+            if (PtInRect(&dock, cursor) && slot >= 0) e->DockPanelInSlot(p->index, slot);
         }
         break;
     case WM_PAINT: {
