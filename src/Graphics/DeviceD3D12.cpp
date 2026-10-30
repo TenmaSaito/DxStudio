@@ -148,11 +148,13 @@ public:
     }
 
     void SetPipeline(PipelineKind kind) override {
-        ID3D12PipelineState* pState = kind == PipelineKind::SCENE ? m_pScenePipeline.Get()
+        ID3D12PipelineState* pState = kind == PipelineKind::SCENE           ? m_pScenePipeline.Get()
+                                      : kind == PipelineKind::SCENE_WIREFRAME ? m_pWireframePipeline.Get()
                                       : kind == PipelineKind::GRID ? m_pGridPipeline.Get()
                                                                    : m_pOverlayPipeline.Get();
         m_pCommands->SetPipelineState(pState);
-        m_pCommands->IASetPrimitiveTopology(kind == PipelineKind::SCENE ? D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
+        const bool bTriangles = kind == PipelineKind::SCENE || kind == PipelineKind::SCENE_WIREFRAME;
+        m_pCommands->IASetPrimitiveTopology(bTriangles ? D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
                                                                         : D3D_PRIMITIVE_TOPOLOGY_LINELIST);
     }
 
@@ -186,6 +188,7 @@ public:
         m_pFence.Reset();
         m_pVertexBuffer.Reset();
         m_pScenePipeline.Reset();
+        m_pWireframePipeline.Reset();
         m_pGridPipeline.Reset();
         m_pOverlayPipeline.Reset();
         m_pRootSignature.Reset();
@@ -316,6 +319,10 @@ private:
         state.SampleDesc.Count = 1;
         hr = m_pDevice->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&m_pScenePipeline));
         if (FAILED(hr)) return Fail(error, "Create graphics pipeline failed", hr);
+        state.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+        hr = m_pDevice->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&m_pWireframePipeline));
+        if (FAILED(hr)) return Fail(error, "Create wireframe pipeline failed", hr);
+        state.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
 
         // Editor guides use baked shaders, so a project shader cannot hide or
         // distort the grid and selection outline. Game exports need no HLSL file.
@@ -374,6 +381,7 @@ private:
     ComPtr<ID3D12GraphicsCommandList> m_pCommands;
     ComPtr<ID3D12RootSignature> m_pRootSignature;
     ComPtr<ID3D12PipelineState> m_pScenePipeline;
+    ComPtr<ID3D12PipelineState> m_pWireframePipeline;
     ComPtr<ID3D12PipelineState> m_pGridPipeline;
     ComPtr<ID3D12PipelineState> m_pOverlayPipeline;
     ComPtr<ID3D12Fence> m_pFence;

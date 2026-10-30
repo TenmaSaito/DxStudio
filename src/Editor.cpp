@@ -139,7 +139,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             std::error_code ec;
             bool exists = std::filesystem::exists(e->projectRoot / L"scene.dxs", ec);
             if (exists || ec) {
-                e->sceneProtected = true;
+                e->bSceneProtected = true;
                 Error(hwnd, "The existing scene could not be loaded. Save and export are disabled to protect it. Fix the file "
                             "and select Load.\n\n" +
                                 error);
@@ -150,9 +150,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             e->scene.entities.push_back(cube);
         }
         e->camera = Camera{};
-        e->shellReady = true;
-        e->selected = e->scene.entities.empty() ? -1 : 0;
-        if (e->selected >= 0) e->selectedIndices = {e->selected};
+        e->bShellReady = true;
+        e->nSelected = e->scene.entities.empty() ? -1 : 0;
+        if (e->nSelected >= 0) e->vSelectedIndices = {e->nSelected};
         e->Populate();
         e->Layout();
         e->InitRenderer();
@@ -187,10 +187,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         const int lower = client.bottom - theme::STATUS_BAR_HEIGHT -
                           (e->panels[3].hidden || e->panels[3].floating
                                ? 0
-                               : (e->panels[3].collapsed ? theme::PANEL_HEADER_HEIGHT : e->dockProject));
-        if (!e->panels[0].hidden && !e->panels[0].floating && std::abs(x - e->dockLeft) <= 6)
+                               : (e->panels[3].collapsed ? theme::PANEL_HEADER_HEIGHT : e->nDockProject));
+        if (!e->panels[0].hidden && !e->panels[0].floating && std::abs(x - e->nDockLeft) <= 6)
             e->layoutDrag = Editor::LayoutDrag::Left;
-        else if (!e->panels[2].hidden && !e->panels[2].floating && std::abs(x - (client.right - e->dockRight)) <= 6)
+        else if (!e->panels[2].hidden && !e->panels[2].floating && std::abs(x - (client.right - e->nDockRight)) <= 6)
             e->layoutDrag = Editor::LayoutDrag::Right;
         else if (!e->panels[3].hidden && !e->panels[3].floating && std::abs(y - lower) <= 6)
             e->layoutDrag = Editor::LayoutDrag::Project;
@@ -207,11 +207,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             const int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
             const int width = static_cast<int>(client.right), height = static_cast<int>(client.bottom);
             if (e->layoutDrag == Editor::LayoutDrag::Left)
-                e->dockLeft = std::clamp(x, 160, std::max(160, width - 500));
+                e->nDockLeft = std::clamp(x, 160, std::max(160, width - 500));
             else if (e->layoutDrag == Editor::LayoutDrag::Right)
-                e->dockRight = std::clamp(width - x, 240, std::max(240, width - 400));
+                e->nDockRight = std::clamp(width - x, 240, std::max(240, width - 400));
             else
-                e->dockProject = std::clamp(height - theme::STATUS_BAR_HEIGHT - y, 120, std::max(120, height - 220));
+                e->nDockProject = std::clamp(height - theme::STATUS_BAR_HEIGHT - y, 120, std::max(120, height - 220));
             e->Layout();
             return 0;
         }
@@ -251,13 +251,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         }
         if (item->CtlType != ODT_BUTTON) break;
         const bool active =
-            (id == ID_BUILD_DEBUG && e->playing) || (id == ID_PAUSE && e->paused) ||
+            (id == ID_BUILD_DEBUG && e->bPlaying) || (id == ID_PAUSE && e->bPaused) ||
             (id == ID_MOVE_MODE && e->gizmoMode == GizmoMode::Translate) ||
             (id == ID_ROTATE_MODE && e->gizmoMode == GizmoMode::Rotate) ||
             (id == ID_SCALE_MODE && e->gizmoMode == GizmoMode::Scale) || (id == ID_PERSPECTIVE && !e->camera.orthographic) ||
-            (id == ID_ORTHOGRAPHIC && e->camera.orthographic) || (id == ID_INSPECTOR_ENABLED && e->inspectorEnabledChecked) ||
-            (id >= ID_PANEL_TAB_FIRST && id < ID_PANEL_TAB_FIRST + BOTTOM_TAB_COUNT && e->bottomTab == id - ID_PANEL_TAB_FIRST) ||
-            (id == ID_VIEW_TAB_FIRST && !e->gameView) || (id == ID_VIEW_TAB_FIRST + 1 && e->gameView);
+            (id == ID_ORTHOGRAPHIC && e->camera.orthographic) || (id == ID_INSPECTOR_ENABLED && e->bInspectorEnabledChecked) ||
+            (id >= ID_PANEL_TAB_FIRST && id < ID_PANEL_TAB_FIRST + BOTTOM_TAB_COUNT && e->nBottomTab == id - ID_PANEL_TAB_FIRST) ||
+            (id == ID_VIEW_TAB_FIRST && !e->bGameView) || (id == ID_VIEW_TAB_FIRST + 1 && e->bGameView);
         theme::DrawButton(*item, active);
         return TRUE;
     }
@@ -303,7 +303,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         theme::Fill(dc, chrome, theme::COLOR_TOOLBAR);
         theme::Line(dc, 0, theme::MENU_BAR_HEIGHT, r.right, theme::MENU_BAR_HEIGHT,
                     theme::Blend(theme::COLOR_TOOLBAR, RGB(255, 255, 255), 0.06f));
-        if (e->playing) theme::Line(dc, 0, TOP_CHROME_HEIGHT - 2, r.right, TOP_CHROME_HEIGHT - 2, theme::COLOR_ACCENT, 2);
+        if (e->bPlaying) theme::Line(dc, 0, TOP_CHROME_HEIGHT - 2, r.right, TOP_CHROME_HEIGHT - 2, theme::COLOR_ACCENT, 2);
         RECT logo{8, 4, 24, 20};
         theme::DrawIcon(dc, theme::Icon::CUBE, logo, theme::COLOR_ICON_CUBE);
         RECT statusBar{0, r.bottom - theme::STATUS_BAR_HEIGHT, r.right, r.bottom};
@@ -314,7 +314,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_DESTROY:
-        e->shellReady = false;
+        e->bShellReady = false;
         e->callbackRegistration.Clear();
         for (auto& panel : e->panels)
             if (panel.floating && IsWindow(panel.window)) DestroyWindow(panel.window);
@@ -406,12 +406,12 @@ int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const st
             editor.Command(ID_DUPLICATE, BN_CLICKED);
             continue;
         }
-        if (msg.message == WM_KEYDOWN && msg.wParam == VK_F2 && editor.selectedIndices.size() == 1) {
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_F2 && editor.vSelectedIndices.size() == 1) {
             SetFocus(editor.edits[0]);
             SendMessageW(editor.edits[0], EM_SETSEL, 0, -1);
             continue;
         }
-        if (msg.message == WM_KEYDOWN && editor.selectedIndices.size() == 1) {
+        if (msg.message == WM_KEYDOWN && editor.vSelectedIndices.size() == 1) {
             const int field = GetDlgCtrlID(msg.hwnd) - ID_FIRST_EDIT;
             if (field >= 0 && field < FIELD_COUNT && msg.hwnd == editor.edits[field]) {
                 if (msg.wParam == VK_RETURN) {

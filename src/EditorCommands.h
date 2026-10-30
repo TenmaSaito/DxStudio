@@ -28,6 +28,9 @@ constexpr int ID_FIRST_EDIT = 200;
 // Added by the Unity/UE style editor shell.
 constexpr int ID_PAUSE = 160, ID_STEP = 161, ID_GRAPHICS_MENU = 162, ID_LAYOUT_MENU = 163;
 constexpr int ID_GRAPHICS_D3D12 = 170, ID_GRAPHICS_D3D11 = 171, ID_GRAPHICS_D3D9 = 172;
+constexpr int ID_DRAW_MODE_MENU = 164, ID_ASPECT_MENU = 165;
+constexpr int ID_DRAW_MODE_FIRST = 180; // Shaded, Wireframe, Shaded Wireframe
+constexpr int ID_ASPECT_FIRST = 185;    // Free, 16:9, 16:10, 4:3, 1:1
 constexpr int ID_CLEAR_CONSOLE = 175, ID_SHOW_CONSOLE = 176, ID_ABOUT = 177, ID_OPEN_README = 178;
 constexpr int ID_ADD_COMPONENT_MENU_FIRST = 600; // Component menu: one id per registered class
 constexpr int ID_ADD_COMPONENT_MENU_LAST = 699;

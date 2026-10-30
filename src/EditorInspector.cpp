@@ -6,18 +6,18 @@ namespace dxs::editor {
 
 void Editor::SyncHierarchy() {
     SendMessageW(hierarchy, LB_SETSEL, FALSE, -1);
-    for (size_t row = 0; row < hierarchyRows.size(); ++row) {
-        if (std::find(selectedIndices.begin(), selectedIndices.end(), hierarchyRows[row]) != selectedIndices.end())
+    for (size_t row = 0; row < vHierarchyRows.size(); ++row) {
+        if (std::find(vSelectedIndices.begin(), vSelectedIndices.end(), vHierarchyRows[row]) != vSelectedIndices.end())
             SendMessageW(hierarchy, LB_SETSEL, TRUE, static_cast<WPARAM>(row));
-        if (hierarchyRows[row] == selected) SendMessageW(hierarchy, LB_SETCARETINDEX, row, FALSE);
+        if (vHierarchyRows[row] == nSelected) SendMessageW(hierarchy, LB_SETCARETINDEX, row, FALSE);
     }
 }
 
 std::vector<int> Editor::MergeSelection(const std::vector<int>& hits) const {
-    auto result = (selectionAdd || selectionToggle) ? selectionBeforeDrag : std::vector<int>{};
+    auto result = (bSelectionAdd || bSelectionToggle) ? vSelectionBeforeDrag : std::vector<int>{};
     for (int hit : hits) {
         auto it = std::find(result.begin(), result.end(), hit);
-        if (selectionToggle && it != result.end())
+        if (bSelectionToggle && it != result.end())
             result.erase(it);
         else if (it == result.end())
             result.push_back(hit);
@@ -26,7 +26,7 @@ std::vector<int> Editor::MergeSelection(const std::vector<int>& hits) const {
 }
 
 void Editor::RestoreDrag() {
-    for (const auto& entry : gizmoStartItems)
+    for (const auto& entry : vGizmoStartItems)
         if (entry.first >= 0 && static_cast<size_t>(entry.first) < scene.entities.size())
             scene.entities[entry.first].draw = LocalDrawFromWorld(scene, entry.first, entry.second);
     Inspect();
@@ -46,8 +46,8 @@ void Editor::UpdateGroup(const DrawItem& updated) {
         XMMatrixRotationRollPitchYaw(gizmoStartItem.rotation.x, gizmoStartItem.rotation.y, gizmoStartItem.rotation.z);
     const auto scale = XMMatrixTranspose(orientation) * XMMatrixScaling(factor.x, factor.y, factor.z) * orientation;
     const auto rotation = XMMatrixRotationRollPitchYaw(dr.x, dr.y, dr.z);
-    for (const auto& entry : gizmoStartItems) {
-        if (entry.first == selected) {
+    for (const auto& entry : vGizmoStartItems) {
+        if (entry.first == nSelected) {
             scene.entities[entry.first].draw = LocalDrawFromWorld(scene, entry.first, updated);
             continue;
         }
@@ -75,10 +75,10 @@ void Editor::UpdateGroup(const DrawItem& updated) {
 }
 
 void Editor::FrameSelection() {
-    if (selectedIndices.empty()) return;
+    if (vSelectedIndices.empty()) return;
     DirectX::XMFLOAT3 min{FLT_MAX, FLT_MAX, FLT_MAX}, max{-FLT_MAX, -FLT_MAX, -FLT_MAX};
     const auto world = ResolveWorldDraws(scene);
-    for (int i : selectedIndices) {
+    for (int i : vSelectedIndices) {
         const auto& d = world[i];
         const float extent = std::max({std::abs(d.scale.x), std::abs(d.scale.y), std::abs(d.scale.z)}) * 0.75f;
         min.x = std::min(min.x, d.position.x - extent);
@@ -96,7 +96,7 @@ void Editor::FrameSelection() {
 
 void Editor::Populate() {
     SendMessageW(hierarchy, LB_RESETCONTENT, 0, 0);
-    hierarchyRows.clear();
+    vHierarchyRows.clear();
     auto lower = [](std::wstring value) {
         std::transform(value.begin(), value.end(), value.begin(),
                        [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
@@ -115,9 +115,9 @@ void Editor::Populate() {
     }
     // Depth-first tree rows. Collapsed parents hide their children unless
     // a search is active (search always reveals matching descendants).
-    collapsedEntities.resize(scene.entities.size(), 0);
-    hierarchyDepths.clear();
-    hierarchyHasChildren.clear();
+    vCollapsedEntities.resize(scene.entities.size(), 0);
+    vHierarchyDepths.clear();
+    vHierarchyHasChildren.clear();
     std::vector<char> hasChildren(scene.entities.size(), 0);
     for (const auto& e : scene.entities)
         if (e.parent >= 0 && static_cast<size_t>(e.parent) < scene.entities.size())
@@ -131,26 +131,26 @@ void Editor::Populate() {
             std::wstring name(static_cast<size_t>(depth) * 3, L' ');
             name += Wide(e.name);
             SendMessageW(hierarchy, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
-            hierarchyRows.push_back(static_cast<int>(index));
-            hierarchyDepths.push_back(depth);
-            hierarchyHasChildren.push_back(hasChildren[index]);
-            if (filter.empty() && collapsedEntities[index]) continue;
+            vHierarchyRows.push_back(static_cast<int>(index));
+            vHierarchyDepths.push_back(depth);
+            vHierarchyHasChildren.push_back(hasChildren[index]);
+            if (filter.empty() && vCollapsedEntities[index]) continue;
             self(self, static_cast<int>(index), depth + 1);
         }
     };
     add(add, -1, 0);
-    selectedIndices.erase(std::remove_if(selectedIndices.begin(), selectedIndices.end(),
+    vSelectedIndices.erase(std::remove_if(vSelectedIndices.begin(), vSelectedIndices.end(),
                                          [&](int i) { return i < 0 || static_cast<size_t>(i) >= scene.entities.size(); }),
-                          selectedIndices.end());
-    if (std::find(selectedIndices.begin(), selectedIndices.end(), selected) == selectedIndices.end())
-        selected = selectedIndices.empty() ? -1 : selectedIndices.back();
+                          vSelectedIndices.end());
+    if (std::find(vSelectedIndices.begin(), vSelectedIndices.end(), nSelected) == vSelectedIndices.end())
+        nSelected = vSelectedIndices.empty() ? -1 : vSelectedIndices.back();
     SyncHierarchy();
     Inspect();
 }
 
 void Editor::Inspect() {
-    bool valid = selected >= 0 && selected < static_cast<int>(scene.entities.size());
-    const bool single = valid && selectedIndices.size() == 1;
+    bool valid = nSelected >= 0 && nSelected < static_cast<int>(scene.entities.size());
+    const bool single = valid && vSelectedIndices.size() == 1;
     for (auto e : edits)
         if (e) {
             EnableWindow(e, single);
@@ -170,22 +170,22 @@ void Editor::Inspect() {
     EnableWindow(componentValue, single);
     EnableWindow(componentValueApply, single);
     EnableWindow(inspectorEnabled, single);
-    inspectorEnabledChecked = false;
+    bInspectorEnabledChecked = false;
     InvalidateRect(inspectorEnabled, nullptr, FALSE);
     InvalidateRect(inspectorIcon, nullptr, FALSE);
     int componentSelection = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
     SendMessageW(componentList, LB_RESETCONTENT, 0, 0);
     SendMessageW(componentFields, LB_RESETCONTENT, 0, 0);
-    inspectedComponentFields.clear();
+    vInspectedComponentFields.clear();
     SetWindowTextW(componentValue, L"");
     if (!valid) return;
     if (!single) {
-        auto label = std::to_wstring(selectedIndices.size()) + L" objects selected";
+        auto label = std::to_wstring(vSelectedIndices.size()) + L" objects selected";
         SetWindowTextW(edits[0], label.c_str());
         return;
     }
-    const auto& entity = scene.entities[selected];
-    inspectorEnabledChecked = entity.draw.visible;
+    const auto& entity = scene.entities[nSelected];
+    bInspectorEnabledChecked = entity.draw.visible;
     SetWindowTextW(edits[0], Wide(entity.name).c_str());
     SetWindowTextW(materialEdit, Wide(entity.materialAsset).c_str());
     SetWindowTextW(textureEdit, Wide(entity.textureAsset).c_str());
@@ -228,28 +228,28 @@ void Editor::Inspect() {
 void Editor::RefreshComponentFields() {
     const int oldField = static_cast<int>(SendMessageW(componentFields, LB_GETCURSEL, 0, 0));
     const int listIndex = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
-    inspectedComponentFields.clear();
+    vInspectedComponentFields.clear();
     SendMessageW(componentFields, LB_RESETCONTENT, 0, 0);
-    if (selected < 0 || static_cast<size_t>(selected) >= scene.entities.size() || listIndex == LB_ERR) return;
-    auto& entity = scene.entities[selected];
+    if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.entities.size() || listIndex == LB_ERR) return;
+    auto& entity = scene.entities[nSelected];
     const int offset = entity.renderer == Entity::RendererKind::None ? 0 : 1;
     const int componentIndex = listIndex - offset;
     if (componentIndex < 0 || static_cast<size_t>(componentIndex) >= entity.components.size()) return;
-    inspectedComponentFields = ComponentEditorValues(entity, static_cast<size_t>(componentIndex));
-    for (const auto& [name, value] : inspectedComponentFields) {
+    vInspectedComponentFields = ComponentEditorValues(entity, static_cast<size_t>(componentIndex));
+    for (const auto& [name, value] : vInspectedComponentFields) {
         const auto row = Wide(name + " = " + value);
         SendMessageW(componentFields, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(row.c_str()));
     }
-    if (!inspectedComponentFields.empty()) {
-        const int chosen = std::clamp(oldField, 0, static_cast<int>(inspectedComponentFields.size()) - 1);
+    if (!vInspectedComponentFields.empty()) {
+        const int chosen = std::clamp(oldField, 0, static_cast<int>(vInspectedComponentFields.size()) - 1);
         SendMessageW(componentFields, LB_SETCURSEL, chosen, 0);
         if (GetFocus() != componentValue)
-            SetWindowTextW(componentValue, Wide(inspectedComponentFields[chosen].second).c_str());
+            SetWindowTextW(componentValue, Wide(vInspectedComponentFields[chosen].second).c_str());
     }
 }
 
 bool Editor::Apply() {
-    if (selectedIndices.size() != 1 || selected < 0 || selected >= static_cast<int>(scene.entities.size())) return true;
+    if (vSelectedIndices.size() != 1 || nSelected < 0 || nSelected >= static_cast<int>(scene.entities.size())) return true;
     std::string name = Utf8(Text(edits[0]));
     if (name.empty() || name.find_first_of("\r\n") != std::string::npos) {
         Error(window, "Enter a non-empty, single-line name.");
@@ -270,7 +270,7 @@ bool Editor::Apply() {
             return false;
         }
     }
-    auto& entity = scene.entities[selected];
+    auto& entity = scene.entities[nSelected];
     entity.name = name;
     auto assetPath = [&](HWND edit, const char* label, std::string& destination) {
         const auto value = Utf8(Text(edit));

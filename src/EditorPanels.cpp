@@ -13,43 +13,43 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
         const DWORD hit = static_cast<DWORD>(SendMessageW(hwnd, LB_ITEMFROMPOINT, 0, lp));
         const int row = HIWORD(hit) ? -1 : static_cast<int>(LOWORD(hit));
         // Clicking the foldout arrow expands / collapses children (Unity).
-        if (row >= 0 && static_cast<size_t>(row) < e->hierarchyRows.size() && e->hierarchyHasChildren[row]) {
-            const int arrowX = 6 + e->hierarchyDepths[row] * 14;
+        if (row >= 0 && static_cast<size_t>(row) < e->vHierarchyRows.size() && e->vHierarchyHasChildren[row]) {
+            const int arrowX = 6 + e->vHierarchyDepths[row] * 14;
             const int x = GET_X_LPARAM(lp);
             if (x >= arrowX - 2 && x <= arrowX + 14) {
-                const int entity = e->hierarchyRows[row];
-                e->collapsedEntities.resize(e->scene.entities.size(), 0);
-                e->collapsedEntities[entity] = !e->collapsedEntities[entity];
+                const int entity = e->vHierarchyRows[row];
+                e->vCollapsedEntities.resize(e->scene.entities.size(), 0);
+                e->vCollapsedEntities[entity] = !e->vCollapsedEntities[entity];
                 e->Populate();
                 return 0;
             }
         }
-        e->hierarchyDrag = row >= 0 && static_cast<size_t>(row) < e->hierarchyRows.size() ? e->hierarchyRows[row] : -1;
+        e->nHierarchyDrag = row >= 0 && static_cast<size_t>(row) < e->vHierarchyRows.size() ? e->vHierarchyRows[row] : -1;
         e->hierarchyDragStart = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
-        e->hierarchyDragging = false;
+        e->bHierarchyDragging = false;
         break;
     }
     case WM_MOUSELEAVE:
-        if (e->hierarchyHot != -1) {
-            e->hierarchyHot = -1;
+        if (e->nHierarchyHot != -1) {
+            e->nHierarchyHot = -1;
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         break;
     case WM_MOUSEMOVE: {
         const DWORD hover = static_cast<DWORD>(SendMessageW(hwnd, LB_ITEMFROMPOINT, 0, lp));
         const int hoverRow = HIWORD(hover) ? -1 : static_cast<int>(LOWORD(hover));
-        if (hoverRow != e->hierarchyHot) {
-            e->hierarchyHot = hoverRow;
+        if (hoverRow != e->nHierarchyHot) {
+            e->nHierarchyHot = hoverRow;
             TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd, 0};
             TrackMouseEvent(&track);
             InvalidateRect(hwnd, nullptr, FALSE);
         }
     }
-        if ((wp & MK_LBUTTON) && e->hierarchyDrag >= 0 &&
+        if ((wp & MK_LBUTTON) && e->nHierarchyDrag >= 0 &&
             (std::abs(GET_X_LPARAM(lp) - e->hierarchyDragStart.x) > 5 ||
              std::abs(GET_Y_LPARAM(lp) - e->hierarchyDragStart.y) > 5)) {
-            if (!e->hierarchyDragging) {
-                e->hierarchyDragging = true;
+            if (!e->bHierarchyDragging) {
+                e->bHierarchyDragging = true;
                 SetCapture(hwnd);
             }
             SetCursor(LoadCursorW(nullptr, IDC_SIZEALL));
@@ -61,13 +61,13 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
         // button-up.  Treat a meaningful start/end displacement as a drag as
         // well, so hierarchy parenting is not dependent on an intermediate
         // WM_MOUSEMOVE being delivered.
-        if ((e->hierarchyDragging || (e->hierarchyDrag >= 0 && (std::abs(GET_X_LPARAM(lp) - e->hierarchyDragStart.x) > 5 ||
+        if ((e->bHierarchyDragging || (e->nHierarchyDrag >= 0 && (std::abs(GET_X_LPARAM(lp) - e->hierarchyDragStart.x) > 5 ||
                                                                 std::abs(GET_Y_LPARAM(lp) - e->hierarchyDragStart.y) > 5))) &&
-            e->hierarchyDrag >= 0) {
-            const int child = e->hierarchyDrag;
+            e->nHierarchyDrag >= 0) {
+            const int child = e->nHierarchyDrag;
             const DWORD hit = static_cast<DWORD>(SendMessageW(hwnd, LB_ITEMFROMPOINT, 0, lp));
             const int row = HIWORD(hit) ? -1 : static_cast<int>(LOWORD(hit));
-            const int parent = row >= 0 && static_cast<size_t>(row) < e->hierarchyRows.size() ? e->hierarchyRows[row] : -1;
+            const int parent = row >= 0 && static_cast<size_t>(row) < e->vHierarchyRows.size() ? e->vHierarchyRows[row] : -1;
             std::string error;
             if (!SetEntityParent(e->scene, child, parent, error))
                 Error(e->window, error);
@@ -75,23 +75,80 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
                 // Preserve the dragged object as the active selection. The
                 // list is rebuilt depth-first so a successful drop is visible
                 // immediately as a parent/child indentation change.
-                e->selected = child;
-                e->selectedIndices = {child};
+                e->nSelected = child;
+                e->vSelectedIndices = {child};
                 e->Populate();
                 e->SetStatus(parent < 0 ? L"Object moved to the hierarchy root."
                                         : L"Parent set by drag and drop. Save the scene to keep it.");
             }
-            e->hierarchyDragging = false;
-            e->hierarchyDrag = -1;
+            e->bHierarchyDragging = false;
+            e->nHierarchyDrag = -1;
             ReleaseCapture();
             return 0;
         }
         break;
     case WM_CAPTURECHANGED:
-        e->hierarchyDragging = false;
-        e->hierarchyDrag = -1;
+        e->bHierarchyDragging = false;
+        e->nHierarchyDrag = -1;
         break;
     case WM_NCDESTROY: RemoveWindowSubclass(hwnd, HierarchySubclassProc, 1); break;
+    }
+    return DefSubclassProc(hwnd, message, wp, lp);
+}
+
+// Unity-style scrubbing: drag a field label horizontally to change the value
+// of the matching Inspector field. Shift = 10x, Alt = 0.1x.
+LRESULT CALLBACK LabelDragSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR field, DWORD_PTR data) {
+    auto* e = reinterpret_cast<Editor*>(data);
+    const int index = static_cast<int>(field);
+    switch (message) {
+    case WM_SETCURSOR:
+        if (IsWindowEnabled(e->edits[index])) {
+            SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+            return TRUE;
+        }
+        break;
+    case WM_LBUTTONDOWN: {
+        if (!IsWindowEnabled(e->edits[index])) break;
+        const std::wstring text = Text(e->edits[index]);
+        try {
+            e->fScrubStartValue = std::stof(text);
+        } catch (...) {
+            return 0;
+        }
+        e->nScrubField = index;
+        POINT cursor{};
+        GetCursorPos(&cursor);
+        e->nScrubStartX = cursor.x;
+        SetCapture(hwnd);
+        return 0;
+    }
+    case WM_MOUSEMOVE:
+        if (GetCapture() == hwnd && e->nScrubField == index) {
+            POINT cursor{};
+            GetCursorPos(&cursor);
+            // Per-pixel step: position 0.01, rotation 0.5 degrees, scale 0.01, colour 0.005.
+            float step = index >= 11 ? 0.005f : (index >= 5 && index <= 7) ? 0.5f : 0.01f;
+            if (GetKeyState(VK_SHIFT) & 0x8000) step *= 10.0f;
+            if (GetKeyState(VK_MENU) & 0x8000) step *= 0.1f;
+            float value = e->fScrubStartValue + static_cast<float>(cursor.x - e->nScrubStartX) * step;
+            if (index >= 11) value = std::clamp(value, 0.0f, 1.0f);
+            wchar_t buffer[64];
+            swprintf_s(buffer, L"%.6g", static_cast<double>(value));
+            SetWindowTextW(e->edits[index], buffer);
+            e->Apply();
+            return 0;
+        }
+        break;
+    case WM_LBUTTONUP:
+    case WM_CAPTURECHANGED:
+        if (e->nScrubField == index) {
+            e->nScrubField = -1;
+            if (message == WM_LBUTTONUP) ReleaseCapture();
+            return 0;
+        }
+        break;
+    case WM_NCDESTROY: RemoveWindowSubclass(hwnd, LabelDragSubclassProc, field); break;
     }
     return DefSubclassProc(hwnd, message, wp, lp);
 }
@@ -156,7 +213,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_MOUSEWHEEL:
         if (p->index == 2) {
-            e->inspectorScroll = std::max(0, e->inspectorScroll - GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA * 48);
+            e->nInspectorScroll = std::max(0, e->nInspectorScroll - GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA * 48);
             e->LayoutPanel(2);
             return 0;
         }
@@ -165,7 +222,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         if (p->index == 2) {
             SCROLLINFO info{sizeof(info), SIF_ALL};
             GetScrollInfo(hwnd, SB_VERT, &info);
-            int position = e->inspectorScroll;
+            int position = e->nInspectorScroll;
             switch (LOWORD(wp)) {
             case SB_LINEUP: position -= 32; break;
             case SB_LINEDOWN: position += 32; break;
@@ -177,7 +234,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             case SB_BOTTOM: position = info.nMax; break;
             default: return 0;
             }
-            e->inspectorScroll = std::max(0, position);
+            e->nInspectorScroll = std::max(0, position);
             e->LayoutPanel(2);
             return 0;
         }
@@ -216,7 +273,65 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         theme::Fill(reinterpret_cast<HDC>(wp), r, theme::COLOR_PANEL);
         return 1;
     }
-    case WM_LBUTTONDOWN: SetFocus(hwnd); return 0;
+    case WM_LBUTTONDOWN:
+        SetFocus(hwnd);
+        if (!p->floating && GET_Y_LPARAM(lp) < theme::PANEL_HEADER_HEIGHT) {
+            p->bTabPressed = true;
+            p->tabDragStart = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+            SetCapture(hwnd);
+        }
+        return 0;
+    case WM_MOUSEMOVE:
+        if (p->bTabPressed && GetCapture() == hwnd &&
+            (std::abs(GET_X_LPARAM(lp) - p->tabDragStart.x) > 12 || std::abs(GET_Y_LPARAM(lp) - p->tabDragStart.y) > 12)) {
+            // Tear the tab off: float the panel under the cursor and hand the
+            // drag to the system move loop (the button is still held down).
+            p->bTabPressed = false;
+            ReleaseCapture();
+            POINT cursor{};
+            GetCursorPos(&cursor);
+            e->FloatPanel(p->index);
+            SetWindowPos(hwnd, HWND_TOP, cursor.x - 80, cursor.y - 12, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+            SendMessageW(hwnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
+            return 0;
+        }
+        break;
+    case WM_LBUTTONUP:
+        if (p->bTabPressed) {
+            p->bTabPressed = false;
+            ReleaseCapture();
+        }
+        return 0;
+    case WM_ENTERSIZEMOVE:
+        p->bMoving = false;
+        break;
+    case WM_MOVING:
+        if (p->floating) {
+            p->bMoving = true;
+            POINT cursor{};
+            GetCursorPos(&cursor);
+            RECT dock{};
+            GetClientRect(e->window, &dock);
+            MapWindowPoints(e->window, nullptr, reinterpret_cast<POINT*>(&dock), 2);
+            dock.top += TOP_CHROME_HEIGHT;
+            e->SetStatus(PtInRect(&dock, cursor) ? L"Release over the editor to dock the panel." : L"Floating panel.");
+        }
+        break;
+    case WM_EXITSIZEMOVE:
+        if (p->floating && p->bMoving) {
+            p->bMoving = false;
+            POINT cursor{};
+            GetCursorPos(&cursor);
+            RECT dock{};
+            GetClientRect(e->window, &dock);
+            MapWindowPoints(e->window, nullptr, reinterpret_cast<POINT*>(&dock), 2);
+            dock.top += TOP_CHROME_HEIGHT;
+            if (PtInRect(&dock, cursor) && GetAsyncKeyState(VK_CONTROL) >= 0) { // Ctrl keeps it floating
+                e->FloatPanel(p->index);
+                e->SetStatus(L"Panel docked.");
+            }
+        }
+        break;
     case WM_PAINT: {
         PAINTSTRUCT ps{};
         HDC dc = BeginPaint(hwnd, &ps);
@@ -256,7 +371,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             theme::DrawIcon(dc, theme::Icon::CHEVRON_DOWN, chevron, theme::COLOR_TEXT_DIM);
             RECT icon{18, sceneRow.top + 3, 34, sceneRow.bottom - 3};
             theme::DrawIcon(dc, theme::Icon::GAME_OBJECT, icon, theme::COLOR_TEXT);
-            const std::wstring sceneName = e->projectFile.stem().wstring() + (e->playing ? L"  (Playing)" : L"");
+            const std::wstring sceneName = e->projectFile.stem().wstring() + (e->bPlaying ? L"  (Playing)" : L"");
             RECT text{40, sceneRow.top, r.right - 30, sceneRow.bottom};
             theme::DrawLabel(dc, sceneName, text, theme::COLOR_TEXT_BRIGHT, fonts.hBold,
                              DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
@@ -264,6 +379,10 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             theme::DrawIcon(dc, theme::Icon::KEBAB, kebab, theme::COLOR_TEXT_DIM);
             theme::Line(dc, 0, r.bottom - 36, r.right, r.bottom - 36, theme::COLOR_SEPARATOR);
         } else if (p->index == 1 && !p->collapsed) {
+            if (e->bGameView) {
+                RECT letterbox{0, header + 30, r.right, r.bottom};
+                theme::Fill(dc, letterbox, theme::COLOR_TOOLBAR);
+            }
             RECT toolbar{0, header, r.right, header + 30};
             theme::Fill(dc, toolbar, theme::COLOR_TAB_ACTIVE);
             theme::Line(dc, 0, header + 29, r.right, header + 29, theme::COLOR_SEPARATOR);
@@ -278,7 +397,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                 RECT bar{edit.left - 15, edit.top, edit.left - 12, edit.bottom};
                 theme::Fill(dc, bar, axes[(field - 2) % 3]);
             }
-            theme::Line(dc, 0, 113 - e->inspectorScroll, r.right, 113 - e->inspectorScroll, theme::COLOR_SEPARATOR);
+            theme::Line(dc, 0, 113 - e->nInspectorScroll, r.right, 113 - e->nInspectorScroll, theme::COLOR_SEPARATOR);
             RECT footer{0, r.bottom - 40, r.right, r.bottom};
             theme::Fill(dc, footer, theme::COLOR_TAB_STRIP);
             theme::Line(dc, 0, r.bottom - 40, r.right, r.bottom - 40, theme::COLOR_SEPARATOR);
@@ -298,7 +417,7 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(e));
     }
     if (!e) return DefWindowProcW(hwnd, message, wp, lp);
-    if (e->gameView) {
+    if (e->bGameView) {
         switch (message) {
         case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN: SetFocus(hwnd); return 0;
         case WM_LBUTTONUP: case WM_RBUTTONUP: case WM_MBUTTONUP: case WM_MOUSEMOVE: case WM_MOUSEWHEEL: return 0;
@@ -308,19 +427,19 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     switch (message) {
     case WM_LBUTTONDOWN: {
         SetFocus(hwnd);
-        if (!e->rendererReady) return 0;
+        if (!e->bRendererReady) return 0;
         if (!e->Apply()) return 0;
         const int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
-        if (!(wp & MK_CONTROL) && e->selected >= 0 && static_cast<size_t>(e->selected) < e->scene.entities.size()) {
-            const auto item = WorldDraw(e->scene, e->selected);
+        if (!(wp & MK_CONTROL) && e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.entities.size()) {
+            const auto item = WorldDraw(e->scene, e->nSelected);
             const int axis = e->renderer.HitGizmo(x, y, item, e->gizmoMode);
             if (axis >= 0) {
-                e->gizmoAxis = axis;
+                e->nGizmoAxis = axis;
                 e->gizmoStartItem = item;
                 e->gizmoStartMouse = {x, y};
-                e->gizmoStartItems.clear();
-                for (int i : e->selectedIndices)
-                    e->gizmoStartItems.emplace_back(i, WorldDraw(e->scene, i));
+                e->vGizmoStartItems.clear();
+                for (int i : e->vSelectedIndices)
+                    e->vGizmoStartItems.emplace_back(i, WorldDraw(e->scene, i));
                 e->renderer.SetGizmoHot(axis);
                 e->drag = Editor::Drag::Gizmo;
                 SetCapture(hwnd);
@@ -328,10 +447,10 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             }
         }
         e->selectionStart = {x, y};
-        e->selectionBeforeDrag = e->selectedIndices;
-        e->selectionAdd = (wp & MK_SHIFT) != 0;
-        e->selectionToggle = (wp & MK_CONTROL) != 0;
-        e->selectingRect = false;
+        e->vSelectionBeforeDrag = e->vSelectedIndices;
+        e->bSelectionAdd = (wp & MK_SHIFT) != 0;
+        e->bSelectionToggle = (wp & MK_CONTROL) != 0;
+        e->bSelectingRect = false;
         e->drag = Editor::Drag::Select;
         SetCapture(hwnd);
         return 0;
@@ -346,7 +465,7 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             auto items = ResolveWorldDraws(e->scene);
             std::vector<int> hits;
             const int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
-            if (e->selectingRect)
+            if (e->bSelectingRect)
                 hits = e->renderer.PickRect(e->selectionStart.x, e->selectionStart.y, x, y, items);
             else {
                 const int hit = e->renderer.Pick(x, y, items);
@@ -367,15 +486,15 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         e->lastMouse = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         if (message == WM_RBUTTONDOWN) {
             e->rightStart = e->lastMouse;
-            e->rightUsed = false;
-            e->orbitPivot = (GetKeyState(VK_MENU) & 0x8000) != 0;
-            e->cameraTick = GetTickCount64();
+            e->bRightUsed = false;
+            e->bOrbitPivot = (GetKeyState(VK_MENU) & 0x8000) != 0;
+            e->nCameraTick = GetTickCount64();
         }
         SetCapture(hwnd);
         return 0;
     case WM_RBUTTONUP:
         if (e->drag == Editor::Drag::Orbit) {
-            const bool menu = !e->rightUsed && !e->orbitPivot;
+            const bool menu = !e->bRightUsed && !e->bOrbitPivot;
             e->drag = Editor::Drag::None;
             ReleaseCapture();
             if (menu) {
@@ -392,7 +511,7 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         }
         return 0;
     case WM_CAPTURECHANGED:
-        if (e->drag == Editor::Drag::Gizmo && e->selected >= 0 && static_cast<size_t>(e->selected) < e->scene.entities.size()) {
+        if (e->drag == Editor::Drag::Gizmo && e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.entities.size()) {
             e->RestoreDrag();
             e->SetStatus(L"Transform cancelled.");
         }
@@ -416,16 +535,16 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         if (e->drag != Editor::Drag::None) {
             const int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
             if (e->drag == Editor::Drag::Select) {
-                if (std::abs(x - e->selectionStart.x) >= 4 || std::abs(y - e->selectionStart.y) >= 4) e->selectingRect = true;
-                if (e->selectingRect) e->renderer.SetMarquee(true, e->selectionStart.x, e->selectionStart.y, x, y);
+                if (std::abs(x - e->selectionStart.x) >= 4 || std::abs(y - e->selectionStart.y) >= 4) e->bSelectingRect = true;
+                if (e->bSelectingRect) e->renderer.SetMarquee(true, e->selectionStart.x, e->selectionStart.y, x, y);
                 return 0;
             }
             if (e->drag == Editor::Drag::Gizmo) {
-                if (e->selected >= 0 && static_cast<size_t>(e->selected) < e->scene.entities.size()) {
+                if (e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.entities.size()) {
                     DrawItem updated;
-                    if (e->renderer.DragGizmo(e->gizmoStartItem, e->gizmoMode, e->gizmoAxis, e->gizmoStartMouse.x,
+                    if (e->renderer.DragGizmo(e->gizmoStartItem, e->gizmoMode, e->nGizmoAxis, e->gizmoStartMouse.x,
                                               e->gizmoStartMouse.y, x, y, updated)) {
-                        if (wp & MK_SHIFT) SnapGizmo(updated, e->gizmoStartItem, e->gizmoMode, e->gizmoAxis);
+                        if (wp & MK_SHIFT) SnapGizmo(updated, e->gizmoStartItem, e->gizmoMode, e->nGizmoAxis);
                         e->UpdateGroup(updated);
                         e->Inspect();
                     }
@@ -435,8 +554,8 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             const float dx = static_cast<float>(x - e->lastMouse.x), dy = static_cast<float>(y - e->lastMouse.y);
             e->lastMouse = {x, y};
             if (e->drag == Editor::Drag::Orbit) {
-                if (std::abs(x - e->rightStart.x) >= 3 || std::abs(y - e->rightStart.y) >= 3) e->rightUsed = true;
-                if (e->rightUsed) LookCamera(e->camera, dx, dy, e->orbitPivot);
+                if (std::abs(x - e->rightStart.x) >= 3 || std::abs(y - e->rightStart.y) >= 3) e->bRightUsed = true;
+                if (e->bRightUsed) LookCamera(e->camera, dx, dy, e->bOrbitPivot);
             } else {
                 RECT rect{};
                 GetClientRect(hwnd, &rect);
@@ -454,11 +573,11 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                 }
             }
             e->renderer.SetCamera(e->camera);
-        } else if (e->rendererReady && e->selected >= 0 && static_cast<size_t>(e->selected) < e->scene.entities.size()) {
+        } else if (e->bRendererReady && e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.entities.size()) {
             TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd, 0};
             TrackMouseEvent(&track);
             e->renderer.SetGizmoHot(
-                e->renderer.HitGizmo(GET_X_LPARAM(lp), GET_Y_LPARAM(lp), WorldDraw(e->scene, e->selected), e->gizmoMode));
+                e->renderer.HitGizmo(GET_X_LPARAM(lp), GET_Y_LPARAM(lp), WorldDraw(e->scene, e->nSelected), e->gizmoMode));
         }
         return 0;
     case WM_MOUSELEAVE:

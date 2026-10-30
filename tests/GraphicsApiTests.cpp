@@ -13,6 +13,11 @@ bool RenderFrames(dxs::Renderer& renderer, const std::vector<dxs::DrawItem>& vDr
         renderer.SetMarquee(true, 10, 10, 120, 90);
         if (!renderer.Render(vDraws, error, 0, true, mode, true)) return false;
     }
+    // Scene view draw modes (wireframe pipelines exist on every backend).
+    for (const auto drawMode : {dxs::DrawMode::WIREFRAME, dxs::DrawMode::SHADED_WIREFRAME, dxs::DrawMode::SHADED}) {
+        renderer.SetDrawMode(drawMode);
+        if (renderer.GetDrawMode() != drawMode || !renderer.Render(vDraws, error, 0, true)) return false;
+    }
     renderer.SetMarquee(false, 0, 0, 0, 0);
     return renderer.Render(vDraws, error); // game-style frame without overlays
 }

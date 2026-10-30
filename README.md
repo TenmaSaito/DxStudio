@@ -43,6 +43,9 @@ Unity 2022 の Dark スキン配色（パネル `#383838`、タブ帯 `#282828`�
 - Inspector: Unity のコンポーネント見出し（折りたたみ・アイコン・⋮）、Tag / Layer の欄、X/Y/Z の色付きバー、プロパティ行の形式で表示するコンポーネント値、青い `Add Component` / `Apply changes` ボタン。
 - Scene ビュー: アイコンのツール切り替え（Move / Rotate / Scale）、右上に X/Y/Z の向きを示すギズモ。`Scene | Game` タブで Game ビュー（最初の有効な Camera から見た、グリッドやギズモのない表示）に切り替えられます。Unity と同様に Play 中は自動で Game ビューになり、Stop で Scene に戻ります。
 - Hierarchy の行はマウスを乗せると強調表示され、親子付けのドラッグ中はドロップ先が青枠で示されます。
+- Scene ツールバーの `Shaded ▾` で Shaded / Wireframe / Shaded Wireframe を切り替えられます（DX12 / 11 / 9 のすべてで動作）。Game ビューの `Free Aspect ▾` で 16:9 / 16:10 / 4:3 / 1:1 に固定できます。
+- Inspector の X / Y / Z / R / G / B / A のラベルを左右にドラッグすると値が変わります（Unity と同じ。Shift で10倍、Alt で0.1倍）。
+- パネルのタブ見出しをドラッグして引き出すとフローティングになり、エディターの上で離すと元の位置に戻ります（Ctrl を押しながら離すとフローティングのまま）。
 - Console（`Ctrl+Shift+C`）: `dxs::Debug::Log / LogWarning / LogError` の出力を、レベル別アイコン・件数・フィルター・Collapse・Clear・コピー付きで表示します。
 - ステータスバー: 最後のメッセージと、使用中のAPI・FPS・Play状態。
 - 実装: `src/EditorTheme.h/.cpp`（配色・アンチエイリアス付きベクターアイコン・ボタン描画）と `src/ConsolePanel.cpp`。

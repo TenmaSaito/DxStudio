@@ -44,6 +44,9 @@ struct Camera {
 // translation planes, 6=uniform scale.
 enum class GizmoMode { Translate, Rotate, Scale };
 
+// Scene view draw mode (Unity: Shaded / Wireframe / Shaded Wireframe).
+enum class DrawMode : unsigned char { SHADED, WIREFRAME, SHADED_WIREFRAME };
+
 // API-agnostic renderer front-end. The GPU backend (Direct3D 12 / 11 / 9) is
 // chosen at Initialize time; every other member behaves identically on all
 // backends (picking and gizmo math run on the CPU).
@@ -72,6 +75,9 @@ public:
     void SetCamera(const Camera& camera);
     // Corner X/Y/Z axis widget drawn in editor views (showGrid == true).
     void SetShowOrientationGizmo(bool bShow);
+    // Applies to editor frames (showGrid == true); game frames are always shaded.
+    void SetDrawMode(DrawMode mode);
+    [[nodiscard]] DrawMode GetDrawMode() const;
     // Client coordinates relative to the viewport. Returns -1 for a miss.
     int Pick(int x, int y, const std::vector<DrawItem>& items) const;
     // Select objects whose projected bounds intersect the rectangle.

@@ -10,11 +10,11 @@ void Editor::ResizeDock(LayoutDrag drag, POINT point) {
     const int width = static_cast<int>(client.right), height = static_cast<int>(client.bottom);
     const int x = static_cast<int>(point.x), y = static_cast<int>(point.y);
     if (drag == LayoutDrag::Left)
-        dockLeft = std::clamp(x, 160, std::max(160, width - 500));
+        nDockLeft = std::clamp(x, 160, std::max(160, width - 500));
     else if (drag == LayoutDrag::Right)
-        dockRight = std::clamp(width - x, 240, std::max(240, width - 400));
+        nDockRight = std::clamp(width - x, 240, std::max(240, width - 400));
     else if (drag == LayoutDrag::Project)
-        dockProject = std::clamp(height - theme::STATUS_BAR_HEIGHT - y, 120, std::max(120, height - 220));
+        nDockProject = std::clamp(height - theme::STATUS_BAR_HEIGHT - y, 120, std::max(120, height - 220));
     Layout();
 }
 
@@ -44,26 +44,44 @@ void Editor::FloatPanel(int index) {
     SetWindowTextW(p.buttons[0], p.floating ? L"Dock" : L"Float");
     theme::SetButtonIcon(p.buttons[0], p.floating ? theme::Icon::DOCK : theme::Icon::FLOAT);
     Layout();
+    // Areas a floating panel passed over must repaint, including owner-drawn children.
+    RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
 }
 
 void Editor::SelectViewTab(bool game) {
-    gameView = game;
+    bGameView = game;
     for (HWND tab : viewTabs) InvalidateRect(tab, nullptr, FALSE);
     LayoutPanel(1);
-    SetStatus(gameView ? L"Game view: rendered through the first active Camera component."
+    SetStatus(bGameView ? L"Game view: rendered through the first active Camera component."
                        : L"Scene view: RMB + WASD/QE fly | Alt + RMB orbit | MMB pan | W/E/R tools");
 }
 
+void Editor::SetDrawMode(int index) {
+    drawMode = static_cast<DrawMode>(std::clamp(index, 0, 2));
+    SetWindowTextW(drawModeButton, DRAW_MODE_NAMES[static_cast<int>(drawMode)]);
+    renderer.SetDrawMode(drawMode);
+    InvalidateRect(drawModeButton, nullptr, FALSE);
+    const std::wstring message = std::wstring(L"Scene draw mode: ") + DRAW_MODE_NAMES[static_cast<int>(drawMode)];
+    SetStatus(message.c_str());
+}
+
+void Editor::SetGameAspect(int index) {
+    nGameAspect = std::clamp(index, 0, ASPECT_COUNT - 1);
+    SetWindowTextW(aspectButton, ASPECT_NAMES[nGameAspect]);
+    InvalidateRect(aspectButton, nullptr, FALSE);
+    LayoutPanel(1);
+}
+
 void Editor::SelectBottomTab(int tab) {
-    bottomTab = std::clamp(tab, 0, BOTTOM_TAB_COUNT - 1);
+    nBottomTab = std::clamp(tab, 0, BOTTOM_TAB_COUNT - 1);
     for (HWND t : bottomTabs)
         InvalidateRect(t, nullptr, FALSE);
     LayoutPanel(3);
 }
 
 void Editor::Layout() {
-    if (!shellReady || arranging || IsIconic(window)) return;
-    arranging = true;
+    if (!bShellReady || bArranging || IsIconic(window)) return;
+    bArranging = true;
     RECT r{};
     GetClientRect(window, &r);
     const int w = r.right, h = r.bottom, top = TOP_CHROME_HEIGHT + 3, bottom = theme::STATUS_BAR_HEIGHT, gap = 3;
@@ -71,10 +89,10 @@ void Editor::Layout() {
     auto docked = [&](int i) {
         return !panels[i].floating && !panels[i].hidden;
     };
-    const int left = docked(0) ? std::clamp(dockLeft, 160, std::max(160, w / 2)) : 0;
-    const int right = docked(2) ? std::clamp(dockRight, 240, std::max(240, w / 2)) : 0;
+    const int left = docked(0) ? std::clamp(nDockLeft, 160, std::max(160, w / 2)) : 0;
+    const int right = docked(2) ? std::clamp(nDockRight, 240, std::max(240, w / 2)) : 0;
     const int projectHeight =
-        docked(3) ? (panels[3].collapsed ? header : std::clamp(dockProject, 120, std::max(120, h - top - bottom - 140))) : 0;
+        docked(3) ? (panels[3].collapsed ? header : std::clamp(nDockProject, 120, std::max(120, h - top - bottom - 140))) : 0;
     const int lower = h - bottom - projectHeight;
     if (docked(0))
         MoveWindow(panels[0].window, gap, top, left - gap, panels[0].collapsed ? header : std::max(header, lower - top - gap),
@@ -150,11 +168,11 @@ void Editor::Layout() {
     MoveWindow(status, 30, h - bottom + 3, std::max(1, w - 340), bottom - 5, TRUE);
     MoveWindow(statusRight, w - 300, h - bottom + 3, 290, bottom - 5, TRUE);
     InvalidateRect(window, nullptr, TRUE);
-    arranging = false;
+    bArranging = false;
 }
 
 void Editor::LayoutPanel(int index) {
-    if (!shellReady) return;
+    if (!bShellReady) return;
     auto& p = panels[index];
     if (IsIconic(p.window)) return;
     RECT r{};
@@ -167,7 +185,7 @@ void Editor::LayoutPanel(int index) {
     MoveWindow(p.buttons[1], minimizeX, 4, 20, 20, TRUE);
     MoveWindow(p.buttons[2], closeX, 4, 20, 20, TRUE);
     const bool expanded = !p.collapsed;
-    const int scrollOffset = index == 2 ? inspectorScroll : 0;
+    const int scrollOffset = index == 2 ? nInspectorScroll : 0;
     auto place = [&](HWND control, int x, int y, int width, int height, bool visible = true) {
         if (!control) return;
         const RECT inset = BoxInset(control);
@@ -191,12 +209,26 @@ void Editor::LayoutPanel(int index) {
             ShowWindow(viewTabs[t], SW_SHOWNA);
         }
         for (int i = 0; i < 3; ++i)
-            place(gizmoButtons[i], 6 + i * 31, header + 3, 30, 24, !gameView);
+            place(gizmoButtons[i], 6 + i * 31, header + 3, 30, 24, !bGameView);
         for (int i = 0; i < 2; ++i)
-            place(projectionButtons[i], std::max(110, w - 6 - (2 - i) * 84), header + 3, 82, 24, !gameView);
+            place(projectionButtons[i], std::max(110, w - 6 - (2 - i) * 84), header + 3, 82, 24, !bGameView);
         const int viewTop = header + 30;
-        place(viewport, 0, viewTop, w, std::max(1, h - viewTop));
-        if (rendererReady && expanded && !p.hidden && w > 2 && h > viewTop + 1) {
+        place(drawModeButton, 104, header + 3, 190, 24, !bGameView);
+        place(aspectButton, 6, header + 3, 130, 24, bGameView);
+        // Game view: letterbox the viewport to the chosen aspect ratio.
+        RECT view{0, viewTop, w, std::max(viewTop + 1, h)};
+        const float ratio = bGameView ? ASPECT_RATIOS[nGameAspect] : 0.0f;
+        if (ratio > 0.0f) {
+            const int areaW = w, areaH = std::max(1, h - viewTop);
+            int viewW = areaW, viewH = static_cast<int>(areaW / ratio);
+            if (viewH > areaH) {
+                viewH = areaH;
+                viewW = static_cast<int>(areaH * ratio);
+            }
+            view = {(areaW - viewW) / 2, viewTop + (areaH - viewH) / 2, (areaW - viewW) / 2 + viewW, viewTop + (areaH - viewH) / 2 + viewH};
+        }
+        place(viewport, view.left, view.top, std::max<LONG>(1, view.right - view.left), std::max<LONG>(1, view.bottom - view.top));
+        if (bRendererReady && expanded && !p.hidden && w > 2 && h > viewTop + 1) {
             RECT actual{};
             GetClientRect(viewport, &actual);
             renderer.Resize(actual.right, actual.bottom);
@@ -208,8 +240,8 @@ void Editor::LayoutPanel(int index) {
             ShowWindow(bottomTabs[t], SW_SHOWNA);
             tabX += 108;
         }
-        place(projectPanel, 0, header, w, std::max(1, h - header), bottomTab == 0);
-        place(consolePanel, 0, header, w, std::max(1, h - header), bottomTab == 1);
+        place(projectPanel, 0, header, w, std::max(1, h - header), nBottomTab == 0);
+        place(consolePanel, 0, header, w, std::max(1, h - header), nBottomTab == 1);
     } else {
         // Unity-like object header: icon, active state, object name, and
         // metadata strip always precede editable component sections.
@@ -225,12 +257,12 @@ void Editor::LayoutPanel(int index) {
         const wchar_t* names[] = {L"Transform", L"Rendering / Color", L"Components"};
         for (int group = 0; group < 3; ++group) {
             SetWindowTextW(groupLabels[group], names[group]);
-            theme::SetButtonExpanded(groupLabels[group], sectionOpen[group]);
+            theme::SetButtonExpanded(groupLabels[group], aSectionOpen[group]);
             place(groupLabels[group], 0, y, w, 24);
             y += 30;
             if (group == 0) {
                 for (int row = 0; row < 3; ++row) {
-                    place(rowLabels[row], 14, y + 2, 70, 22, sectionOpen[group]);
+                    place(rowLabels[row], 14, y + 2, 70, 22, aSectionOpen[group]);
                     // Leave a fixed gutter for the row caption and for
                     // every axis caption. This prevents the X/Y/Z labels
                     // and numeric values from colliding in narrow docks.
@@ -238,35 +270,35 @@ void Editor::LayoutPanel(int index) {
                     const int cell = std::max(43, (w - fieldStart - 10) / 3);
                     for (int a = 0; a < 3; ++a) {
                         const int field = 2 + row * 3 + a, x = fieldStart + a * cell;
-                        place(labels[field], x + 3, y + 2, 11, 22, sectionOpen[group]);
-                        place(edits[field], x + 15, y, cell - 18, 24, sectionOpen[group]);
+                        place(labels[field], x + 3, y + 2, 11, 22, aSectionOpen[group]);
+                        place(edits[field], x + 15, y, cell - 18, 24, aSectionOpen[group]);
                     }
-                    if (sectionOpen[group]) y += 28;
+                    if (aSectionOpen[group]) y += 28;
                 }
             } else if (group == 1) {
                 const int cell = (w - 20) / 4;
                 for (int a = 0; a < 4; ++a) {
                     const int x = 12 + a * cell;
-                    place(labels[11 + a], x + 3, y + 2, 11, 22, sectionOpen[group]);
-                    place(edits[11 + a], x + 15, y, cell - 20, 24, sectionOpen[group]);
+                    place(labels[11 + a], x + 3, y + 2, 11, 22, aSectionOpen[group]);
+                    place(edits[11 + a], x + 15, y, cell - 20, 24, aSectionOpen[group]);
                 }
-                if (sectionOpen[group]) y += 28;
-                place(materialLabel, 14, y + 2, 70, 22, sectionOpen[group]);
-                place(materialEdit, 86, y, w - 96, 24, sectionOpen[group]);
-                if (sectionOpen[group]) y += 28;
-                place(textureLabel, 14, y + 2, 70, 22, sectionOpen[group]);
-                place(textureEdit, 86, y, w - 96, 24, sectionOpen[group]);
-                if (sectionOpen[group]) y += 28;
+                if (aSectionOpen[group]) y += 28;
+                place(materialLabel, 14, y + 2, 70, 22, aSectionOpen[group]);
+                place(materialEdit, 86, y, w - 96, 24, aSectionOpen[group]);
+                if (aSectionOpen[group]) y += 28;
+                place(textureLabel, 14, y + 2, 70, 22, aSectionOpen[group]);
+                place(textureEdit, 86, y, w - 96, 24, aSectionOpen[group]);
+                if (aSectionOpen[group]) y += 28;
             } else {
-                place(componentList, 10, y, w - 20, 60, sectionOpen[group]);
-                place(componentFields, 10, y + 66, w - 20, 64, sectionOpen[group]);
-                place(componentValue, 10, y + 136, w - 94, 24, sectionOpen[group]);
-                place(componentValueApply, w - 80, y + 136, 70, 24, sectionOpen[group]);
+                place(componentList, 10, y, w - 20, 60, aSectionOpen[group]);
+                place(componentFields, 10, y + 66, w - 20, 64, aSectionOpen[group]);
+                place(componentValue, 10, y + 136, w - 94, 24, aSectionOpen[group]);
+                place(componentValueApply, w - 80, y + 136, 70, 24, aSectionOpen[group]);
                 // Unity: wide centred "Add Component" button under the components.
-                place(componentChoice, 10, y + 170, w - 20, 180, sectionOpen[group]);
-                place(componentAdd, 10, y + 202, (w - 25) / 2, 26, sectionOpen[group]);
-                place(componentRemove, 15 + (w - 25) / 2, y + 202, (w - 25) / 2, 26, sectionOpen[group]);
-                if (sectionOpen[group]) y += 236;
+                place(componentChoice, 10, y + 170, w - 20, 180, aSectionOpen[group]);
+                place(componentAdd, 10, y + 202, (w - 25) / 2, 26, aSectionOpen[group]);
+                place(componentRemove, 15 + (w - 25) / 2, y + 202, (w - 25) / 2, 26, aSectionOpen[group]);
+                if (aSectionOpen[group]) y += 236;
             }
             y += 4;
         }
@@ -276,9 +308,9 @@ void Editor::LayoutPanel(int index) {
         ShowWindow(controls[3], expanded ? SW_SHOWNA : SW_HIDE);
         const int contentBottom = y + 8, visibleHeight = std::max(1, h - 62);
         const int maxScroll = std::max(0, contentBottom - visibleHeight);
-        const int clamped = std::clamp(inspectorScroll, 0, maxScroll);
-        if (clamped != inspectorScroll) {
-            inspectorScroll = clamped;
+        const int clamped = std::clamp(nInspectorScroll, 0, maxScroll);
+        if (clamped != nInspectorScroll) {
+            nInspectorScroll = clamped;
             LayoutPanel(index);
             return;
         }
@@ -287,7 +319,7 @@ void Editor::LayoutPanel(int index) {
                         0,
                         std::max(0, contentBottom - 1),
                         static_cast<UINT>(visibleHeight),
-                        inspectorScroll,
+                        nInspectorScroll,
                         0};
         SetScrollInfo(p.window, SB_VERT, &info, TRUE);
     }

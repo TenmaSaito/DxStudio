@@ -13,6 +13,18 @@ bool Editor::ShellCommand(int id) {
         OpenMainMenu(id - ID_MENU_BAR_FIRST);
         return true;
     }
+    if (id == ID_DRAW_MODE_MENU || id == ID_ASPECT_MENU) {
+        ShowViewDropdown(id);
+        return true;
+    }
+    if (id >= ID_DRAW_MODE_FIRST && id < ID_DRAW_MODE_FIRST + 3) {
+        SetDrawMode(id - ID_DRAW_MODE_FIRST);
+        return true;
+    }
+    if (id >= ID_ASPECT_FIRST && id < ID_ASPECT_FIRST + ASPECT_COUNT) {
+        SetGameAspect(id - ID_ASPECT_FIRST);
+        return true;
+    }
     if (id == ID_VIEW_TAB_FIRST || id == ID_VIEW_TAB_FIRST + 1) {
         SelectViewTab(id == ID_VIEW_TAB_FIRST + 1);
         return true;
@@ -72,7 +84,7 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
     if (id >= ID_SECTION_TOGGLE && id < ID_SECTION_TOGGLE + 3) {
-        sectionOpen[id - ID_SECTION_TOGGLE] = !sectionOpen[id - ID_SECTION_TOGGLE];
+        aSectionOpen[id - ID_SECTION_TOGGLE] = !aSectionOpen[id - ID_SECTION_TOGGLE];
         LayoutPanel(2);
         return true;
     }
@@ -93,7 +105,7 @@ bool Editor::ShellCommand(int id) {
             Error(window, "Could not save the workspace layout.");
             return true;
         }
-        file << "DXLAYOUT 1 " << dockLeft << ' ' << dockRight << ' ' << dockProject << '\n';
+        file << "DXLAYOUT 1 " << nDockLeft << ' ' << nDockRight << ' ' << nDockProject << '\n';
         for (const auto& panel : panels)
             file << (panel.floating ? 1 : 0) << ' ' << (panel.hidden ? 1 : 0) << ' ' << (panel.collapsed ? 1 : 0) << '\n';
         file.close();
@@ -120,10 +132,10 @@ bool Editor::ShellCommand(int id) {
                 Error(window, "The saved workspace layout is invalid.");
                 return true;
             }
-        dockLeft = left;
-        dockRight = right;
-        dockProject = project;
-        inspectorScroll = 0;
+        nDockLeft = left;
+        nDockRight = right;
+        nDockProject = project;
+        nInspectorScroll = 0;
         for (int i = 0; i < 4; ++i) {
             if (panels[i].floating != (floating[i] != 0)) FloatPanel(i);
             panels[i].hidden = hidden[i] != 0;
@@ -164,7 +176,7 @@ void Editor::ShowObjectMenu(POINT point) {
     AppendMenuW(menu, MF_STRING, ID_ADD_CUBE, L"Create 3D / Cube");
     AppendMenuW(menu, MF_STRING, ID_ADD_SPRITE, L"Create 2D / World quad");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    const UINT availability = selectedIndices.empty() ? MF_GRAYED : 0;
+    const UINT availability = vSelectedIndices.empty() ? MF_GRAYED : 0;
     AppendMenuW(menu, MF_STRING | availability, ID_FRAME_SELECTION, L"Frame selection\tF");
     AppendMenuW(menu, MF_STRING | availability, ID_DUPLICATE, L"Duplicate\tCtrl+D");
     AppendMenuW(menu, MF_STRING | availability, ID_DELETE, L"Delete selection");
@@ -175,8 +187,8 @@ void Editor::ShowObjectMenu(POINT point) {
 
 void Editor::ShowComponentMenu(POINT point) {
     if (point.x == -1 && point.y == -1) GetCursorPos(&point);
-    if (selected < 0 || static_cast<size_t>(selected) >= scene.entities.size()) return;
-    auto& entity = scene.entities[selected];
+    if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.entities.size()) return;
+    auto& entity = scene.entities[nSelected];
     const int selectedRow = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
     const int offset = entity.renderer == Entity::RendererKind::None ? 0 : 1;
     const int componentIndex = selectedRow - offset;
@@ -194,7 +206,7 @@ void Editor::ShowComponentMenu(POINT point) {
 }
 
 void Editor::RefreshTransport() {
-    theme::SetButtonIcon(controls[9], playing ? theme::Icon::STOP : theme::Icon::PLAY);
+    theme::SetButtonIcon(controls[9], bPlaying ? theme::Icon::STOP : theme::Icon::PLAY);
     for (HWND button : {controls[9], pauseButton, stepButton})
         InvalidateRect(button, nullptr, FALSE);
     // The toolbar tints blue while playing, as a clear Play Mode cue.
@@ -209,13 +221,13 @@ void Editor::RefreshTransport() {
 }
 
 void Editor::TogglePlay() {
-    if (!playing) {
+    if (!bPlaying) {
         if (!Apply()) return;
         editSceneSnapshot = scene;
         editCameraSnapshot = camera;
-        playing = true;
-        paused = stepRequested = false;
-        playTick = GetTickCount64();
+        bPlaying = true;
+        bPaused = bStepRequested = false;
+        nPlayTick = GetTickCount64();
         Time::Reset();
         SetWindowTextW(controls[9], L"Stop");
         renderer.SetCamera(ActiveGameCamera(scene));
@@ -223,19 +235,19 @@ void Editor::TogglePlay() {
         EngineEvents::Get().onEnterPlayMode.Broadcast(scene);
         SelectViewTab(true);
     } else {
-        playing = false;
-        paused = stepRequested = false;
+        bPlaying = false;
+        bPaused = bStepRequested = false;
         EngineEvents::Get().onExitPlayMode.Broadcast(scene);
         scene = std::move(editSceneSnapshot);
         camera = editCameraSnapshot;
-        playTick = 0;
+        nPlayTick = 0;
         SetWindowTextW(controls[9], L"Play");
         renderer.SetCamera(camera);
-        selectedIndices.erase(
-            std::remove_if(selectedIndices.begin(), selectedIndices.end(),
+        vSelectedIndices.erase(
+            std::remove_if(vSelectedIndices.begin(), vSelectedIndices.end(),
                            [&](int index) { return index < 0 || static_cast<size_t>(index) >= scene.entities.size(); }),
-            selectedIndices.end());
-        selected = selectedIndices.empty() ? -1 : selectedIndices.back();
+            vSelectedIndices.end());
+        nSelected = vSelectedIndices.empty() ? -1 : vSelectedIndices.back();
         Populate();
         SelectViewTab(false);
         SetStatus(L"Play Mode stopped. Runtime changes were discarded.");
@@ -244,23 +256,23 @@ void Editor::TogglePlay() {
 }
 
 void Editor::TogglePause() {
-    paused = !paused;
-    stepRequested = false;
-    playTick = GetTickCount64();
-    EngineEvents::Get().onPauseChanged.Broadcast(paused);
-    SetStatus(paused ? L"Paused. Step advances one frame."
-                     : (playing ? L"PLAY MODE resumed." : L"Pause armed: Play starts paused."));
+    bPaused = !bPaused;
+    bStepRequested = false;
+    nPlayTick = GetTickCount64();
+    EngineEvents::Get().onPauseChanged.Broadcast(bPaused);
+    SetStatus(bPaused ? L"Paused. Step advances one frame."
+                     : (bPlaying ? L"PLAY MODE resumed." : L"Pause armed: Play starts paused."));
     RefreshTransport();
 }
 
 void Editor::StepFrame() {
-    if (!playing) TogglePlay();
-    if (!playing) return;
-    if (!paused) {
-        paused = true;
+    if (!bPlaying) TogglePlay();
+    if (!bPlaying) return;
+    if (!bPaused) {
+        bPaused = true;
         EngineEvents::Get().onPauseChanged.Broadcast(true);
     }
-    stepRequested = true;
+    bStepRequested = true;
     SetStatus(L"Stepped one frame.");
     RefreshTransport();
 }
@@ -286,12 +298,12 @@ void Editor::UpdateGraphicsBadge() {
 }
 
 void Editor::AttachToSelection(const std::string& name) {
-    if (selectedIndices.size() != 1 || selected < 0 || static_cast<size_t>(selected) >= scene.entities.size()) {
+    if (vSelectedIndices.size() != 1 || nSelected < 0 || static_cast<size_t>(nSelected) >= scene.entities.size()) {
         Error(window, "Select exactly one GameObject to add a component.");
         return;
     }
     std::string error;
-    if (!AttachComponent(scene.entities[selected], name, error)) {
+    if (!AttachComponent(scene.entities[nSelected], name, error)) {
         Error(window, error);
         return;
     }
@@ -308,7 +320,7 @@ void Editor::LoadSettings() {
 }
 
 bool Editor::SwitchProject(const std::filesystem::path& descriptor) {
-    if (playing) TogglePlay();
+    if (bPlaying) TogglePlay();
     std::filesystem::path root;
     std::string error;
     if (!LoadProjectDescriptor(descriptor, root, error)) {
@@ -326,16 +338,16 @@ bool Editor::SwitchProject(const std::filesystem::path& descriptor) {
         return false;
     }
     renderer.Shutdown();
-    rendererReady = false;
+    bRendererReady = false;
     if (projectPanel) DestroyWindow(projectPanel);
     projectRoot = root;
     projectFile = descriptor;
     scene = std::move(loaded);
     LoadSettings();
     projectPanel = CreateProjectPanel(panels[3].window, instance, projectRoot, base);
-    selected = scene.entities.empty() ? -1 : 0;
-    selectedIndices = selected < 0 ? std::vector<int>{} : std::vector<int>{selected};
-    sceneProtected = false;
+    nSelected = scene.entities.empty() ? -1 : 0;
+    vSelectedIndices = nSelected < 0 ? std::vector<int>{} : std::vector<int>{nSelected};
+    bSceneProtected = false;
     Populate();
     Layout();
     const auto title = L"DxStudio  —  " + projectFile.stem().wstring();
@@ -439,7 +451,7 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
 
 bool Editor::InitRenderer() {
     renderer.Shutdown();
-    rendererReady = false;
+    bRendererReady = false;
     RECT r{};
     GetClientRect(viewport, &r);
     std::string error, report;
@@ -455,7 +467,7 @@ bool Editor::InitRenderer() {
         Debug::LogWarning(std::string(GraphicsApiDisplayName(projectSettings.graphicsApi)) + " is unavailable; using " +
                           GraphicsApiDisplayName(renderer.Api()) + ".\n" + report);
     renderer.SetCamera(camera);
-    rendererReady = true;
+    bRendererReady = true;
     SetStatus(L"RMB + WASD/QE: fly | Alt + RMB: orbit | MMB: pan | Shift + gizmo: snap");
     UpdateGraphicsBadge();
     EngineEvents::Get().onGraphicsApiChanged.Broadcast(renderer.Api());
@@ -464,26 +476,27 @@ bool Editor::InitRenderer() {
 
 void Editor::Draw() {
     TickCamera();
-    if (!rendererReady || IsIconic(window) || !IsWindowVisible(viewport) || IsIconic(panels[1].window)) return;
-    if (playing) {
+    if (!bRendererReady || IsIconic(window) || !IsWindowVisible(viewport) || IsIconic(panels[1].window)) return;
+    if (bPlaying) {
         const ULONGLONG now = GetTickCount64();
-        float dt = std::clamp(static_cast<float>(now - playTick) / 1000.0f, 0.0f, 0.1f);
-        playTick = now;
+        float dt = std::clamp(static_cast<float>(now - nPlayTick) / 1000.0f, 0.0f, 0.1f);
+        nPlayTick = now;
         // Paused: the scene is frozen; Step advances exactly one 1/60 s frame.
-        if (!paused || stepRequested) {
-            if (stepRequested) dt = 1.0f / 60.0f;
-            stepRequested = false;
+        if (!bPaused || bStepRequested) {
+            if (bStepRequested) dt = 1.0f / 60.0f;
+            bStepRequested = false;
             UpdateUserComponents(scene, dt);
             RefreshComponentFields();
         }
     }
-    renderer.SetCamera(playing || gameView ? ActiveGameCamera(scene) : camera);
+    renderer.SetCamera(bPlaying || bGameView ? ActiveGameCamera(scene) : camera);
+    renderer.SetDrawMode(drawMode);
     auto items = ResolveWorldDraws(scene);
     std::string error;
-    renderer.SetSelection(gameView ? std::vector<int>{} : selectedIndices);
-    const bool rendered = gameView ? renderer.Render(items, error) : renderer.Render(items, error, selected, true, gizmoMode, true);
+    renderer.SetSelection(bGameView ? std::vector<int>{} : vSelectedIndices);
+    const bool rendered = bGameView ? renderer.Render(items, error) : renderer.Render(items, error, nSelected, true, gizmoMode, true);
     if (!rendered) {
-        rendererReady = false;
+        bRendererReady = false;
         Error(window, "Rendering failed: " + error);
         SetStatus(L"Rendering stopped. Select Reload Shader to retry.");
     }
@@ -491,16 +504,16 @@ void Editor::Draw() {
 }
 
 void Editor::UpdateFrameStats() {
-    ++fpsFrames;
+    ++nFpsFrames;
     const ULONGLONG now = GetTickCount64();
-    if (!fpsTick) fpsTick = now;
-    if (now - fpsTick < 500) return;
-    const double fps = fpsFrames * 1000.0 / static_cast<double>(now - fpsTick);
-    fpsFrames = 0;
-    fpsTick = now;
+    if (!nFpsTick) nFpsTick = now;
+    if (now - nFpsTick < 500) return;
+    const double fps = nFpsFrames * 1000.0 / static_cast<double>(now - nFpsTick);
+    nFpsFrames = 0;
+    nFpsTick = now;
     wchar_t text[128];
     swprintf_s(text, L"%hs   |   %.0f FPS   |   %ls", GraphicsApiDisplayName(renderer.Api()), fps,
-               playing ? (paused ? L"Paused" : L"Playing") : L"Edit Mode");
+               bPlaying ? (bPaused ? L"Paused" : L"Playing") : L"Edit Mode");
     SetWindowTextW(statusRight, text);
 }
 
@@ -509,7 +522,7 @@ void Editor::Command(int id, int notification) {
         TogglePlay();
         return;
     }
-    if (playing && (id == ID_SAVE || id == ID_LOAD || id == ID_OPEN_PROJECT || id == ID_SAVE_PROJECT_AS || id == ID_EXPORT ||
+    if (bPlaying && (id == ID_SAVE || id == ID_LOAD || id == ID_OPEN_PROJECT || id == ID_SAVE_PROJECT_AS || id == ID_EXPORT ||
                     id == ID_BUILD_ANDROID || id == ID_RELOAD_SHADER)) {
         Error(window, "Stop Play Mode before saving, loading, switching, exporting, building, or reloading the shader.");
         return;
@@ -584,10 +597,10 @@ void Editor::Command(int id, int notification) {
         std::vector<int> rows(count > 0 ? count : 0), next;
         if (count > 0) SendMessageW(hierarchy, LB_GETSELITEMS, count, reinterpret_cast<LPARAM>(rows.data()));
         for (const int row : rows)
-            if (row >= 0 && static_cast<size_t>(row) < hierarchyRows.size()) next.push_back(hierarchyRows[row]);
+            if (row >= 0 && static_cast<size_t>(row) < vHierarchyRows.size()) next.push_back(vHierarchyRows[row]);
         const int caretRow = static_cast<int>(SendMessageW(hierarchy, LB_GETCARETINDEX, 0, 0));
         const int caret =
-            caretRow >= 0 && static_cast<size_t>(caretRow) < hierarchyRows.size() ? hierarchyRows[caretRow] : -1;
+            caretRow >= 0 && static_cast<size_t>(caretRow) < vHierarchyRows.size() ? vHierarchyRows[caretRow] : -1;
         if (!Apply()) {
             SyncHierarchy();
             return;
@@ -600,11 +613,11 @@ void Editor::Command(int id, int notification) {
         return;
     }
     if (id == ID_INSPECTOR_ENABLED && notification == BN_CLICKED) {
-        if (selected >= 0 && static_cast<size_t>(selected) < scene.entities.size() && selectedIndices.size() == 1) {
-            inspectorEnabledChecked = !inspectorEnabledChecked;
+        if (nSelected >= 0 && static_cast<size_t>(nSelected) < scene.entities.size() && vSelectedIndices.size() == 1) {
+            bInspectorEnabledChecked = !bInspectorEnabledChecked;
             InvalidateRect(inspectorEnabled, nullptr, FALSE);
-            scene.entities[selected].draw.visible = inspectorEnabledChecked;
-            SetStatus(scene.entities[selected].draw.visible ? L"GameObject enabled."
+            scene.entities[nSelected].draw.visible = bInspectorEnabledChecked;
+            SetStatus(scene.entities[nSelected].draw.visible ? L"GameObject enabled."
                                                             : L"GameObject disabled. It remains in the hierarchy.");
             InvalidateRect(viewport, nullptr, FALSE);
         }
@@ -616,8 +629,8 @@ void Editor::Command(int id, int notification) {
     }
     if (id == ID_COMPONENT_FIELDS && notification == LBN_SELCHANGE) {
         const int index = static_cast<int>(SendMessageW(componentFields, LB_GETCURSEL, 0, 0));
-        if (index >= 0 && static_cast<size_t>(index) < inspectedComponentFields.size())
-            SetWindowTextW(componentValue, Wide(inspectedComponentFields[index].second).c_str());
+        if (index >= 0 && static_cast<size_t>(index) < vInspectedComponentFields.size())
+            SetWindowTextW(componentValue, Wide(vInspectedComponentFields[index].second).c_str());
         return;
     }
     if (notification != BN_CLICKED) return;
@@ -628,17 +641,17 @@ void Editor::Command(int id, int notification) {
         return;
     }
     if (id == ID_APPLY_COMPONENT_VALUE) {
-        if (selected < 0 || static_cast<size_t>(selected) >= scene.entities.size()) return;
-        auto& entity = scene.entities[selected];
+        if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.entities.size()) return;
+        auto& entity = scene.entities[nSelected];
         const int listIndex = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
         const int fieldIndex = static_cast<int>(SendMessageW(componentFields, LB_GETCURSEL, 0, 0));
         const int componentIndex = listIndex - (entity.renderer == Entity::RendererKind::None ? 0 : 1);
-        if (componentIndex < 0 || fieldIndex < 0 || static_cast<size_t>(fieldIndex) >= inspectedComponentFields.size()) {
+        if (componentIndex < 0 || fieldIndex < 0 || static_cast<size_t>(fieldIndex) >= vInspectedComponentFields.size()) {
             Error(window, "Select a component field first.");
             return;
         }
         std::string error;
-        if (!SetComponentEditorValue(entity, static_cast<size_t>(componentIndex), inspectedComponentFields[fieldIndex].first,
+        if (!SetComponentEditorValue(entity, static_cast<size_t>(componentIndex), vInspectedComponentFields[fieldIndex].first,
                                      Utf8(Text(componentValue)), error))
             Error(window, error);
         else {
@@ -647,7 +660,7 @@ void Editor::Command(int id, int notification) {
         }
         return;
     }
-    if (id == ID_ADD_COMPONENT && selected >= 0 && static_cast<size_t>(selected) < scene.entities.size()) {
+    if (id == ID_ADD_COMPONENT && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.entities.size()) {
         if (!Apply()) return;
         int choice = static_cast<int>(SendMessageW(componentChoice, CB_GETCURSEL, 0, 0));
         if (choice == CB_ERR) {
@@ -660,7 +673,7 @@ void Editor::Command(int id, int notification) {
         value.resize(length);
         auto name = Utf8(value);
         if (name == "PolygonRenderer" || name == "ModelRenderer" || name == "Image") {
-            auto& entity = scene.entities[selected];
+            auto& entity = scene.entities[nSelected];
             entity.renderer = name == "PolygonRenderer" ? Entity::RendererKind::Polygon
                               : name == "ModelRenderer" ? Entity::RendererKind::Model
                                                         : Entity::RendererKind::Image;
@@ -673,28 +686,28 @@ void Editor::Command(int id, int notification) {
             SetStatus(L"IRender component attached at compile-time-known renderer type.");
             return;
         }
-        auto& components = scene.entities[selected].components;
+        auto& components = scene.entities[nSelected].components;
         std::string attachError;
-        if (!AttachComponent(scene.entities[selected], name, attachError)) {
+        if (!AttachComponent(scene.entities[nSelected], name, attachError)) {
             Error(window, attachError);
             return;
         }
         Inspect();
         SendMessageW(componentList, LB_SETCURSEL,
                      static_cast<WPARAM>(components.size() - 1 +
-                                         (scene.entities[selected].renderer == Entity::RendererKind::None ? 0 : 1)),
+                                         (scene.entities[nSelected].renderer == Entity::RendererKind::None ? 0 : 1)),
                      0);
         RefreshComponentFields();
         SetStatus(L"Component attached. Save or export to keep it.");
-    } else if (id == ID_REMOVE_COMPONENT && selected >= 0 && static_cast<size_t>(selected) < scene.entities.size()) {
+    } else if (id == ID_REMOVE_COMPONENT && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.entities.size()) {
         int index = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
         if (index == LB_ERR) {
             Error(window, "Select an attached component to remove.");
             return;
         }
         if (!Apply()) return;
-        auto& components = scene.entities[selected].components;
-        auto& entity = scene.entities[selected];
+        auto& components = scene.entities[nSelected].components;
+        auto& entity = scene.entities[nSelected];
         const int rendererOffset = entity.renderer == Entity::RendererKind::None ? 0 : 1;
         if (index == 0 && rendererOffset) {
             entity.renderer = Entity::RendererKind::None;
@@ -706,9 +719,9 @@ void Editor::Command(int id, int notification) {
         }
         Inspect();
         SetStatus(L"Component detached. Its serialized Inspector values were removed.");
-    } else if ((id == ID_MOVE_COMPONENT_UP || id == ID_MOVE_COMPONENT_DOWN) && selected >= 0 &&
-               static_cast<size_t>(selected) < scene.entities.size()) {
-        auto& entity = scene.entities[selected];
+    } else if ((id == ID_MOVE_COMPONENT_UP || id == ID_MOVE_COMPONENT_DOWN) && nSelected >= 0 &&
+               static_cast<size_t>(nSelected) < scene.entities.size()) {
+        auto& entity = scene.entities[nSelected];
         const int offset = entity.renderer == Entity::RendererKind::None ? 0 : 1;
         const int row = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
         int index = row - offset;
@@ -738,8 +751,8 @@ void Editor::Command(int id, int notification) {
         entity.draw.color =
             id == ID_ADD_CUBE ? DirectX::XMFLOAT4{0.35f, 0.68f, 1.f, 1.f} : DirectX::XMFLOAT4{1.f, 0.62f, 0.28f, 1.f};
         scene.entities.push_back(entity);
-        selected = static_cast<int>(scene.entities.size()) - 1;
-        selectedIndices = {selected};
+        nSelected = static_cast<int>(scene.entities.size()) - 1;
+        vSelectedIndices = {nSelected};
         Populate();
         SetStatus(L"Object added. Save the scene to keep it.");
     } else if (id == ID_ADD_MODEL) {
@@ -761,15 +774,15 @@ void Editor::Command(int id, int notification) {
         const auto relative = std::filesystem::relative(destination, projectRoot, ec).generic_u8string();
         entity.modelAsset.assign(reinterpret_cast<const char*>(relative.data()), relative.size());
         scene.entities.push_back(std::move(entity));
-        selected = static_cast<int>(scene.entities.size()) - 1;
-        selectedIndices = {selected};
+        nSelected = static_cast<int>(scene.entities.size()) - 1;
+        vSelectedIndices = {nSelected};
         Populate();
         SetStatus(L"Model placed from project/Assets/Models. ASCII FBX and text X are supported.");
-    } else if (id == ID_DUPLICATE && !selectedIndices.empty()) {
+    } else if (id == ID_DUPLICATE && !vSelectedIndices.empty()) {
         if (!Apply()) return;
         std::vector<int> duplicates;
-        duplicates.reserve(selectedIndices.size());
-        for (int source : selectedIndices)
+        duplicates.reserve(vSelectedIndices.size());
+        for (int source : vSelectedIndices)
             if (source >= 0 && static_cast<size_t>(source) < scene.entities.size()) {
                 Entity copy = scene.entities[static_cast<size_t>(source)];
                 copy.name += " (Clone)";
@@ -777,16 +790,16 @@ void Editor::Command(int id, int notification) {
                 duplicates.push_back(static_cast<int>(scene.entities.size()) - 1);
             }
         if (!duplicates.empty()) {
-            selectedIndices = duplicates;
-            selected = duplicates.back();
+            vSelectedIndices = duplicates;
+            nSelected = duplicates.back();
             Populate();
             SetStatus(L"Selection duplicated. Ctrl+D repeats this action.");
         }
-    } else if (id == ID_DELETE && selected >= 0 && selected < static_cast<int>(scene.entities.size())) {
-        if (selectedIndices.size() > 1 && MessageBoxW(window, L"Remove all selected objects from the scene?",
+    } else if (id == ID_DELETE && nSelected >= 0 && nSelected < static_cast<int>(scene.entities.size())) {
+        if (vSelectedIndices.size() > 1 && MessageBoxW(window, L"Remove all selected objects from the scene?",
                                                       L"Delete objects", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
             return;
-        for (auto it = selectedIndices.rbegin(); it != selectedIndices.rend(); ++it) {
+        for (auto it = vSelectedIndices.rbegin(); it != vSelectedIndices.rend(); ++it) {
             const int removed = *it;
             scene.entities.erase(scene.entities.begin() + removed);
             for (auto& entity : scene.entities) {
@@ -796,14 +809,14 @@ void Editor::Command(int id, int notification) {
                     --entity.parent;
             }
         }
-        selectedIndices.clear();
-        selected = -1;
+        vSelectedIndices.clear();
+        nSelected = -1;
         Populate();
         SetStatus(L"Selected objects removed. Save to keep changes.");
     } else if (id == ID_APPLY) {
         Apply();
     } else if (id == ID_SAVE) {
-        if (sceneProtected) {
+        if (bSceneProtected) {
             Error(window, "The existing scene could not be loaded. Fix it and use Load before saving.");
             return;
         }
@@ -823,14 +836,14 @@ void Editor::Command(int id, int notification) {
             renderer.SetCamera(camera);
             for (auto button : projectionButtons)
                 InvalidateRect(button, nullptr, TRUE);
-            sceneProtected = false;
-            selected = scene.entities.empty() ? -1 : 0;
-            selectedIndices = selected < 0 ? std::vector<int>{} : std::vector<int>{selected};
+            bSceneProtected = false;
+            nSelected = scene.entities.empty() ? -1 : 0;
+            vSelectedIndices = nSelected < 0 ? std::vector<int>{} : std::vector<int>{nSelected};
             Populate();
             SetStatus(L"Scene loaded.");
         }
     } else if (id == ID_EXPORT) {
-        if (sceneProtected) {
+        if (bSceneProtected) {
             Error(window, "The existing scene could not be loaded. Fix it and use Load before exporting.");
             return;
         }

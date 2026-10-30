@@ -53,6 +53,14 @@ void Editor::ApplyTheme() {
     theme::ApplyDarkInput(componentChoice);
     for (HWND edit : edits)
         if (edit) SendMessageW(edit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(2, 2));
+    // Unity: drag a field's label left/right to scrub its value.
+    for (int field = 2; field < FIELD_COUNT; ++field) {
+        if (!labels[field]) continue;
+        SetWindowLongPtrW(labels[field], GWL_STYLE, GetWindowLongPtrW(labels[field], GWL_STYLE) | SS_NOTIFY);
+        SetWindowSubclass(labels[field], LabelDragSubclassProc, static_cast<UINT_PTR>(field), reinterpret_cast<DWORD_PTR>(this));
+    }
+    AddTooltip(drawModeButton, L"Scene draw mode");
+    AddTooltip(aspectButton, L"Game view aspect ratio");
     AddTooltip(controls[9], L"Play (Ctrl+P)");
     AddTooltip(pauseButton, L"Pause (Ctrl+Shift+P)");
     AddTooltip(stepButton, L"Step one frame (Ctrl+Alt+P)");
@@ -123,22 +131,22 @@ void Editor::DrawHierarchyRow(const DRAWITEMSTRUCT& item) {
     HDC dc = item.hDC;
     const RECT rect = item.rcItem;
     const int row = static_cast<int>(item.itemID);
-    if (row < 0 || static_cast<size_t>(row) >= hierarchyRows.size()) {
+    if (row < 0 || static_cast<size_t>(row) >= vHierarchyRows.size()) {
         theme::Fill(dc, rect, theme::COLOR_PANEL);
         return;
     }
-    const int entityIndex = hierarchyRows[row];
+    const int entityIndex = vHierarchyRows[row];
     const auto& entity = scene.entities[entityIndex];
     const bool selectedRow = (item.itemState & ODS_SELECTED) != 0;
     const bool focused = GetFocus() == hierarchy;
-    const bool hot = row == hierarchyHot;
+    const bool hot = row == nHierarchyHot;
     theme::Fill(dc, rect, selectedRow ? (focused ? theme::COLOR_SELECTION : theme::COLOR_SELECTION_INACTIVE)
                                       : hot ? theme::COLOR_ROW_HOVER : theme::COLOR_PANEL);
-    if (hot && hierarchyDragging && entityIndex != hierarchyDrag) theme::Frame(dc, rect, theme::COLOR_TAB_ACCENT); // drop target
+    if (hot && bHierarchyDragging && entityIndex != nHierarchyDrag) theme::Frame(dc, rect, theme::COLOR_TAB_ACCENT); // drop target
     const int mid = (rect.top + rect.bottom) / 2;
-    int x = rect.left + 6 + hierarchyDepths[row] * 14;
-    if (hierarchyHasChildren[row]) {
-        const bool collapsed = entityIndex < static_cast<int>(collapsedEntities.size()) && collapsedEntities[entityIndex];
+    int x = rect.left + 6 + vHierarchyDepths[row] * 14;
+    if (vHierarchyHasChildren[row]) {
+        const bool collapsed = entityIndex < static_cast<int>(vCollapsedEntities.size()) && vCollapsedEntities[entityIndex];
         RECT chevron{x, mid - 6, x + 12, mid + 6};
         theme::DrawIcon(dc, collapsed ? theme::Icon::CHEVRON_RIGHT : theme::Icon::CHEVRON_DOWN, chevron,
                         theme::COLOR_TEXT_DIM);
@@ -186,8 +194,8 @@ void Editor::DrawFieldRow(const DRAWITEMSTRUCT& item) {
     const RECT rect = item.rcItem;
     const bool selectedRow = (item.itemState & ODS_SELECTED) != 0;
     theme::Fill(dc, rect, selectedRow ? theme::Blend(theme::COLOR_PANEL, theme::COLOR_SELECTION, 0.55f) : theme::COLOR_PANEL);
-    if (item.itemID == static_cast<UINT>(-1) || item.itemID >= inspectedComponentFields.size()) return;
-    const auto& [name, value] = inspectedComponentFields[item.itemID];
+    if (item.itemID == static_cast<UINT>(-1) || item.itemID >= vInspectedComponentFields.size()) return;
+    const auto& [name, value] = vInspectedComponentFields[item.itemID];
     const int split = rect.left + std::max(70, static_cast<int>(rect.right - rect.left) * 2 / 5);
     RECT nameRect{rect.left + 8, rect.top, split - 4, rect.bottom};
     theme::DrawLabel(dc, Wide(name), nameRect, theme::COLOR_TEXT, theme::GetFonts().hRegular,
@@ -212,9 +220,9 @@ void Editor::DrawInspectorStatic(const DRAWITEMSTRUCT& item) {
     RECT rect = item.rcItem;
     theme::Fill(dc, rect, theme::COLOR_PANEL);
     if (item.hwndItem == inspectorIcon) {
-        const bool valid = selected >= 0 && static_cast<size_t>(selected) < scene.entities.size();
+        const bool valid = nSelected >= 0 && static_cast<size_t>(nSelected) < scene.entities.size();
         const auto icon =
-            valid && selectedIndices.size() == 1 ? EntityIcon(scene.entities[selected]) : theme::Icon::GAME_OBJECT;
+            valid && vSelectedIndices.size() == 1 ? EntityIcon(scene.entities[nSelected]) : theme::Icon::GAME_OBJECT;
         theme::DrawIcon(dc, icon, rect, valid ? theme::COLOR_ICON_CUBE : theme::COLOR_TEXT_DISABLED);
         return;
     }
@@ -261,6 +269,17 @@ void Editor::CreatePanels() {
         viewTabs[t] = Make(L"BUTTON", viewNames[t], BS_OWNERDRAW, ID_VIEW_TAB_FIRST + t);
         SetParent(viewTabs[t], panels[1].window);
         theme::SetButtonSpec(viewTabs[t], {theme::ButtonRole::TAB, viewIcons[t]});
+    }
+    {
+        drawModeButton = Make(L"BUTTON", DRAW_MODE_NAMES[0], BS_OWNERDRAW, ID_DRAW_MODE_MENU);
+        aspectButton = Make(L"BUTTON", ASPECT_NAMES[0], BS_OWNERDRAW, ID_ASPECT_MENU);
+        theme::ButtonSpec dropdown{theme::ButtonRole::DROPDOWN, theme::Icon::RENDERER};
+        dropdown.background = theme::COLOR_TAB_ACTIVE;
+        SetParent(drawModeButton, panels[1].window);
+        theme::SetButtonSpec(drawModeButton, dropdown);
+        dropdown.icon = theme::Icon::CAMERA;
+        SetParent(aspectButton, panels[1].window);
+        theme::SetButtonSpec(aspectButton, dropdown);
     }
     for (int t = 0; t < BOTTOM_TAB_COUNT; ++t) {
         bottomTabs[t] = Make(L"BUTTON", BOTTOM_TAB_NAMES[t], BS_OWNERDRAW, ID_PANEL_TAB_FIRST + t);
@@ -367,10 +386,27 @@ void Editor::UpdateMenuChecks() {
                                                             : ID_GRAPHICS_D3D9;
     for (HMENU menu : menuPopups) {
         CheckMenuRadioItem(menu, ID_GRAPHICS_D3D12, ID_GRAPHICS_D3D9, apiCommand, MF_BYCOMMAND);
-        EnableMenuItem(menu, ID_PAUSE, MF_BYCOMMAND | (playing ? MF_ENABLED : MF_GRAYED));
-        CheckMenuItem(menu, ID_PAUSE, MF_BYCOMMAND | (paused ? MF_CHECKED : MF_UNCHECKED));
-        CheckMenuItem(menu, ID_BUILD_DEBUG, MF_BYCOMMAND | (playing ? MF_CHECKED : MF_UNCHECKED));
+        EnableMenuItem(menu, ID_PAUSE, MF_BYCOMMAND | (bPlaying ? MF_ENABLED : MF_GRAYED));
+        CheckMenuItem(menu, ID_PAUSE, MF_BYCOMMAND | (bPaused ? MF_CHECKED : MF_UNCHECKED));
+        CheckMenuItem(menu, ID_BUILD_DEBUG, MF_BYCOMMAND | (bPlaying ? MF_CHECKED : MF_UNCHECKED));
     }
+}
+
+// Scene "Shaded" and Game "Free Aspect" dropdowns of the view toolbar.
+void Editor::ShowViewDropdown(int id) {
+    const bool drawModes = id == ID_DRAW_MODE_MENU;
+    HWND button = drawModes ? drawModeButton : aspectButton;
+    RECT r{};
+    GetWindowRect(button, &r);
+    HMENU menu = CreatePopupMenu();
+    const int count = drawModes ? 3 : ASPECT_COUNT;
+    for (int i = 0; i < count; ++i)
+        AppendMenuW(menu, MF_STRING, (drawModes ? ID_DRAW_MODE_FIRST : ID_ASPECT_FIRST) + i, drawModes ? DRAW_MODE_NAMES[i] : ASPECT_NAMES[i]);
+    const int first = drawModes ? ID_DRAW_MODE_FIRST : ID_ASPECT_FIRST;
+    CheckMenuRadioItem(menu, first, first + count - 1, first + (drawModes ? static_cast<int>(drawMode) : nGameAspect), MF_BYCOMMAND);
+    const int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN, r.left, r.bottom, 0, window, nullptr);
+    DestroyMenu(menu);
+    if (command) SendMessageW(window, WM_COMMAND, MAKEWPARAM(command, BN_CLICKED), 0);
 }
 
 void Editor::ShowToolbarDropdown(int id) {

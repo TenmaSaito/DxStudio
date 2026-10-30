@@ -111,7 +111,8 @@ public:
     }
 
     void SetPipeline(PipelineKind kind) override {
-        const bool bScene = kind == PipelineKind::SCENE;
+        const bool bScene = kind == PipelineKind::SCENE || kind == PipelineKind::SCENE_WIREFRAME;
+        m_pContext->RSSetState(kind == PipelineKind::SCENE_WIREFRAME ? m_pWireframeRasterizer.Get() : m_pRasterizer.Get());
         m_pContext->VSSetShader(bScene ? m_pSceneVertexShader.Get() : m_pOverlayVertexShader.Get(), nullptr, 0);
         m_pContext->PSSetShader(bScene ? m_pScenePixelShader.Get() : m_pOverlayPixelShader.Get(), nullptr, 0);
         ID3D11DepthStencilState* pDepth = bScene ? m_pDepthScene.Get() : kind == PipelineKind::GRID ? m_pDepthGrid.Get()
@@ -148,6 +149,7 @@ public:
         m_pOverlayVertexShader.Reset();
         m_pOverlayPixelShader.Reset();
         m_pRasterizer.Reset();
+        m_pWireframeRasterizer.Reset();
         m_pDepthScene.Reset();
         m_pDepthGrid.Reset();
         m_pDepthOverlay.Reset();
@@ -214,6 +216,9 @@ private:
         raster.DepthClipEnable = TRUE;
         HRESULT hr = m_pDevice->CreateRasterizerState(&raster, &m_pRasterizer);
         if (FAILED(hr)) return Fail(error, "Create rasterizer state failed", hr);
+        raster.FillMode = D3D11_FILL_WIREFRAME;
+        hr = m_pDevice->CreateRasterizerState(&raster, &m_pWireframeRasterizer);
+        if (FAILED(hr)) return Fail(error, "Create wireframe rasterizer state failed", hr);
         D3D11_DEPTH_STENCIL_DESC depth{};
         depth.DepthEnable = TRUE;
         depth.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
@@ -262,6 +267,7 @@ private:
     ComPtr<ID3D11PixelShader> m_pOverlayPixelShader;
     ComPtr<ID3D11InputLayout> m_pInputLayout;
     ComPtr<ID3D11RasterizerState> m_pRasterizer;
+    ComPtr<ID3D11RasterizerState> m_pWireframeRasterizer;
     ComPtr<ID3D11DepthStencilState> m_pDepthScene;
     ComPtr<ID3D11DepthStencilState> m_pDepthGrid;
     ComPtr<ID3D11DepthStencilState> m_pDepthOverlay;

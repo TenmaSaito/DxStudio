@@ -36,7 +36,8 @@ struct Vertex {
 
 // Fixed render state combinations used by the renderer.
 enum class PipelineKind : unsigned char {
-    SCENE,   // triangles, project shader, depth test + write
+    SCENE,           // triangles, project shader, depth test + write
+    SCENE_WIREFRAME, // SCENE rasterized as wireframe (Scene view draw mode)
     GRID,    // lines, built-in shader, depth test, no depth write
     OVERLAY, // lines, built-in shader, no depth test (outlines, gizmos, marquee)
 };

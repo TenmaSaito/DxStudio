@@ -18,6 +18,10 @@ DxStudio のエディターUIが、Unity 2022 LTS（Dark スキン）と Unreal 
 | --- | --- | --- |
 | ![Scene](images/editor-scene.png) | ![Game](images/editor-game.png) | ![DX9](images/editor-dx9.png) |
 
+| Shaded Wireframe 表示（タブを切り離して戻した後） | Game ビューを 4:3 に固定（上下左右に黒帯） |
+| --- | --- |
+| ![Wireframe](images/editor-wireframe.png) | ![Game 4:3](images/editor-game-4x3.png) |
+
 ## 配色（`src/EditorTheme.h`）
 
 | 要素 | Unity 2022 Dark | DxStudio のトークン | 値 |
@@ -53,6 +57,10 @@ DxStudio のエディターUIが、Unity 2022 LTS（Dark スキン）と Unreal 
 | Scene | ツールのオーバーレイ（Move / Rotate / Scale） | アイコンのツール切り替え（W / E / R） | `gizmoButtons` |
 | Scene | 向きギズモ（右上の X / Y / Z） | 右上に X / Y / Z 軸と文字を描画（奥向きの軸は暗く） | `Renderer.cpp` 手順7 |
 | Scene / Game | `Scene` と `Game` のタブ。Play で Game に移る | 同じ動作。Game ではオーバーレイなし、カメラ操作なし | `SelectViewTab` |
+| Scene | 描画モードの切り替え（Shaded / Wireframe / Shaded Wireframe） | 同じ3モード。DX12 / 11 / 9 の各バックエンドにワイヤーフレーム用のパイプラインを追加 | `SetDrawMode` / `PipelineKind::SCENE_WIREFRAME` |
+| Game | 縦横比の指定（Free Aspect / 16:9 / 16:10 / 4:3 / 1:1） | 同じ選択肢。周囲に黒帯を付けて縦横比を固定 | `SetGameAspect` |
+| Inspector | 数値ラベルのドラッグで値を変える | X / Y / Z / R / G / B / A のラベルを左右にドラッグ（Shift で10倍、Alt で0.1倍） | `LabelDragSubclassProc` |
+| ドック | タブを引き出して分離、戻して再ドッキング | タブ見出しをドラッグするとフローティングになり、そのまま移動。エディターの上で離すと元の位置に戻る（Ctrl を押しながら離すとフローティングのまま） | `PanelProc` の `WM_MOUSEMOVE` / `WM_EXITSIZEMOVE` |
 | Inspector | アイコン、有効チェック、名前、Tag / Layer の欄 | 同じ並び（チェックボックスは自前描画） | `DrawInspectorStatic` |
 | Inspector | コンポーネント見出し（▼、アイコン、太字、⋮） | `ButtonRole::HEADER` | `theme::DrawButton` |
 | Inspector | （UE）X / Y / Z 入力欄の色付きバー | 各入力欄の左に軸色のバー | `PanelProc`（index 2） |
@@ -68,9 +76,7 @@ DxStudio のエディターUIが、Unity 2022 LTS（Dark スキン）と Unreal 
 | 要素 | 理由 |
 | --- | --- |
 | Unity / UE のアイコン画像そのもの | 商標と著作物のため使わず、同じ意味の図形を GDI+ でアンチエイリアス描画しています（`theme::DrawIcon`）。 |
-| ドラッグによるタブの再ドッキング | 既存のドック機構（Float / Dock、スプリッター、レイアウト保存）を残すため、固定4領域のままにしています。 |
-| Game ビューの解像度・縦横比の指定、Scene の描画モード切り替え | レンダラーの描画パスが1つしかないため、未実装です。 |
-| Inspector の数値ラベルのドラッグ編集 | 既存の「↑↓キーで増減、Shift で10倍」を維持しています。 |
+| 任意の位置に挿入するドッキング（分割位置のプレビュー表示） | 再ドッキングは元の位置に戻る方式です。既存の固定4領域とレイアウト保存の形式（`EditorLayout.dxl`）を変えないためです。 |
 
 ## 命名規則（cpp_TKG `NAMING_RULES.md`）の適用範囲
 
@@ -78,4 +84,4 @@ DxStudio のエディターUIが、Unity 2022 LTS（Dark スキン）と Unreal 
 - 既存のコマンドID `kXxx` は、`constexpr` 定数の規則に合わせて `ID_XXX` に改名しました。
 - 規則の「既存の違反を一括修正せず、新規・変更箇所から適用する」に従い、次のものは名前を変えていません。
   - ユーザーのスクリプトから使われる公開API: `Entity::draw`、`DrawItem::position`、`Component::Update(Entity&, float deltaSeconds)`、`Scene::entities` など。変えると既存のプロジェクトのスクリプトがコンパイルできなくなります。
-  - `Editor` 構造体の公開フィールド: 規則の「struct の公開フィールドは `m_` 不要」に該当します。
+- `Editor` 構造体（エディター内部の状態）の数値・フラグ・コンテナのフィールドは、規則の型接頭辞に揃えました（401箇所）。例: `selected` → `nSelected`、`playing` → `bPlaying`、`selectedIndices` → `vSelectedIndices`、`dockLeft` → `nDockLeft`、`sectionOpen` → `aSectionOpen`。struct の公開フィールドなので `m_` は付けていません（規則どおり）。

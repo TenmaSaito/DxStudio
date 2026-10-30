@@ -44,7 +44,17 @@ struct EditorPanel {
     int index{};
     HWND window{}, buttons[3]{};
     bool floating = false, hidden = false, collapsed = false;
+    // Dragging the tab out of the dock floats the panel; moving a floating
+    // panel back over the editor docks it again (Unity / UE tab docking).
+    POINT tabDragStart{};
+    bool bTabPressed = false;
+    bool bMoving = false;
 };
+inline const wchar_t* const DRAW_MODE_NAMES[] = {L"Shaded", L"Wireframe", L"Shaded Wireframe"};
+inline const wchar_t* const ASPECT_NAMES[] = {L"Free Aspect", L"16:9", L"16:10", L"4:3", L"1:1"};
+constexpr float ASPECT_RATIOS[] = {0.0f, 16.0f / 9.0f, 16.0f / 10.0f, 4.0f / 3.0f, 1.0f};
+constexpr int ASPECT_COUNT = 5;
+LRESULT CALLBACK LabelDragSubclassProc(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
 inline const wchar_t* PANEL_NAMES[] = {L"Hierarchy", L"Scene", L"Inspector", L"Project"};
 constexpr theme::Icon PANEL_ICONS[] = {theme::Icon::HIERARCHY, theme::Icon::SCENE, theme::Icon::INSPECTOR, theme::Icon::PROJECT};
 // Bottom dock tabs share panel 3 (Unity: Project | Console).
@@ -63,20 +73,28 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     HMENU menuPopups[MENU_COUNT]{};
     HWND pauseButton{}, stepButton{}, graphicsButton{}, layoutButton{};
     HWND consolePanel{}, bottomTabs[BOTTOM_TAB_COUNT]{}, statusRight{};
-    int bottomTab = 0;
+    int nBottomTab = 0;
     // Centre dock: Scene view (editor camera, gizmos) or Game view (active Camera).
     HWND viewTabs[2]{};
-    bool gameView = false;
-    int hierarchyHot = -1; // row under the mouse (hover / drop target)
-    bool paused = false, stepRequested = false;
-    bool inspectorEnabledChecked = false;
+    bool bGameView = false;
+    int nHierarchyHot = -1;
+    // Scene view draw mode and Game view aspect ratio (Unity toolbar dropdowns).
+    HWND drawModeButton{}, aspectButton{};
+    DrawMode drawMode = DrawMode::SHADED;
+    int nGameAspect = 0;
+    // Label scrubbing (drag the X / Y / Z / R / G / B / A label horizontally).
+    int nScrubField = -1;
+    int nScrubStartX = 0;
+    float fScrubStartValue = 0.0f; // row under the mouse (hover / drop target)
+    bool bPaused = false, bStepRequested = false;
+    bool bInspectorEnabledChecked = false;
     ProjectSettings projectSettings;
     // Hierarchy tree state (parallel to hierarchyRows).
-    std::vector<int> hierarchyDepths;
-    std::vector<char> hierarchyHasChildren;
-    std::vector<char> collapsedEntities; // indexed by entity
-    ULONGLONG fpsTick = 0;
-    int fpsFrames = 0;
+    std::vector<int> vHierarchyDepths;
+    std::vector<char> vHierarchyHasChildren;
+    std::vector<char> vCollapsedEntities; // indexed by entity
+    ULONGLONG nFpsTick = 0;
+    int nFpsFrames = 0;
     CallbackRegistration callbackRegistration;
 
     void OnEnterPlayMode(Scene& playScene) override {
@@ -95,14 +113,14 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     HWND labels[FIELD_COUNT]{}, edits[FIELD_COUNT]{};
     HWND componentList{}, componentChoice{}, componentAdd{}, componentRemove{};
     HWND componentFields{}, componentValue{}, componentValueApply{};
-    std::vector<std::pair<std::string, std::string>> inspectedComponentFields;
+    std::vector<std::pair<std::string, std::string>> vInspectedComponentFields;
     EditorPanel panels[4]{};
     HWND projectionButtons[2]{}, rowLabels[3]{}, inspectorHint{};
     HWND materialLabel{}, materialEdit{}, textureLabel{}, textureEdit{};
     HWND inspectorEnabled{}, inspectorIcon{}, inspectorTagLabel{}, inspectorTagValue{};
     HWND inspectorLayerLabel{}, inspectorLayerValue{};
-    bool sectionOpen[3]{true, true, true};
-    bool shellReady = false, arranging = false;
+    bool aSectionOpen[3]{true, true, true};
+    bool bShellReady = false, bArranging = false;
     HFONT font{}, titleFont{};
     HBRUSH background{}, inputBackground{};
     std::filesystem::path base, projectRoot, projectFile;
@@ -111,40 +129,40 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     Renderer renderer;
     Camera camera;
     Camera editCameraSnapshot;
-    bool rendererReady = false;
-    bool sceneProtected = false;
-    bool playing = false;
-    ULONGLONG playTick = 0;
-    int selected = -1;
-    std::vector<int> selectedIndices;
+    bool bRendererReady = false;
+    bool bSceneProtected = false;
+    bool bPlaying = false;
+    ULONGLONG nPlayTick = 0;
+    int nSelected = -1;
+    std::vector<int> vSelectedIndices;
     // Listbox rows may be filtered; retain an explicit mapping instead of
     // accidentally treating a visual row index as an entity index.
-    std::vector<int> hierarchyRows;
+    std::vector<int> vHierarchyRows;
     GizmoMode gizmoMode = GizmoMode::Translate;
     enum class Drag { None, Orbit, Pan, Gizmo, Select } drag = Drag::None;
     POINT lastMouse{};
     POINT gizmoStartMouse{};
-    int gizmoAxis = -1;
+    int nGizmoAxis = -1;
     DrawItem gizmoStartItem{};
-    std::vector<std::pair<int, DrawItem>> gizmoStartItems;
+    std::vector<std::pair<int, DrawItem>> vGizmoStartItems;
     POINT selectionStart{};
-    bool selectingRect = false, selectionAdd = false, selectionToggle = false;
-    std::vector<int> selectionBeforeDrag;
-    ULONGLONG cameraTick = 0;
+    bool bSelectingRect = false, bSelectionAdd = false, bSelectionToggle = false;
+    std::vector<int> vSelectionBeforeDrag;
+    ULONGLONG nCameraTick = 0;
     POINT rightStart{};
-    bool rightUsed = false, orbitPivot = false;
-    int hierarchyDrag = -1;
+    bool bRightUsed = false, bOrbitPivot = false;
+    int nHierarchyDrag = -1;
     POINT hierarchyDragStart{};
-    bool hierarchyDragging = false;
-    int dockLeft = 210, dockRight = 430, dockProject = 210;
-    int inspectorScroll = 0;
+    bool bHierarchyDragging = false;
+    int nDockLeft = 210, nDockRight = 430, nDockProject = 210;
+    int nInspectorScroll = 0;
     enum class LayoutDrag { None, Left, Right, Project } layoutDrag = LayoutDrag::None;
 
     void TickCamera() {
         const ULONGLONG now = GetTickCount64();
-        const float seconds = cameraTick ? static_cast<float>(now - cameraTick) / 1000.0f : 0.0f;
-        cameraTick = now;
-        if (drag != Drag::Orbit || orbitPivot || GetCapture() != viewport ||
+        const float seconds = nCameraTick ? static_cast<float>(now - nCameraTick) / 1000.0f : 0.0f;
+        nCameraTick = now;
+        if (drag != Drag::Orbit || bOrbitPivot || GetCapture() != viewport ||
             GetAncestor(GetForegroundWindow(), GA_ROOTOWNER) != window)
             return;
         auto down = [](int key) {
@@ -152,7 +170,7 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
         };
         if (FlyCamera(camera, down('W') - down('S'), down('D') - down('A'), down('E') - down('Q'), seconds,
                       down(VK_SHIFT) != 0)) {
-            rightUsed = true;
+            bRightUsed = true;
             renderer.SetCamera(camera);
         }
     }
@@ -164,10 +182,10 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
                       indices.end());
         std::sort(indices.begin(), indices.end());
         indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
-        selectedIndices = std::move(indices);
-        selected = std::find(selectedIndices.begin(), selectedIndices.end(), active) != selectedIndices.end()
+        vSelectedIndices = std::move(indices);
+        nSelected = std::find(vSelectedIndices.begin(), vSelectedIndices.end(), active) != vSelectedIndices.end()
                        ? active
-                       : (selectedIndices.empty() ? -1 : selectedIndices.back());
+                       : (vSelectedIndices.empty() ? -1 : vSelectedIndices.back());
         SyncHierarchy();
         Inspect();
     }
@@ -230,6 +248,9 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     // ---- Bottom dock tabs (Project | Console) -----------------------------------
     void SelectBottomTab(int tab);
     void SelectViewTab(bool game);
+    void ShowViewDropdown(int id);
+    void SetDrawMode(int index);
+    void SetGameAspect(int index);
     void AttachToSelection(const std::string& name);
     // Reads <project>/ProjectSettings.dxsettings (missing file = defaults).
     void LoadSettings();

@@ -223,6 +223,7 @@ struct Renderer::Impl {
     int nRectX0 = 0, nRectY0 = 0, nRectX1 = 0, nRectY1 = 0;
     int nGizmoHot = -1;
     bool bShowOrientation = true;
+    DrawMode drawMode = DrawMode::SHADED;
     std::string sResizeError;
 };
 
@@ -312,6 +313,11 @@ void Renderer::SetCamera(const Camera& camera) {
     p_->camera.distance = std::clamp(camera.distance, 0.2f, 80.0f);
     p_->camera.pitch = std::clamp(camera.pitch, -1.54f, 1.54f);
 }
+
+void Renderer::SetDrawMode(DrawMode mode) {
+    if (p_) p_->drawMode = mode;
+}
+DrawMode Renderer::GetDrawMode() const { return p_ ? p_->drawMode : DrawMode::SHADED; }
 
 void Renderer::SetShowOrientationGizmo(bool bShow) {
     if (p_) p_->bShowOrientation = bShow;
@@ -558,27 +564,38 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
         if (!device.UploadVertices(vModelStarts[nIndex], reinterpret_cast<const Vertex*>(vModel.data()), vModel.size(), error)) return false;
     }
 
-    // 2. Scene objects with the project shader.
+    // 2. Scene objects with the project shader (shaded and/or wireframe pass).
     if (!device.BeginFrame(CLEAR_COLOR, error)) return false;
     const float fAspect = static_cast<float>(p.uWidth) / static_cast<float>(p.uHeight);
     const XMMATRIX vp = ViewProjection(p.camera, fAspect);
-    device.SetPipeline(PipelineKind::SCENE);
-    for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
-        const auto& item = items[nIndex];
-        if (!item.visible) continue;
-        const XMMATRIX mvp = World(item) * vp;
-        if (vModelCounts[nIndex]) {
-            device.Draw(MakeConstants(mvp, item.color), vModelCounts[nIndex], vModelStarts[nIndex]);
-        } else if (item.is2D) {
-            device.Draw(MakeConstants(mvp, item.color), 6, QUAD_START);
-        } else {
-            // Distinguish the cube's faces even with the minimal default shader.
-            constexpr float SHADES[] = {0.75f, 0.9f, 0.62f, 0.82f, 1.0f, 0.55f};
-            for (UINT uFace = 0; uFace < 6; ++uFace) {
-                const XMFLOAT4 tint{item.color.x * SHADES[uFace], item.color.y * SHADES[uFace], item.color.z * SHADES[uFace], item.color.w};
-                device.Draw(MakeConstants(mvp, tint), 6, CUBE_START + uFace * 6);
+    const DrawMode drawMode = showGrid ? p.drawMode : DrawMode::SHADED;
+    auto drawObjects = [&](bool bWireframe, const XMFLOAT4* pOverride) {
+        device.SetPipeline(bWireframe ? PipelineKind::SCENE_WIREFRAME : PipelineKind::SCENE);
+        for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
+            const auto& item = items[nIndex];
+            if (!item.visible) continue;
+            const XMMATRIX mvp = World(item) * vp;
+            const XMFLOAT4 color = pOverride ? *pOverride : item.color;
+            if (vModelCounts[nIndex]) {
+                device.Draw(MakeConstants(mvp, color), vModelCounts[nIndex], vModelStarts[nIndex]);
+            } else if (item.is2D) {
+                device.Draw(MakeConstants(mvp, color), 6, QUAD_START);
+            } else {
+                // Distinguish the cube's faces even with the minimal default shader.
+                constexpr float SHADES[] = {0.75f, 0.9f, 0.62f, 0.82f, 1.0f, 0.55f};
+                for (UINT uFace = 0; uFace < 6; ++uFace) {
+                    const float fShade = pOverride ? 1.0f : SHADES[uFace];
+                    const XMFLOAT4 tint{color.x * fShade, color.y * fShade, color.z * fShade, color.w};
+                    device.Draw(MakeConstants(mvp, tint), 6, CUBE_START + uFace * 6);
+                }
             }
         }
+    };
+    if (drawMode != DrawMode::WIREFRAME) drawObjects(false, nullptr);
+    if (drawMode == DrawMode::WIREFRAME) drawObjects(true, nullptr);
+    if (drawMode == DrawMode::SHADED_WIREFRAME) {
+        constexpr XMFLOAT4 WIRE_COLOR{0.08f, 0.08f, 0.08f, 1.0f};
+        drawObjects(true, &WIRE_COLOR);
     }
 
     // 3. Editor grid and world axes.
