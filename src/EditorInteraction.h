@@ -5,17 +5,17 @@
 
 namespace dxs {
 inline DirectX::XMFLOAT3 CameraOffset(const Camera& camera) {
-    const float cp = std::cos(camera.pitch);
-    return {std::sin(camera.yaw) * cp * camera.distance,
-            std::sin(camera.pitch) * camera.distance,
-            -std::cos(camera.yaw) * cp * camera.distance};
+    const float cp = std::cos(camera.fPitch);
+    return {std::sin(camera.fYaw) * cp * camera.fDistance,
+            std::sin(camera.fPitch) * camera.fDistance,
+            -std::cos(camera.fYaw) * cp * camera.fDistance};
 }
 
 // Look around the eye for flythrough, or around the target for orbiting.
 inline void LookCamera(Camera& camera, float dx, float dy, bool orbit) {
     const auto before = CameraOffset(camera);
-    camera.yaw -= dx * 0.008f;
-    camera.pitch = std::clamp(camera.pitch + dy * 0.008f, -1.5f, 1.5f);
+    camera.fYaw -= dx * 0.008f;
+    camera.fPitch = std::clamp(camera.fPitch + dy * 0.008f, -1.5f, 1.5f);
     if (!orbit) {
         const auto after = CameraOffset(camera);
         camera.target.x += before.x - after.x;
@@ -26,8 +26,8 @@ inline void LookCamera(Camera& camera, float dx, float dy, bool orbit) {
 
 inline bool FlyCamera(Camera& camera, float forward, float right, float up, float seconds, bool fast) {
     using namespace DirectX;
-    const float sy = std::sin(camera.yaw), cy = std::cos(camera.yaw);
-    const float sp = std::sin(camera.pitch), cp = std::cos(camera.pitch);
+    const float sy = std::sin(camera.fYaw), cy = std::cos(camera.fYaw);
+    const float sp = std::sin(camera.fPitch), cp = std::cos(camera.fPitch);
     auto direction = XMVectorSet(-sy * cp * forward + cy * right,
         -sp * forward + up, cy * cp * forward + sy * right, 0);
     const float length = XMVectorGetX(XMVector3Length(direction));

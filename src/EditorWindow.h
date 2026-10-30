@@ -71,7 +71,41 @@ inline const wchar_t* MENU_NAMES[MENU_COUNT] = {L"File", L"Edit", L"Assets", L"G
 constexpr int TOP_CHROME_HEIGHT = theme::MENU_BAR_HEIGHT + theme::TOOLBAR_HEIGHT;
 constexpr int HIERARCHY_SCENE_ROW = 22; // "scene" header row above the hierarchy list
 
+// Inspector property row (Unity: label column + field column).
+struct InspectorFieldRow {
+    std::string sField;
+    HWND hLabel = nullptr;
+    HWND hValue = nullptr; // EDIT, or owner-drawn check box for bool; null for a warning row
+    bool bBoolean = false;
+    bool bChecked = false;
+};
+// One attached component shown as a titlebar plus property rows.
+struct InspectorComponentView {
+    size_t nComponentIndex = 0;
+    std::string sName;
+    HWND hHeader = nullptr;
+    HWND hScriptLabel = nullptr;
+    HWND hScriptValue = nullptr;
+    std::vector<InspectorFieldRow> vRows;
+};
+
 struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
+    // ---- Unity-style Inspector component sections --------------------------
+    std::vector<InspectorComponentView> vComponentViews;
+    std::string sComponentViewSignature;
+    std::unordered_map<std::string, bool> collapsedComponents;
+    HWND colorLabel{};
+    int nInspectorHeaderBottom = 0;
+    int nAddComponentSeparator = 0;
+    void RebuildComponentViews();
+    void UpdateComponentViewValues();
+    InspectorFieldRow* FindFieldRow(int controlId, InspectorComponentView** ppView);
+    bool IsComponentFieldEdit(HWND control) const;
+    void CommitComponentField(int controlId, bool bToggle);
+    bool SelectComponentForWindow(HWND control);
+    bool IsOverTitlebarMenu(HWND header) const;
+    void ShowTitlebarMenu(HWND header);
+    void ShowAddComponentMenu();
     // ---- Unity/UE shell (menu bar, toolbar, tabs, console, status) ----------
     HWND menuButtons[MENU_COUNT]{};
     HMENU menuPopups[MENU_COUNT]{};
@@ -105,7 +139,7 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     CallbackRegistration callbackRegistration;
 
     void OnEnterPlayMode(Scene& playScene) override {
-        Debug::Log("Entered Play Mode (" + std::to_string(playScene.entities.size()) + " objects).");
+        Debug::Log("Entered Play Mode (" + std::to_string(playScene.vEntities.size()) + " objects).");
     }
     void OnExitPlayMode(Scene&) override { Debug::Log("Exited Play Mode. Runtime changes were discarded."); }
     void OnPauseChanged(bool bPaused) override { Debug::Log(bPaused ? "Play Mode paused." : "Play Mode resumed."); }
@@ -161,7 +195,7 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     int nHierarchyDrag = -1;
     POINT hierarchyDragStart{};
     bool bHierarchyDragging = false;
-    int nDockLeft = 210, nDockRight = 430, nDockProject = 210;
+    int nDockLeft = 210, nDockRight = 480, nDockProject = 210;
     int nInspectorScroll = 0;
     enum class LayoutDrag { None, Left, Right, Project } layoutDrag = LayoutDrag::None;
 
@@ -185,7 +219,7 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     void SyncHierarchy();
     void SetSelection(std::vector<int> indices, int active = -1) {
         indices.erase(std::remove_if(indices.begin(), indices.end(),
-                                     [&](int i) { return i < 0 || static_cast<size_t>(i) >= scene.entities.size(); }),
+                                     [&](int i) { return i < 0 || static_cast<size_t>(i) >= scene.vEntities.size(); }),
                       indices.end());
         std::sort(indices.begin(), indices.end());
         indices.erase(std::unique(indices.begin(), indices.end()), indices.end());

@@ -83,6 +83,26 @@ bool Editor::ShellCommand(int id) {
         MessageBoxW(window, text.c_str(), L"About DxStudio", MB_OK | MB_ICONINFORMATION);
         return true;
     }
+    if (id >= ID_SECTION_TOGGLE && id < ID_SECTION_TOGGLE + 3 && IsOverTitlebarMenu(groupLabels[id - ID_SECTION_TOGGLE])) {
+        ShowTitlebarMenu(groupLabels[id - ID_SECTION_TOGGLE]);
+        return true;
+    }
+    if (id >= ID_COMPONENT_HEADER_FIRST && id < ID_COMPONENT_HEADER_FIRST + COMPONENT_VIEW_LIMIT) {
+        for (auto& view : vComponentViews) {
+            if (GetDlgCtrlID(view.hHeader) != id) continue;
+            if (IsOverTitlebarMenu(view.hHeader)) ShowTitlebarMenu(view.hHeader);
+            else {
+                collapsedComponents[view.sName] = !collapsedComponents[view.sName];
+                LayoutPanel(2);
+            }
+            break;
+        }
+        return true;
+    }
+    if (id == ID_ADD_COMPONENT) {
+        ShowAddComponentMenu();
+        return true;
+    }
     if (id >= ID_SECTION_TOGGLE && id < ID_SECTION_TOGGLE + 3) {
         aSectionOpen[id - ID_SECTION_TOGGLE] = !aSectionOpen[id - ID_SECTION_TOGGLE];
         LayoutPanel(2);
@@ -202,18 +222,18 @@ void Editor::ShowObjectMenu(POINT point) {
 
 void Editor::ShowComponentMenu(POINT point) {
     if (point.x == -1 && point.y == -1) GetCursorPos(&point);
-    if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.entities.size()) return;
-    auto& entity = scene.entities[nSelected];
+    if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
+    auto& entity = scene.vEntities[nSelected];
     const int selectedRow = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
     const int offset = entity.renderer == Entity::RendererKind::None ? 0 : 1;
     const int componentIndex = selectedRow - offset;
-    const bool custom = componentIndex >= 0 && static_cast<size_t>(componentIndex) < entity.components.size();
+    const bool custom = componentIndex >= 0 && static_cast<size_t>(componentIndex) < entity.vComponents.size();
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING | (selectedRow == LB_ERR ? MF_GRAYED : 0), ID_REMOVE_COMPONENT, L"Remove Component");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (!custom || componentIndex == 0 ? MF_GRAYED : 0), ID_MOVE_COMPONENT_UP, L"Move Up");
     AppendMenuW(menu,
-                MF_STRING | (!custom || static_cast<size_t>(componentIndex + 1) >= entity.components.size() ? MF_GRAYED : 0),
+                MF_STRING | (!custom || static_cast<size_t>(componentIndex + 1) >= entity.vComponents.size() ? MF_GRAYED : 0),
                 ID_MOVE_COMPONENT_DOWN, L"Move Down");
     const int action = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, window, nullptr);
     DestroyMenu(menu);
@@ -260,7 +280,7 @@ void Editor::TogglePlay() {
         renderer.SetCamera(camera);
         vSelectedIndices.erase(
             std::remove_if(vSelectedIndices.begin(), vSelectedIndices.end(),
-                           [&](int index) { return index < 0 || static_cast<size_t>(index) >= scene.entities.size(); }),
+                           [&](int index) { return index < 0 || static_cast<size_t>(index) >= scene.vEntities.size(); }),
             vSelectedIndices.end());
         nSelected = vSelectedIndices.empty() ? -1 : vSelectedIndices.back();
         Populate();
@@ -313,12 +333,12 @@ void Editor::UpdateGraphicsBadge() {
 }
 
 void Editor::AttachToSelection(const std::string& name) {
-    if (vSelectedIndices.size() != 1 || nSelected < 0 || static_cast<size_t>(nSelected) >= scene.entities.size()) {
+    if (vSelectedIndices.size() != 1 || nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) {
         Error(window, "Select exactly one GameObject to add a component.");
         return;
     }
     std::string error;
-    if (!AttachComponent(scene.entities[nSelected], name, error)) {
+    if (!AttachComponent(scene.vEntities[nSelected], name, error)) {
         Error(window, error);
         return;
     }
@@ -360,7 +380,7 @@ bool Editor::SwitchProject(const std::filesystem::path& descriptor) {
     scene = std::move(loaded);
     LoadSettings();
     projectPanel = CreateProjectPanel(panels[3].window, instance, projectRoot, base);
-    nSelected = scene.entities.empty() ? -1 : 0;
+    nSelected = scene.vEntities.empty() ? -1 : 0;
     vSelectedIndices = nSelected < 0 ? std::vector<int>{} : std::vector<int>{nSelected};
     bSceneProtected = false;
     Populate();
@@ -405,7 +425,7 @@ bool Editor::NewProject() {
         return false;
     }
     Material defaultMaterial;
-    defaultMaterial.name = "Default";
+    defaultMaterial.sName = "Default";
     if (!SaveMaterial(root / L"Assets" / L"Materials" / L"Default.dxmat", defaultMaterial, error)) {
         Error(window, error);
         return false;
@@ -413,13 +433,13 @@ bool Editor::NewProject() {
     Scene fresh;
     fresh.projectRoot = root;
     Entity mainCamera;
-    mainCamera.name = "Main Camera";
+    mainCamera.sName = "Main Camera";
     mainCamera.renderer = Entity::RendererKind::None;
     mainCamera.draw.position = {0.0f, 2.0f, -6.0f};
-    mainCamera.components = {"Camera"};
+    mainCamera.vComponents = {"Camera"};
     mainCamera.componentProperties["Camera"] = {
         {"Active", "true"}, {"Orthographic", "false"}, {"Field of View", "60"}, {"Near Clip", "0.1"}, {"Far Clip", "1000"}};
-    fresh.entities.push_back(std::move(mainCamera));
+    fresh.vEntities.push_back(std::move(mainCamera));
     if (!SaveScene(root / L"scene.dxs", fresh, error) || !SaveProjectDescriptor(descriptor, root, error)) {
         Error(window, error);
         return false;
@@ -543,16 +563,16 @@ void Editor::Command(int id, int notification) {
         return;
     }
     if (id == ID_PERSPECTIVE || id == ID_ORTHOGRAPHIC || id == ID_FRONT_VIEW) {
-        camera.orthographic = id != ID_PERSPECTIVE;
+        camera.bOrthographic = id != ID_PERSPECTIVE;
         if (id == ID_FRONT_VIEW) {
-            camera.yaw = 0;
-            camera.pitch = 0;
+            camera.fYaw = 0;
+            camera.fPitch = 0;
         }
         renderer.SetCamera(camera);
         InvalidateRect(window, nullptr, TRUE);
         for (auto button : projectionButtons)
             InvalidateRect(button, nullptr, TRUE);
-        SetStatus(camera.orthographic ? L"Orthographic camera. Save or export to keep this camera view."
+        SetStatus(camera.bOrthographic ? L"Orthographic camera. Save or export to keep this camera view."
                                       : L"Perspective camera. Quads and cubes share the same 3D world.");
         return;
     }
@@ -628,11 +648,11 @@ void Editor::Command(int id, int notification) {
         return;
     }
     if (id == ID_INSPECTOR_ENABLED && notification == BN_CLICKED) {
-        if (nSelected >= 0 && static_cast<size_t>(nSelected) < scene.entities.size() && vSelectedIndices.size() == 1) {
+        if (nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size() && vSelectedIndices.size() == 1) {
             bInspectorEnabledChecked = !bInspectorEnabledChecked;
             InvalidateRect(inspectorEnabled, nullptr, FALSE);
-            scene.entities[nSelected].draw.visible = bInspectorEnabledChecked;
-            SetStatus(scene.entities[nSelected].draw.visible ? L"GameObject enabled."
+            scene.vEntities[nSelected].draw.bVisible = bInspectorEnabledChecked;
+            SetStatus(scene.vEntities[nSelected].draw.bVisible ? L"GameObject enabled."
                                                             : L"GameObject disabled. It remains in the hierarchy.");
             InvalidateRect(viewport, nullptr, FALSE);
         }
@@ -656,8 +676,8 @@ void Editor::Command(int id, int notification) {
         return;
     }
     if (id == ID_APPLY_COMPONENT_VALUE) {
-        if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.entities.size()) return;
-        auto& entity = scene.entities[nSelected];
+        if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
+        auto& entity = scene.vEntities[nSelected];
         const int listIndex = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
         const int fieldIndex = static_cast<int>(SendMessageW(componentFields, LB_GETCURSEL, 0, 0));
         const int componentIndex = listIndex - (entity.renderer == Entity::RendererKind::None ? 0 : 1);
@@ -675,7 +695,7 @@ void Editor::Command(int id, int notification) {
         }
         return;
     }
-    if (id == ID_ADD_COMPONENT && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.entities.size()) {
+    if (id == ID_ADD_COMPONENT && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size()) {
         if (!Apply()) return;
         int choice = static_cast<int>(SendMessageW(componentChoice, CB_GETCURSEL, 0, 0));
         if (choice == CB_ERR) {
@@ -688,11 +708,11 @@ void Editor::Command(int id, int notification) {
         value.resize(length);
         auto name = Utf8(value);
         if (name == "PolygonRenderer" || name == "ModelRenderer" || name == "Image") {
-            auto& entity = scene.entities[nSelected];
+            auto& entity = scene.vEntities[nSelected];
             entity.renderer = name == "PolygonRenderer" ? Entity::RendererKind::Polygon
                               : name == "ModelRenderer" ? Entity::RendererKind::Model
                                                         : Entity::RendererKind::Image;
-            if (entity.renderer == Entity::RendererKind::Model && entity.modelAsset.empty()) {
+            if (entity.renderer == Entity::RendererKind::Model && entity.sModelAsset.empty()) {
                 Error(window, "Place an X/FBX model first, or assign a model asset through Place X / FBX model.");
                 entity.renderer = Entity::RendererKind::None;
                 return;
@@ -701,28 +721,28 @@ void Editor::Command(int id, int notification) {
             SetStatus(L"IRender component attached at compile-time-known renderer type.");
             return;
         }
-        auto& components = scene.entities[nSelected].components;
+        auto& components = scene.vEntities[nSelected].vComponents;
         std::string attachError;
-        if (!AttachComponent(scene.entities[nSelected], name, attachError)) {
+        if (!AttachComponent(scene.vEntities[nSelected], name, attachError)) {
             Error(window, attachError);
             return;
         }
         Inspect();
         SendMessageW(componentList, LB_SETCURSEL,
                      static_cast<WPARAM>(components.size() - 1 +
-                                         (scene.entities[nSelected].renderer == Entity::RendererKind::None ? 0 : 1)),
+                                         (scene.vEntities[nSelected].renderer == Entity::RendererKind::None ? 0 : 1)),
                      0);
         RefreshComponentFields();
         SetStatus(L"Component attached. Save or export to keep it.");
-    } else if (id == ID_REMOVE_COMPONENT && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.entities.size()) {
+    } else if (id == ID_REMOVE_COMPONENT && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size()) {
         int index = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
         if (index == LB_ERR) {
             Error(window, "Select an attached component to remove.");
             return;
         }
         if (!Apply()) return;
-        auto& components = scene.entities[nSelected].components;
-        auto& entity = scene.entities[nSelected];
+        auto& components = scene.vEntities[nSelected].vComponents;
+        auto& entity = scene.vEntities[nSelected];
         const int rendererOffset = entity.renderer == Entity::RendererKind::None ? 0 : 1;
         if (index == 0 && rendererOffset) {
             entity.renderer = Entity::RendererKind::None;
@@ -735,18 +755,18 @@ void Editor::Command(int id, int notification) {
         Inspect();
         SetStatus(L"Component detached. Its serialized Inspector values were removed.");
     } else if ((id == ID_MOVE_COMPONENT_UP || id == ID_MOVE_COMPONENT_DOWN) && nSelected >= 0 &&
-               static_cast<size_t>(nSelected) < scene.entities.size()) {
-        auto& entity = scene.entities[nSelected];
+               static_cast<size_t>(nSelected) < scene.vEntities.size()) {
+        auto& entity = scene.vEntities[nSelected];
         const int offset = entity.renderer == Entity::RendererKind::None ? 0 : 1;
         const int row = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
         int index = row - offset;
         const int next = index + (id == ID_MOVE_COMPONENT_UP ? -1 : 1);
-        if (index >= 0 && next >= 0 && static_cast<size_t>(index) < entity.components.size() &&
-            static_cast<size_t>(next) < entity.components.size()) {
-            std::swap(entity.components[index], entity.components[next]);
-            entity.runtimeComponentNames.clear();
-            entity.runtimeComponents.clear();
-            entity.runtimeComponentStarted.clear();
+        if (index >= 0 && next >= 0 && static_cast<size_t>(index) < entity.vComponents.size() &&
+            static_cast<size_t>(next) < entity.vComponents.size()) {
+            std::swap(entity.vComponents[index], entity.vComponents[next]);
+            entity.vRuntimeComponentNames.clear();
+            entity.vRuntimeComponents.clear();
+            entity.vRuntimeComponentStarted.clear();
             Inspect();
             SendMessageW(componentList, LB_SETCURSEL, next + offset, 0);
             RefreshComponentFields();
@@ -760,13 +780,13 @@ void Editor::Command(int id, int notification) {
     } else if (id == ID_ADD_CUBE || id == ID_ADD_SPRITE || id == ID_ADD_EMPTY) {
         if (!Apply()) return;
         Entity entity;
-        entity.name = id == ID_ADD_CUBE ? "Cube" : id == ID_ADD_SPRITE ? "Sprite" : "Empty";
-        entity.draw.is2D = id == ID_ADD_SPRITE;
+        entity.sName = id == ID_ADD_CUBE ? "Cube" : id == ID_ADD_SPRITE ? "Sprite" : "Empty";
+        entity.draw.bIs2D = id == ID_ADD_SPRITE;
         entity.renderer = id == ID_ADD_EMPTY ? Entity::RendererKind::None : Entity::RendererKind::Polygon;
         entity.draw.color =
             id == ID_ADD_CUBE ? DirectX::XMFLOAT4{0.35f, 0.68f, 1.f, 1.f} : DirectX::XMFLOAT4{1.f, 0.62f, 0.28f, 1.f};
-        scene.entities.push_back(entity);
-        nSelected = static_cast<int>(scene.entities.size()) - 1;
+        scene.vEntities.push_back(entity);
+        nSelected = static_cast<int>(scene.vEntities.size()) - 1;
         vSelectedIndices = {nSelected};
         Populate();
         SetStatus(L"Object added. Save the scene to keep it.");
@@ -784,12 +804,12 @@ void Editor::Command(int id, int notification) {
             return;
         }
         Entity entity;
-        entity.name = Utf8(source.stem().wstring());
+        entity.sName = Utf8(source.stem().wstring());
         entity.renderer = Entity::RendererKind::Model;
         const auto relative = std::filesystem::relative(destination, projectRoot, ec).generic_u8string();
-        entity.modelAsset.assign(reinterpret_cast<const char*>(relative.data()), relative.size());
-        scene.entities.push_back(std::move(entity));
-        nSelected = static_cast<int>(scene.entities.size()) - 1;
+        entity.sModelAsset.assign(reinterpret_cast<const char*>(relative.data()), relative.size());
+        scene.vEntities.push_back(std::move(entity));
+        nSelected = static_cast<int>(scene.vEntities.size()) - 1;
         vSelectedIndices = {nSelected};
         Populate();
         SetStatus(L"Model placed from project/Assets/Models. ASCII FBX and text X are supported.");
@@ -798,11 +818,11 @@ void Editor::Command(int id, int notification) {
         std::vector<int> duplicates;
         duplicates.reserve(vSelectedIndices.size());
         for (int source : vSelectedIndices)
-            if (source >= 0 && static_cast<size_t>(source) < scene.entities.size()) {
-                Entity copy = scene.entities[static_cast<size_t>(source)];
-                copy.name += " (Clone)";
-                scene.entities.push_back(std::move(copy));
-                duplicates.push_back(static_cast<int>(scene.entities.size()) - 1);
+            if (source >= 0 && static_cast<size_t>(source) < scene.vEntities.size()) {
+                Entity copy = scene.vEntities[static_cast<size_t>(source)];
+                copy.sName += " (Clone)";
+                scene.vEntities.push_back(std::move(copy));
+                duplicates.push_back(static_cast<int>(scene.vEntities.size()) - 1);
             }
         if (!duplicates.empty()) {
             vSelectedIndices = duplicates;
@@ -810,18 +830,18 @@ void Editor::Command(int id, int notification) {
             Populate();
             SetStatus(L"Selection duplicated. Ctrl+D repeats this action.");
         }
-    } else if (id == ID_DELETE && nSelected >= 0 && nSelected < static_cast<int>(scene.entities.size())) {
+    } else if (id == ID_DELETE && nSelected >= 0 && nSelected < static_cast<int>(scene.vEntities.size())) {
         if (vSelectedIndices.size() > 1 && MessageBoxW(window, L"Remove all selected objects from the scene?",
                                                       L"Delete objects", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
             return;
         for (auto it = vSelectedIndices.rbegin(); it != vSelectedIndices.rend(); ++it) {
             const int removed = *it;
-            scene.entities.erase(scene.entities.begin() + removed);
-            for (auto& entity : scene.entities) {
-                if (entity.parent == removed)
-                    entity.parent = -1;
-                else if (entity.parent > removed)
-                    --entity.parent;
+            scene.vEntities.erase(scene.vEntities.begin() + removed);
+            for (auto& entity : scene.vEntities) {
+                if (entity.nParent == removed)
+                    entity.nParent = -1;
+                else if (entity.nParent > removed)
+                    --entity.nParent;
             }
         }
         vSelectedIndices.clear();
@@ -852,7 +872,7 @@ void Editor::Command(int id, int notification) {
             for (auto button : projectionButtons)
                 InvalidateRect(button, nullptr, TRUE);
             bSceneProtected = false;
-            nSelected = scene.entities.empty() ? -1 : 0;
+            nSelected = scene.vEntities.empty() ? -1 : 0;
             vSelectedIndices = nSelected < 0 ? std::vector<int>{} : std::vector<int>{nSelected};
             Populate();
             SetStatus(L"Scene loaded.");

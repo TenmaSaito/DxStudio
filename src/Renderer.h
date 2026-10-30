@@ -18,26 +18,26 @@ struct DrawItem {
     DirectX::XMFLOAT3 scale{1, 1, 1};
     DirectX::XMFLOAT4 color{1, 1, 1, 1};
     // Mesh choice only: true is a world-space XY quad, false is a cube.
-    bool is2D = false;
+    bool bIs2D = false;
     // False keeps the transform/selectable entity alive without submitting
     // polygon work to DirectX 12.
-    bool visible = true;
+    bool bVisible = true;
     // Optional normalized triangle list used by ModelRenderer. Empty selects
     // the built-in cube/quad polygon geometry.
-    std::shared_ptr<const std::vector<DirectX::XMFLOAT3>> vertices;
+    std::shared_ptr<const std::vector<DirectX::XMFLOAT3>> pVertices;
 };
 
 // Shared scene camera. Target is in world units, angles in radians. Orthographic
 // projection retains the same view direction and uses distance to control zoom.
 struct Camera {
     DirectX::XMFLOAT3 target{0, 0, 0};
-    float yaw = 0.0f;
-    float pitch = 0.32175055f;
-    float distance = 6.32455532f;
-    bool orthographic = false;
-    float fieldOfView = 45.0f;
-    float nearClip = 0.1f;
-    float farClip = 1000.0f;
+    float fYaw = 0.0f;
+    float fPitch = 0.32175055f;
+    float fDistance = 6.32455532f;
+    bool bOrthographic = false;
+    float fFieldOfView = 45.0f;
+    float fNearClip = 0.1f;
+    float fFarClip = 1000.0f;
 };
 
 // Editor-only transform handles: 0=X, 1=Y, 2=Z, 3/4/5=YZ/XZ/XY

@@ -318,65 +318,106 @@ void Editor::LayoutPanel(int index) {
         place(projectPanel, 0, header, w, std::max(1, h - header), nBottomTab == 0);
         place(consolePanel, 0, header, w, std::max(1, h - header), nBottomTab == 1);
     } else {
-        // Unity-like object header: icon, active state, object name, and
-        // metadata strip always precede editable component sections.
-        place(inspectorIcon, 10, 35, 26, 26);
-        place(inspectorEnabled, 42, 38, 20, 20);
-        place(edits[0], 67, 34, w - 77, 24);
-        place(inspectorTagLabel, 10, 65, 34, 22);
-        place(inspectorTagValue, 46, 64, 90, 22);
-        place(inspectorLayerLabel, 144, 65, 42, 22);
-        place(inspectorLayerValue, 188, 64, std::max(45, w - 198), 22);
-        place(inspectorHint, 10, 90, w - 20, 20);
-        int y = 118;
-        const wchar_t* names[] = {L"Transform", L"Rendering / Color", L"Components"};
-        for (int group = 0; group < 3; ++group) {
-            SetWindowTextW(groupLabels[group], names[group]);
-            theme::SetButtonExpanded(groupLabels[group], aSectionOpen[group]);
-            place(groupLabels[group], 0, y, w, 24);
-            y += 30;
-            if (group == 0) {
-                for (int row = 0; row < 3; ++row) {
-                    place(rowLabels[row], 14, y + 2, 70, 22, aSectionOpen[group]);
-                    // Leave a fixed gutter for the row caption and for
-                    // every axis caption. This prevents the X/Y/Z labels
-                    // and numeric values from colliding in narrow docks.
-                    const int fieldStart = 86;
-                    const int cell = std::max(43, (w - fieldStart - 10) / 3);
-                    for (int a = 0; a < 3; ++a) {
-                        const int field = 2 + row * 3 + a, x = fieldStart + a * cell;
-                        place(labels[field], x + 3, y + 2, 11, 22, aSectionOpen[group]);
-                        place(edits[field], x + 15, y, cell - 18, 24, aSectionOpen[group]);
-                    }
-                    if (aSectionOpen[group]) y += 28;
-                }
-            } else if (group == 1) {
-                const int cell = (w - 20) / 4;
-                for (int a = 0; a < 4; ++a) {
-                    const int x = 12 + a * cell;
-                    place(labels[11 + a], x + 3, y + 2, 11, 22, aSectionOpen[group]);
-                    place(edits[11 + a], x + 15, y, cell - 20, 24, aSectionOpen[group]);
-                }
-                if (aSectionOpen[group]) y += 28;
-                place(materialLabel, 14, y + 2, 70, 22, aSectionOpen[group]);
-                place(materialEdit, 86, y, w - 96, 24, aSectionOpen[group]);
-                if (aSectionOpen[group]) y += 28;
-                place(textureLabel, 14, y + 2, 70, 22, aSectionOpen[group]);
-                place(textureEdit, 86, y, w - 96, 24, aSectionOpen[group]);
-                if (aSectionOpen[group]) y += 28;
-            } else {
-                place(componentList, 10, y, w - 20, 60, aSectionOpen[group]);
-                place(componentFields, 10, y + 66, w - 20, 64, aSectionOpen[group]);
-                place(componentValue, 10, y + 136, w - 94, 24, aSectionOpen[group]);
-                place(componentValueApply, w - 80, y + 136, 70, 24, aSectionOpen[group]);
-                // Unity: wide centred "Add Component" button under the components.
-                place(componentChoice, 10, y + 170, w - 20, 180, aSectionOpen[group]);
-                place(componentAdd, 10, y + 202, (w - 25) / 2, 26, aSectionOpen[group]);
-                place(componentRemove, 15 + (w - 25) / 2, y + 202, (w - 25) / 2, 26, aSectionOpen[group]);
-                if (aSectionOpen[group]) y += 236;
+        // Unity Inspector metrics (UnityCsReference EditorGUI.cs), scaled by DPI:
+        // line 20, vertical spacing 2, indent 15 (+3 padding), label width
+        // max(width * 0.45 - 40, 120), sub-label spacing 4, header icon 24.
+        const int dpi = static_cast<int>(GetDpiForWindow(p.window));
+        auto S = [dpi](int value) { return MulDiv(value, dpi, 96); };
+        const int line = S(20), gap = S(2), box = S(19), indent = S(18), padRight = S(6);
+        const int labelWidth = std::max(static_cast<int>(w * 0.45f) - S(40), S(120));
+        const int fieldX = indent + labelWidth, fieldW = std::max(S(40), w - fieldX - padRight);
+        const int titlebar = S(22);
+        // GameObject header: [icon] [x] [name.....]  /  Tag [Untagged v]  Layer [Default v]
+        const int y0 = header + S(6);
+        place(inspectorIcon, S(6), y0, S(24), S(24));
+        place(inspectorEnabled, S(36), y0 + S(3), S(18), S(18));
+        place(edits[0], S(58), y0 + S(2), w - S(58) - padRight, box);
+        const int tagY = y0 + S(28);
+        const int tagLabelW = S(30), layerLabelW = S(38);
+        const int popupW = std::max(S(40), (w - S(8) - tagLabelW - layerLabelW - S(6) - padRight) / 2);
+        place(inspectorTagLabel, S(8), tagY, tagLabelW, line);
+        place(inspectorTagValue, S(8) + tagLabelW, tagY, popupW, box);
+        place(inspectorLayerLabel, S(8) + tagLabelW + popupW + S(6), tagY, layerLabelW, line);
+        place(inspectorLayerValue, S(8) + tagLabelW + popupW + S(6) + layerLabelW, tagY, popupW, box);
+        place(inspectorHint, 0, 0, 1, 1, false); // Unity has no hint line; values apply on Enter
+        nInspectorHeaderBottom = tagY + line + S(6);
+        int y = nInspectorHeaderBottom + S(2);
+        auto rowLabel = [&](HWND label, int rowY, bool visible) { place(label, indent, rowY, labelWidth - S(4), line, visible); };
+        // A Vector3 / Color row: sub-labels and fields share the field column.
+        auto multiField = [&](int firstField, int count, int rowY, bool visible) {
+            const int subGap = S(4), miniLabel = S(13);
+            const int cell = std::max(S(30), (fieldW - subGap * (count - 1)) / count);
+            for (int a = 0; a < count; ++a) {
+                const int x = fieldX + a * (cell + subGap);
+                place(labels[firstField + a], x, rowY, miniLabel, line, visible);
+                place(edits[firstField + a], x + miniLabel, rowY, cell - miniLabel, box, visible);
             }
-            y += 4;
+        };
+        // Transform
+        SetWindowTextW(groupLabels[0], L"Transform");
+        theme::SetButtonExpanded(groupLabels[0], aSectionOpen[0]);
+        place(groupLabels[0], 0, y, w, titlebar);
+        y += titlebar + gap;
+        for (int row = 0; row < 3; ++row) {
+            rowLabel(rowLabels[row], y, aSectionOpen[0]);
+            multiField(2 + row * 3, 3, y, aSectionOpen[0]);
+            if (aSectionOpen[0]) y += line + gap;
         }
+        y += S(4);
+        // Renderer component (IRender): colour, material and texture.
+        const bool validEntity = nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size();
+        const auto rendererKind = validEntity && vSelectedIndices.size() == 1 ? scene.vEntities[nSelected].renderer : Entity::RendererKind::None;
+        const bool hasRenderer = rendererKind != Entity::RendererKind::None;
+        SetWindowTextW(groupLabels[1], rendererKind == Entity::RendererKind::Model ? L"Model Renderer"
+                                       : rendererKind == Entity::RendererKind::Image ? L"Image"
+                                                                                     : L"Polygon Renderer");
+        theme::SetButtonExpanded(groupLabels[1], aSectionOpen[1]);
+        place(groupLabels[1], 0, y, w, titlebar, hasRenderer);
+        const bool showRenderer = hasRenderer && aSectionOpen[1];
+        if (hasRenderer) y += titlebar + gap;
+        place(colorLabel, indent, y, labelWidth - S(4), line, showRenderer);
+        multiField(11, 4, y, showRenderer);
+        if (showRenderer) y += line + gap;
+        rowLabel(materialLabel, y, showRenderer);
+        place(materialEdit, fieldX, y, fieldW, box, showRenderer);
+        if (showRenderer) y += line + gap;
+        rowLabel(textureLabel, y, showRenderer);
+        place(textureEdit, fieldX, y, fieldW, box, showRenderer);
+        if (showRenderer) y += line + gap;
+        if (hasRenderer) y += S(4);
+        // Script / Camera components: one titlebar and property rows each.
+        place(groupLabels[2], 0, 0, 1, 1, false);
+        for (auto& view : vComponentViews) {
+            const bool open = !collapsedComponents[view.sName];
+            theme::SetButtonExpanded(view.hHeader, open);
+            place(view.hHeader, 0, y, w, titlebar);
+            y += titlebar + gap;
+            if (view.hScriptLabel) {
+                rowLabel(view.hScriptLabel, y, open);
+                place(view.hScriptValue, fieldX, y, fieldW, box, open);
+                if (open) y += line + gap;
+            }
+            for (auto& row : view.vRows) {
+                if (!row.hValue) {
+                    place(row.hLabel, indent, y, w - indent - padRight, line * 2, open); // warning text
+                    if (open) y += line * 2 + gap;
+                    continue;
+                }
+                rowLabel(row.hLabel, y, open);
+                if (row.bBoolean) place(row.hValue, fieldX, y + S(1), S(18), S(18), open);
+                else place(row.hValue, fieldX, y, fieldW, box, open);
+                if (open) y += line + gap;
+            }
+            y += S(4);
+        }
+        // The legacy list / value editors stay as the hidden model behind the views.
+        for (HWND hidden : {componentList, componentFields, componentValue, componentValueApply, componentChoice, componentRemove})
+            place(hidden, 0, 0, 1, 1, false);
+        // Separator + centred "Add Component" button (Unity: 230 x 25).
+        nAddComponentSeparator = y + S(6);
+        const int addWidth = std::min(S(230), w - S(20));
+        place(componentAdd, (w - addWidth) / 2, y + S(16), addWidth, S(25), validEntity && vSelectedIndices.size() == 1);
+        y += S(16) + S(25) + S(12);
         // Keep Apply in a fixed footer instead of letting it disappear
         // below the scrollable component content.
         MoveWindow(controls[3], 10, std::max(29, h - 34), std::max(1, w - 20), 26, TRUE);

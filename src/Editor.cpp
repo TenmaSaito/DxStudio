@@ -82,6 +82,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         e->inspectorLayerLabel = e->Make(L"STATIC", L"Layer", SS_LEFT);
         e->inspectorLayerValue = e->Make(L"STATIC", L"Default", SS_OWNERDRAW);
         e->inspectorHint = e->Make(L"STATIC", L"Edit values, then Apply changes", SS_LEFT);
+        e->colorLabel = e->Make(L"STATIC", L"Color", SS_LEFT | SS_CENTERIMAGE);
+        SetParent(e->colorLabel, e->panels[2].window);
         for (auto control : {e->inspectorIcon, e->inspectorEnabled, e->inspectorTagLabel, e->inspectorTagValue,
                              e->inspectorLayerLabel, e->inspectorLayerValue})
             SetParent(control, e->panels[2].window);
@@ -145,13 +147,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                                 error);
             }
             Entity cube;
-            cube.name = "Cube";
+            cube.sName = "Cube";
             cube.draw.color = {0.35f, 0.68f, 1.f, 1.f};
-            e->scene.entities.push_back(cube);
+            e->scene.vEntities.push_back(cube);
         }
         e->camera = Camera{};
         e->bShellReady = true;
-        e->nSelected = e->scene.entities.empty() ? -1 : 0;
+        e->nSelected = e->scene.vEntities.empty() ? -1 : 0;
         if (e->nSelected >= 0) e->vSelectedIndices = {e->nSelected};
         e->Populate();
         e->Layout();
@@ -178,6 +180,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         // Inputs draw their own focus border; repaint it on focus changes.
         if ((HIWORD(wp) == EN_SETFOCUS || HIWORD(wp) == EN_KILLFOCUS) && lp)
             InvalidateRect(GetParent(reinterpret_cast<HWND>(lp)), nullptr, FALSE);
+        // Inspector property fields commit on check-box clicks and focus loss.
+        if (LOWORD(wp) >= ID_COMPONENT_FIELD_FIRST && LOWORD(wp) <= ID_COMPONENT_FIELD_LAST) {
+            if (HIWORD(wp) == BN_CLICKED || HIWORD(wp) == EN_KILLFOCUS) e->CommitComponentField(LOWORD(wp), HIWORD(wp) == BN_CLICKED);
+            return 0;
+        }
         if (!e->ShellCommand(LOWORD(wp))) e->Command(LOWORD(wp), HIWORD(wp));
         return 0;
     case WM_LBUTTONDOWN: {
@@ -254,8 +261,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             (id == ID_BUILD_DEBUG && e->bPlaying) || (id == ID_PAUSE && e->bPaused) ||
             (id == ID_MOVE_MODE && e->gizmoMode == GizmoMode::Translate) ||
             (id == ID_ROTATE_MODE && e->gizmoMode == GizmoMode::Rotate) ||
-            (id == ID_SCALE_MODE && e->gizmoMode == GizmoMode::Scale) || (id == ID_PERSPECTIVE && !e->camera.orthographic) ||
-            (id == ID_ORTHOGRAPHIC && e->camera.orthographic) || (id == ID_INSPECTOR_ENABLED && e->bInspectorEnabledChecked) ||
+            (id == ID_SCALE_MODE && e->gizmoMode == GizmoMode::Scale) || (id == ID_PERSPECTIVE && !e->camera.bOrthographic) ||
+            (id == ID_ORTHOGRAPHIC && e->camera.bOrthographic) || (id == ID_INSPECTOR_ENABLED && e->bInspectorEnabledChecked) ||
+            (id >= ID_COMPONENT_FIELD_FIRST && id <= ID_COMPONENT_FIELD_LAST && e->FindFieldRow(id, nullptr) && e->FindFieldRow(id, nullptr)->bChecked) ||
             (id >= ID_PANEL_TAB_FIRST && id < ID_PANEL_TAB_FIRST + BOTTOM_TAB_COUNT && e->nBottomTab == id - ID_PANEL_TAB_FIRST) ||
             (id == ID_VIEW_TAB_FIRST && !e->bGameView) || (id == ID_VIEW_TAB_FIRST + 1 && e->bGameView);
         theme::DrawButton(*item, active);
@@ -277,12 +285,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             text = theme::COLOR_TEXT_DIM;
         } else if (control == e->inspectorHint)
             text = theme::COLOR_TEXT_DIM;
-        for (int i = 2; i <= 14; ++i) {
-            if (e->labels[i] != control) continue;
-            const COLORREF axes[] = {theme::COLOR_AXIS_X, theme::COLOR_AXIS_Y, theme::COLOR_AXIS_Z};
-            const COLORREF rgba[] = {RGB(240, 110, 110), RGB(130, 210, 120), RGB(110, 160, 240), theme::COLOR_TEXT_DIM};
-            text = i <= 10 ? theme::Blend(axes[(i - 2) % 3], RGB(255, 255, 255), 0.25f) : rgba[i - 11];
-        }
+        // Unity draws X / Y / Z and R / G / B / A in the normal label colour;
+        // "script can not be loaded" rows use the warning colour.
+        for (const auto& view : e->vComponentViews)
+            for (const auto& row : view.vRows)
+                if (row.hLabel == control && !row.hValue) text = theme::COLOR_LOG_WARNING;
         SetTextColor(dc, text);
         SetBkColor(dc, back);
         return reinterpret_cast<LRESULT>(theme::Brush(back));
@@ -409,6 +416,10 @@ int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const st
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_F2 && editor.vSelectedIndices.size() == 1) {
             SetFocus(editor.edits[0]);
             SendMessageW(editor.edits[0], EM_SETSEL, 0, -1);
+            continue;
+        }
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_RETURN && editor.IsComponentFieldEdit(msg.hwnd)) {
+            editor.CommitComponentField(GetDlgCtrlID(msg.hwnd), false);
             continue;
         }
         if (msg.message == WM_KEYDOWN && editor.vSelectedIndices.size() == 1) {

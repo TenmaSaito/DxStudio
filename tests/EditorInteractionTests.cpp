@@ -15,10 +15,10 @@ int main() {
     const auto pivot = camera.target;
     dxs::LookCamera(camera, 10, 10, true);
     assert(Near(camera.target.x, pivot.x) && Near(camera.target.y, pivot.y) && Near(camera.target.z, pivot.z));
-    camera = {}; camera.pitch = 0;
+    camera = {}; camera.fPitch = 0;
     assert(dxs::FlyCamera(camera, 1, 0, 0, 0.05f, false));
     assert(Near(camera.target.z, 0.2f));
-    camera = {}; camera.pitch = 0;
+    camera = {}; camera.fPitch = 0;
     dxs::FlyCamera(camera, 1, 1, 0, 0.05f, false);
     assert(Near(std::sqrt(camera.target.x*camera.target.x + camera.target.z*camera.target.z), 0.2f));
     assert(!dxs::FlyCamera(camera, 0, 0, 0, 0.05f, false));

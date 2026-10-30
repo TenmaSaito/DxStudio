@@ -46,9 +46,9 @@ int main() {
     pModel->push_back({.5f, -.5f, 0});
     std::vector<dxs::DrawItem> vDraws;
     dxs::DrawItem model;
-    model.vertices = pModel;
+    model.pVertices = pModel;
     vDraws.push_back(model);
-    for (const auto& entity : scene.entities) vDraws.push_back(entity.draw);
+    for (const auto& entity : scene.vEntities) vDraws.push_back(entity.draw);
 
     const auto exportDir = std::filesystem::path(L"build-direct") / (L"api-export-" + std::to_wstring(GetCurrentProcessId()));
     if (!dxs::ExportGame(std::filesystem::current_path(), exportDir, scene, error)) {

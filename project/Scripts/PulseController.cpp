@@ -15,7 +15,7 @@ dxs::Coroutine PulseController::PulseLoop(dxs::Entity& entity) {
         co_yield dxs::WaitForSeconds(m_fWaitSeconds);
         co_yield ScaleTo(entity, 1.0f);
         co_yield Blink(entity);
-        co_yield dxs::WaitUntil([&entity] { return entity.draw.visible; });
+        co_yield dxs::WaitUntil([&entity] { return entity.draw.bVisible; });
     }
 }
 
@@ -31,10 +31,10 @@ dxs::Coroutine PulseController::ScaleTo(dxs::Entity& entity, float fTarget) {
 
 dxs::Coroutine PulseController::Blink(dxs::Entity& entity) {
     for (int nIndex = 0; nIndex < m_nBlinkCount * 2; ++nIndex) {
-        entity.draw.visible = !entity.draw.visible;
+        entity.draw.bVisible = !entity.draw.bVisible;
         co_yield dxs::WaitForSeconds(0.1f);
     }
-    entity.draw.visible = true;
+    entity.draw.bVisible = true;
 }
 
 DXS_REGISTER_COMPONENT(PulseController)

@@ -27,8 +27,8 @@ std::vector<int> Editor::MergeSelection(const std::vector<int>& hits) const {
 
 void Editor::RestoreDrag() {
     for (const auto& entry : vGizmoStartItems)
-        if (entry.first >= 0 && static_cast<size_t>(entry.first) < scene.entities.size())
-            scene.entities[entry.first].draw = LocalDrawFromWorld(scene, entry.first, entry.second);
+        if (entry.first >= 0 && static_cast<size_t>(entry.first) < scene.vEntities.size())
+            scene.vEntities[entry.first].draw = LocalDrawFromWorld(scene, entry.first, entry.second);
     Inspect();
 }
 
@@ -48,7 +48,7 @@ void Editor::UpdateGroup(const DrawItem& updated) {
     const auto rotation = XMMatrixRotationRollPitchYaw(dr.x, dr.y, dr.z);
     for (const auto& entry : vGizmoStartItems) {
         if (entry.first == nSelected) {
-            scene.entities[entry.first].draw = LocalDrawFromWorld(scene, entry.first, updated);
+            scene.vEntities[entry.first].draw = LocalDrawFromWorld(scene, entry.first, updated);
             continue;
         }
         auto d = entry.second;
@@ -70,7 +70,7 @@ void Editor::UpdateGroup(const DrawItem& updated) {
                 d.scale.z *= factor.z;
             }
         }
-        scene.entities[entry.first].draw = LocalDrawFromWorld(scene, entry.first, d);
+        scene.vEntities[entry.first].draw = LocalDrawFromWorld(scene, entry.first, d);
     }
 }
 
@@ -89,7 +89,7 @@ void Editor::FrameSelection() {
         max.z = std::max(max.z, d.position.z + extent);
     }
     camera.target = {(min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f, (min.z + max.z) * 0.5f};
-    camera.distance = std::clamp(std::max({max.x - min.x, max.y - min.y, max.z - min.z}) * 2.5f, 1.0f, 80.0f);
+    camera.fDistance = std::clamp(std::max({max.x - min.x, max.y - min.y, max.z - min.z}) * 2.5f, 1.0f, 80.0f);
     renderer.SetCamera(camera);
     SetStatus(L"Focused selection. W / E / R: Move / Rotate / Scale.");
 }
@@ -103,33 +103,33 @@ void Editor::Populate() {
         return value;
     };
     const auto filter = lower(Text(hierarchySearch));
-    std::vector<unsigned char> visible(scene.entities.size(), filter.empty() ? 1 : 0);
+    std::vector<unsigned char> visible(scene.vEntities.size(), filter.empty() ? 1 : 0);
     if (!filter.empty()) {
-        for (size_t i = 0; i < scene.entities.size(); ++i)
-            if (lower(Wide(scene.entities[i].name)).find(filter) != std::wstring::npos) {
+        for (size_t i = 0; i < scene.vEntities.size(); ++i)
+            if (lower(Wide(scene.vEntities[i].sName)).find(filter) != std::wstring::npos) {
                 for (int node = static_cast<int>(i), steps = 0;
-                     node >= 0 && static_cast<size_t>(node) < scene.entities.size() && steps++ < 64;
-                     node = scene.entities[node].parent)
+                     node >= 0 && static_cast<size_t>(node) < scene.vEntities.size() && steps++ < 64;
+                     node = scene.vEntities[node].nParent)
                     visible[static_cast<size_t>(node)] = 1;
             }
     }
     // Depth-first tree rows. Collapsed parents hide their children unless
     // a search is active (search always reveals matching descendants).
-    vCollapsedEntities.resize(scene.entities.size(), 0);
+    vCollapsedEntities.resize(scene.vEntities.size(), 0);
     vHierarchyDepths.clear();
     vHierarchyHasChildren.clear();
-    std::vector<char> hasChildren(scene.entities.size(), 0);
-    for (const auto& e : scene.entities)
-        if (e.parent >= 0 && static_cast<size_t>(e.parent) < scene.entities.size())
-            hasChildren[static_cast<size_t>(e.parent)] = 1;
+    std::vector<char> hasChildren(scene.vEntities.size(), 0);
+    for (const auto& e : scene.vEntities)
+        if (e.nParent >= 0 && static_cast<size_t>(e.nParent) < scene.vEntities.size())
+            hasChildren[static_cast<size_t>(e.nParent)] = 1;
     auto add = [&](auto&& self, int parent, int depth) -> void {
-        for (size_t index = 0; index < scene.entities.size(); ++index) {
-            const auto& e = scene.entities[index];
-            if (e.parent != parent || !visible[index]) continue;
+        for (size_t index = 0; index < scene.vEntities.size(); ++index) {
+            const auto& e = scene.vEntities[index];
+            if (e.nParent != parent || !visible[index]) continue;
             // The string keeps the old indented text so screen readers and
             // LB_GETTEXT still describe the row; owner draw renders the tree.
             std::wstring name(static_cast<size_t>(depth) * 3, L' ');
-            name += Wide(e.name);
+            name += Wide(e.sName);
             SendMessageW(hierarchy, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
             vHierarchyRows.push_back(static_cast<int>(index));
             vHierarchyDepths.push_back(depth);
@@ -140,7 +140,7 @@ void Editor::Populate() {
     };
     add(add, -1, 0);
     vSelectedIndices.erase(std::remove_if(vSelectedIndices.begin(), vSelectedIndices.end(),
-                                         [&](int i) { return i < 0 || static_cast<size_t>(i) >= scene.entities.size(); }),
+                                         [&](int i) { return i < 0 || static_cast<size_t>(i) >= scene.vEntities.size(); }),
                           vSelectedIndices.end());
     if (std::find(vSelectedIndices.begin(), vSelectedIndices.end(), nSelected) == vSelectedIndices.end())
         nSelected = vSelectedIndices.empty() ? -1 : vSelectedIndices.back();
@@ -149,7 +149,7 @@ void Editor::Populate() {
 }
 
 void Editor::Inspect() {
-    bool valid = nSelected >= 0 && nSelected < static_cast<int>(scene.entities.size());
+    bool valid = nSelected >= 0 && nSelected < static_cast<int>(scene.vEntities.size());
     const bool single = valid && vSelectedIndices.size() == 1;
     for (auto e : edits)
         if (e) {
@@ -178,28 +178,29 @@ void Editor::Inspect() {
     SendMessageW(componentFields, LB_RESETCONTENT, 0, 0);
     vInspectedComponentFields.clear();
     SetWindowTextW(componentValue, L"");
+    RebuildComponentViews();
     if (!valid) return;
     if (!single) {
         auto label = std::to_wstring(vSelectedIndices.size()) + L" objects selected";
         SetWindowTextW(edits[0], label.c_str());
         return;
     }
-    const auto& entity = scene.entities[nSelected];
-    bInspectorEnabledChecked = entity.draw.visible;
-    SetWindowTextW(edits[0], Wide(entity.name).c_str());
-    SetWindowTextW(materialEdit, Wide(entity.materialAsset).c_str());
-    SetWindowTextW(textureEdit, Wide(entity.textureAsset).c_str());
+    const auto& entity = scene.vEntities[nSelected];
+    bInspectorEnabledChecked = entity.draw.bVisible;
+    SetWindowTextW(edits[0], Wide(entity.sName).c_str());
+    SetWindowTextW(materialEdit, Wide(entity.sMaterialAsset).c_str());
+    SetWindowTextW(textureEdit, Wide(entity.sTextureAsset).c_str());
     if (entity.renderer != Entity::RendererKind::None) {
         const wchar_t* rendererName = entity.renderer == Entity::RendererKind::Polygon ? L"PolygonRenderer [IRender]"
                                       : entity.renderer == Entity::RendererKind::Model ? L"ModelRenderer [IRender]"
                                                                                        : L"Image [IRender]";
         SendMessageW(componentList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(rendererName));
     }
-    for (const auto& component : entity.components) {
+    for (const auto& component : entity.vComponents) {
         const std::wstring name = Wide(component);
         SendMessageW(componentList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
     }
-    if (componentSelection >= 0 && componentSelection < static_cast<int>(entity.components.size()) +
+    if (componentSelection >= 0 && componentSelection < static_cast<int>(entity.vComponents.size()) +
                                                             (entity.renderer != Entity::RendererKind::None ? 1 : 0))
         SendMessageW(componentList, LB_SETCURSEL, componentSelection, 0);
     RefreshComponentFields();
@@ -226,15 +227,16 @@ void Editor::Inspect() {
 }
 
 void Editor::RefreshComponentFields() {
+    UpdateComponentViewValues();
     const int oldField = static_cast<int>(SendMessageW(componentFields, LB_GETCURSEL, 0, 0));
     const int listIndex = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
     vInspectedComponentFields.clear();
     SendMessageW(componentFields, LB_RESETCONTENT, 0, 0);
-    if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.entities.size() || listIndex == LB_ERR) return;
-    auto& entity = scene.entities[nSelected];
+    if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size() || listIndex == LB_ERR) return;
+    auto& entity = scene.vEntities[nSelected];
     const int offset = entity.renderer == Entity::RendererKind::None ? 0 : 1;
     const int componentIndex = listIndex - offset;
-    if (componentIndex < 0 || static_cast<size_t>(componentIndex) >= entity.components.size()) return;
+    if (componentIndex < 0 || static_cast<size_t>(componentIndex) >= entity.vComponents.size()) return;
     vInspectedComponentFields = ComponentEditorValues(entity, static_cast<size_t>(componentIndex));
     for (const auto& [name, value] : vInspectedComponentFields) {
         const auto row = Wide(name + " = " + value);
@@ -249,7 +251,7 @@ void Editor::RefreshComponentFields() {
 }
 
 bool Editor::Apply() {
-    if (vSelectedIndices.size() != 1 || nSelected < 0 || nSelected >= static_cast<int>(scene.entities.size())) return true;
+    if (vSelectedIndices.size() != 1 || nSelected < 0 || nSelected >= static_cast<int>(scene.vEntities.size())) return true;
     std::string name = Utf8(Text(edits[0]));
     if (name.empty() || name.find_first_of("\r\n") != std::string::npos) {
         Error(window, "Enter a non-empty, single-line name.");
@@ -270,8 +272,8 @@ bool Editor::Apply() {
             return false;
         }
     }
-    auto& entity = scene.entities[nSelected];
-    entity.name = name;
+    auto& entity = scene.vEntities[nSelected];
+    entity.sName = name;
     auto assetPath = [&](HWND edit, const char* label, std::string& destination) {
         const auto value = Utf8(Text(edit));
         if (value.empty()) {
@@ -297,7 +299,7 @@ bool Editor::Apply() {
         destination.assign(reinterpret_cast<const char*>(normalized.data()), normalized.size());
         return true;
     };
-    if (!assetPath(materialEdit, "Material", entity.materialAsset) || !assetPath(textureEdit, "Texture", entity.textureAsset))
+    if (!assetPath(materialEdit, "Material", entity.sMaterialAsset) || !assetPath(textureEdit, "Texture", entity.sTextureAsset))
         return false;
     auto& d = entity.draw;
     d.position = {values[0], values[1], values[2]};
@@ -310,6 +312,236 @@ bool Editor::Apply() {
     Populate();
     SetStatus(L"Changes applied. Save the scene to keep them.");
     return true;
+}
+
+
+// ---- Unity-style component sections ------------------------------------------
+// Each attached component gets a titlebar (foldout, icon, title, ⋮) followed by
+// one property row per EditorField. The views are rebuilt only when the
+// selection or the attachment list changes; otherwise only values refresh.
+void Editor::RebuildComponentViews() {
+    const bool single = nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size() && vSelectedIndices.size() == 1;
+    std::string signature;
+    if (single) {
+        signature = std::to_string(nSelected) + "|" + (bPlaying ? "P" : "E");
+        for (const auto& name : scene.vEntities[nSelected].vComponents) signature += "|" + name;
+    }
+    if (signature == sComponentViewSignature) {
+        UpdateComponentViewValues();
+        return;
+    }
+    sComponentViewSignature = signature;
+    for (auto& view : vComponentViews) {
+        for (HWND control : {view.hHeader, view.hScriptLabel, view.hScriptValue})
+            if (control) DestroyWindow(control);
+        for (auto& row : view.vRows) {
+            if (row.hLabel) DestroyWindow(row.hLabel);
+            if (row.hValue) DestroyWindow(row.hValue);
+        }
+    }
+    vComponentViews.clear();
+    if (!single) {
+        LayoutPanel(2);
+        return;
+    }
+    auto& entity = scene.vEntities[nSelected];
+    HWND panel = panels[2].window;
+    auto make = [&](const wchar_t* className, const std::wstring& text, DWORD style, int id) {
+        HWND control = Make(className, text.c_str(), style, id);
+        SetParent(control, panel);
+        return control;
+    };
+    int nFieldId = ID_COMPONENT_FIELD_FIRST;
+    for (size_t nIndex = 0; nIndex < entity.vComponents.size() && nIndex < COMPONENT_VIEW_LIMIT; ++nIndex) {
+        InspectorComponentView view;
+        view.nComponentIndex = nIndex;
+        view.sName = entity.vComponents[nIndex];
+        const bool camera = view.sName == "Camera";
+        view.hHeader = make(L"BUTTON", Wide(camera ? view.sName : view.sName + " (Script)"), BS_OWNERDRAW,
+                            ID_COMPONENT_HEADER_FIRST + static_cast<int>(nIndex));
+        theme::SetButtonSpec(view.hHeader, {theme::ButtonRole::HEADER, camera ? theme::Icon::CAMERA : theme::Icon::SCRIPT,
+                                            camera ? theme::COLOR_TEXT : theme::COLOR_ICON_SCRIPT});
+        if (!camera) {
+            // Unity shows the MonoScript as a read-only object field.
+            view.hScriptLabel = make(L"STATIC", L"Script", SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, 0);
+            view.hScriptValue = make(L"EDIT", Wide(view.sName), ES_AUTOHSCROLL | ES_READONLY, 0);
+        }
+        if (!IsComponentRegistered(view.sName)) {
+            InspectorFieldRow warning;
+            warning.hLabel = make(L"STATIC", L"The associated script can not be loaded. Register the class and rebuild.", SS_LEFT | SS_NOPREFIX, 0);
+            view.vRows.push_back(warning);
+        } else {
+            const auto values = ComponentEditorValues(entity, nIndex);
+            std::vector<EditorField> fields;
+            if (nIndex < entity.vRuntimeComponents.size() && entity.vRuntimeComponents[nIndex]) fields = entity.vRuntimeComponents[nIndex]->EditorFields();
+            for (const auto& [field, value] : values) {
+                if (nFieldId > ID_COMPONENT_FIELD_LAST) break;
+                InspectorFieldRow row;
+                row.sField = field;
+                const auto info = std::find_if(fields.begin(), fields.end(), [&](const EditorField& candidate) { return candidate.sName == field; });
+                row.bBoolean = info != fields.end() && info->type == EditorFieldType::Boolean;
+                const bool readOnly = info != fields.end() && info->bReadOnly;
+                row.hLabel = make(L"STATIC", Wide(field), SS_LEFT | SS_CENTERIMAGE | SS_ENDELLIPSIS | SS_NOPREFIX, 0);
+                if (row.bBoolean) {
+                    row.bChecked = value == "true";
+                    row.hValue = make(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, nFieldId);
+                    theme::SetButtonSpec(row.hValue, {theme::ButtonRole::CHECKBOX, theme::Icon::NONE});
+                } else {
+                    row.hValue = make(L"EDIT", Wide(value), ES_AUTOHSCROLL | WS_TABSTOP | (readOnly ? ES_READONLY : 0), nFieldId);
+                    SendMessageW(row.hValue, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(2, 2));
+                }
+                EnableWindow(row.hValue, !readOnly);
+                ++nFieldId;
+                view.vRows.push_back(row);
+            }
+        }
+        vComponentViews.push_back(std::move(view));
+    }
+    LayoutPanel(2);
+}
+
+void Editor::UpdateComponentViewValues() {
+    if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
+    auto& entity = scene.vEntities[nSelected];
+    for (auto& view : vComponentViews) {
+        if (view.nComponentIndex >= entity.vComponents.size() || !IsComponentRegistered(view.sName)) continue;
+        const auto values = ComponentEditorValues(entity, view.nComponentIndex);
+        for (auto& row : view.vRows) {
+            if (!row.hValue) continue;
+            const auto found = std::find_if(values.begin(), values.end(), [&](const auto& pair) { return pair.first == row.sField; });
+            if (found == values.end()) continue;
+            if (row.bBoolean) {
+                const bool checked = found->second == "true";
+                if (checked != row.bChecked) {
+                    row.bChecked = checked;
+                    InvalidateRect(row.hValue, nullptr, FALSE);
+                }
+            } else if (GetFocus() != row.hValue) {
+                const std::wstring text = Wide(found->second);
+                if (Text(row.hValue) != text) SetWindowTextW(row.hValue, text.c_str());
+            }
+        }
+    }
+}
+
+InspectorFieldRow* Editor::FindFieldRow(int controlId, InspectorComponentView** ppView) {
+    for (auto& view : vComponentViews)
+        for (auto& row : view.vRows)
+            if (row.hValue && GetDlgCtrlID(row.hValue) == controlId) {
+                if (ppView) *ppView = &view;
+                return &row;
+            }
+    return nullptr;
+}
+
+bool Editor::IsComponentFieldEdit(HWND control) const {
+    for (const auto& view : vComponentViews) {
+        if (control == view.hScriptValue) return true;
+        for (const auto& row : view.vRows)
+            if (row.hValue == control && !row.bBoolean) return true;
+    }
+    return false;
+}
+
+// Applies an edited property (Enter / focus loss) or a toggled check box.
+void Editor::CommitComponentField(int controlId, bool bToggle) {
+    InspectorComponentView* pView = nullptr;
+    InspectorFieldRow* pRow = FindFieldRow(controlId, &pView);
+    if (!pRow || !pView || nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
+    auto& entity = scene.vEntities[nSelected];
+    std::string sValue;
+    if (pRow->bBoolean) {
+        if (!bToggle) return;
+        pRow->bChecked = !pRow->bChecked;
+        sValue = pRow->bChecked ? "true" : "false";
+        InvalidateRect(pRow->hValue, nullptr, FALSE);
+    } else {
+        sValue = Utf8(Text(pRow->hValue));
+    }
+    std::string error;
+    if (!SetComponentEditorValue(entity, pView->nComponentIndex, pRow->sField, sValue, error)) {
+        Debug::LogWarning(pView->sName + "." + pRow->sField + ": " + error);
+        SetStatus(Wide(error).c_str());
+    } else {
+        SetStatus(L"Component value applied. Values stay live during Play Mode.");
+    }
+    UpdateComponentViewValues();
+    RefreshComponentFields();
+}
+
+// Routes the titlebar's ⋮ / right-click to the legacy component menu by
+// selecting the matching row of the (hidden) component list first.
+bool Editor::SelectComponentForWindow(HWND control) {
+    if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return false;
+    const int offset = scene.vEntities[nSelected].renderer == Entity::RendererKind::None ? 0 : 1;
+    if (control == groupLabels[1] && offset) {
+        SendMessageW(componentList, LB_SETCURSEL, 0, 0);
+        return true;
+    }
+    for (const auto& view : vComponentViews)
+        if (control == view.hHeader) {
+            SendMessageW(componentList, LB_SETCURSEL, offset + static_cast<int>(view.nComponentIndex), 0);
+            RefreshComponentFields();
+            return true;
+        }
+    return false;
+}
+
+// True when the cursor is over the ⋮ area at the right end of a titlebar.
+bool Editor::IsOverTitlebarMenu(HWND header) const {
+    POINT cursor{};
+    GetCursorPos(&cursor);
+    RECT rect{};
+    GetWindowRect(header, &rect);
+    return PtInRect(&rect, cursor) && cursor.x >= rect.right - MulDiv(26, static_cast<int>(GetDpiForWindow(header)), 96);
+}
+
+void Editor::ShowTitlebarMenu(HWND header) {
+    RECT rect{};
+    GetWindowRect(header, &rect);
+    if (header == groupLabels[0]) {
+        // Transform: Unity's "Reset".
+        HMENU menu = CreatePopupMenu();
+        AppendMenuW(menu, MF_STRING | (vSelectedIndices.size() == 1 ? 0 : MF_GRAYED), 1, L"Reset");
+        const int choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_TOPALIGN, rect.right, rect.bottom, 0, window, nullptr);
+        DestroyMenu(menu);
+        if (choice == 1 && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size()) {
+            auto& draw = scene.vEntities[nSelected].draw;
+            draw.position = {0, 0, 0};
+            draw.rotation = {0, 0, 0};
+            draw.scale = {1, 1, 1};
+            Inspect();
+            SetStatus(L"Transform reset.");
+        }
+        return;
+    }
+    if (SelectComponentForWindow(header)) ShowComponentMenu({rect.right - MulDiv(150, static_cast<int>(GetDpiForWindow(header)), 96), rect.bottom});
+}
+
+// Unity's "Add Component" button opens a categorised list of components.
+void Editor::ShowAddComponentMenu() {
+    RECT rect{};
+    GetWindowRect(componentAdd, &rect);
+    HMENU menu = CreatePopupMenu(), rendering = CreatePopupMenu(), scripts = CreatePopupMenu();
+    const int count = static_cast<int>(SendMessageW(componentChoice, CB_GETCOUNT, 0, 0));
+    std::vector<std::string> attached;
+    if (nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size()) attached = scene.vEntities[nSelected].vComponents;
+    for (int nIndex = 0; nIndex < count; ++nIndex) {
+        const int length = static_cast<int>(SendMessageW(componentChoice, CB_GETLBTEXTLEN, nIndex, 0));
+        std::wstring text(static_cast<size_t>(length) + 1, L'\0');
+        SendMessageW(componentChoice, CB_GETLBTEXT, nIndex, reinterpret_cast<LPARAM>(text.data()));
+        text.resize(length);
+        const bool renderer = text == L"PolygonRenderer" || text == L"ModelRenderer" || text == L"Image";
+        const bool isAttached = std::find(attached.begin(), attached.end(), Utf8(text)) != attached.end();
+        AppendMenuW(renderer ? rendering : scripts, MF_STRING | (isAttached ? MF_GRAYED : 0), 1 + nIndex, text.c_str());
+    }
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(rendering), L"Rendering");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(scripts), L"Scripts");
+    const int choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_CENTERALIGN | TPM_TOPALIGN, (rect.left + rect.right) / 2, rect.bottom, 0, window, nullptr);
+    DestroyMenu(menu);
+    if (choice <= 0) return;
+    SendMessageW(componentChoice, CB_SETCURSEL, choice - 1, 0);
+    Command(ID_ADD_COMPONENT, BN_CLICKED); // existing attach logic
 }
 
 } // namespace dxs::editor

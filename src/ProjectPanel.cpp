@@ -886,15 +886,15 @@ bool CreateProjectComponent(const fs::path& projectRoot, const std::wstring& nam
         identifier.push_back(static_cast<char>(c)); // Validated ASCII above.
     const std::string header = "#pragma once\n#include \"Engine.h\"\n\nclass " + identifier +
                                " final : public dxs::Component {\npublic:\n    void Start(dxs::Entity& entity) override;\n    "
-                               "void Update(dxs::Entity& entity, float deltaSeconds) override;\n};\n";
+                               "void Update(dxs::Entity& entity, float fDeltaSeconds) override;\n};\n";
     const std::string source =
         "#include \"" + identifier + ".h\"\n\nvoid " + identifier +
         "::Start(dxs::Entity& entity) {\n    // Called once for each attachment.\n"
         "    // Coroutines: StartCoroutine(MyRoutine(entity)); with\n"
         "    //   dxs::Coroutine MyRoutine(dxs::Entity& e) { co_yield dxs::WaitForSeconds(1.0f); ... }\n"
         "    (void)entity;\n}\n\nvoid " + identifier +
-        "::Update(dxs::Entity& entity, float deltaSeconds) {\n    // Put this component's behavior here.\n    (void)entity;\n    "
-        "(void)deltaSeconds;\n}\n\nDXS_REGISTER_COMPONENT(" +
+        "::Update(dxs::Entity& entity, float fDeltaSeconds) {\n    // Put this component's behavior here.\n    (void)entity;\n    "
+        "(void)fDeltaSeconds;\n}\n\nDXS_REGISTER_COMPONENT(" +
         identifier + ")\n";
     const auto headerPath = folder / (name + L".h"), sourcePath = folder / (name + L".cpp");
     HANDLE files[2]{INVALID_HANDLE_VALUE, INVALID_HANDLE_VALUE};

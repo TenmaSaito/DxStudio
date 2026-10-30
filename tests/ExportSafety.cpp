@@ -13,7 +13,7 @@ int main() {
     { std::ofstream(fixture / L"output/Game.exe") << "existing game"; }
     { std::ofstream(fixture / L"output/scene.dxs") << "existing scene"; }
     dxs::Scene scene;
-    dxs::Entity entity; entity.name = "test"; scene.entities.push_back(entity);
+    dxs::Entity entity; entity.sName = "test"; scene.vEntities.push_back(entity);
     std::string error;
     bool passed = !dxs::ExportGame(fixture, fixture / L"output", scene, error);
     std::string gameText, sceneText;

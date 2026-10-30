@@ -83,8 +83,9 @@ RECT Editor::BoxInset(HWND control) const {
     if (!control) return {};
     if (control == hierarchySearch) return {20, 2, 4, 2};
     for (HWND edit : edits)
-        if (edit == control) return {4, 2, 4, 2};
-    if (control == materialEdit || control == textureEdit || control == componentValue) return {4, 2, 4, 2};
+        if (edit == control) return {4, 1, 4, 1};
+    if (IsComponentFieldEdit(control)) return {4, 1, 4, 1};
+    if (control == materialEdit || control == textureEdit || control == componentValue) return {4, 1, 4, 1};
     if (control == componentList || control == componentFields) return {1, 1, 1, 1};
     return {};
 }
@@ -114,16 +115,21 @@ void Editor::PaintInputBoxes(HDC dc, HWND panel) {
         paintBox(edit);
     for (HWND control : {materialEdit, textureEdit, componentValue, componentList, componentFields})
         paintBox(control);
+    for (const auto& view : vComponentViews) {
+        paintBox(view.hScriptValue);
+        for (const auto& row : view.vRows)
+            if (!row.bBoolean) paintBox(row.hValue);
+    }
 }
 
 theme::Icon Editor::EntityIcon(const Entity& entity) const {
-    if (std::find(entity.components.begin(), entity.components.end(), "Camera") != entity.components.end())
+    if (std::find(entity.vComponents.begin(), entity.vComponents.end(), "Camera") != entity.vComponents.end())
         return theme::Icon::CAMERA;
     switch (entity.renderer) {
     case Entity::RendererKind::None: return theme::Icon::GAME_OBJECT;
     case Entity::RendererKind::Model: return theme::Icon::MODEL;
     case Entity::RendererKind::Image: return theme::Icon::IMAGE;
-    default: return entity.draw.is2D ? theme::Icon::QUAD : theme::Icon::CUBE;
+    default: return entity.draw.bIs2D ? theme::Icon::QUAD : theme::Icon::CUBE;
     }
 }
 
@@ -136,7 +142,7 @@ void Editor::DrawHierarchyRow(const DRAWITEMSTRUCT& item) {
         return;
     }
     const int entityIndex = vHierarchyRows[row];
-    const auto& entity = scene.entities[entityIndex];
+    const auto& entity = scene.vEntities[entityIndex];
     const bool selectedRow = (item.itemState & ODS_SELECTED) != 0;
     const bool focused = GetFocus() == hierarchy;
     const bool hot = row == nHierarchyHot;
@@ -152,7 +158,7 @@ void Editor::DrawHierarchyRow(const DRAWITEMSTRUCT& item) {
                         theme::COLOR_TEXT_DIM);
     }
     x += 14;
-    const bool active = entity.draw.visible;
+    const bool active = entity.draw.bVisible;
     const auto icon = EntityIcon(entity);
     RECT iconBox{x, mid - 8, x + 16, mid + 8};
     const COLORREF iconColor =
@@ -162,10 +168,10 @@ void Editor::DrawHierarchyRow(const DRAWITEMSTRUCT& item) {
     const COLORREF textColor = !active       ? theme::COLOR_TEXT_DISABLED
                                : selectedRow ? theme::COLOR_TEXT_BRIGHT
                                              : theme::COLOR_TEXT;
-    theme::DrawLabel(dc, Wide(entity.name), text, textColor, theme::GetFonts().hRegular,
+    theme::DrawLabel(dc, Wide(entity.sName), text, textColor, theme::GetFonts().hRegular,
                      DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
-    if (entity.components.size() >
-        (std::find(entity.components.begin(), entity.components.end(), "Camera") != entity.components.end() ? 1u : 0u)) {
+    if (entity.vComponents.size() >
+        (std::find(entity.vComponents.begin(), entity.vComponents.end(), "Camera") != entity.vComponents.end() ? 1u : 0u)) {
         RECT badge{rect.right - 20, mid - 6, rect.right - 8, mid + 6};
         theme::DrawIcon(dc, theme::Icon::SCRIPT, badge, theme::COLOR_ICON_SCRIPT);
     }
@@ -220,9 +226,9 @@ void Editor::DrawInspectorStatic(const DRAWITEMSTRUCT& item) {
     RECT rect = item.rcItem;
     theme::Fill(dc, rect, theme::COLOR_PANEL);
     if (item.hwndItem == inspectorIcon) {
-        const bool valid = nSelected >= 0 && static_cast<size_t>(nSelected) < scene.entities.size();
+        const bool valid = nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size();
         const auto icon =
-            valid && vSelectedIndices.size() == 1 ? EntityIcon(scene.entities[nSelected]) : theme::Icon::GAME_OBJECT;
+            valid && vSelectedIndices.size() == 1 ? EntityIcon(scene.vEntities[nSelected]) : theme::Icon::GAME_OBJECT;
         theme::DrawIcon(dc, icon, rect, valid ? theme::COLOR_ICON_CUBE : theme::COLOR_TEXT_DISABLED);
         return;
     }

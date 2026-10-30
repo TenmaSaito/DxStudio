@@ -86,10 +86,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
         return 1;
     }
     dxs::RegisterProjectComponents();
-    for (const auto& entity : scene.entities) {
-        for (const auto& component : entity.components) {
+    for (const auto& entity : scene.vEntities) {
+        for (const auto& component : entity.vComponents) {
             if (!dxs::IsComponentRegistered(component)) {
-                error = "Component is not registered: " + component + " (entity: " + entity.name + ")";
+                error = "Component is not registered: " + component + " (entity: " + entity.sName + ")";
                 MessageBoxA(nullptr, error.c_str(), "DxStudio Game", MB_OK | MB_ICONERROR);
                 return 1;
             }

@@ -5,8 +5,8 @@ void BoxController::Start(dxs::Entity& entity) {
     (void)entity;
 }
 
-void BoxController::Update(dxs::Entity& entity, float deltaSeconds) {
-    if (enabled_) entity.draw.rotation.y += rotationSpeed * deltaSeconds;
+void BoxController::Update(dxs::Entity& entity, float fDeltaSeconds) {
+    if (m_bEnabled) entity.draw.rotation.y += m_fRotationSpeed * fDeltaSeconds;
 }
 
 DXS_REGISTER_COMPONENT(BoxController)

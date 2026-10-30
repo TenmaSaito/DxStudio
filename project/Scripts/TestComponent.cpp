@@ -1,9 +1,9 @@
 #include "TestComponent.h"
 
-void TestComponent::Update(dxs::Entity& entity, float deltaSeconds) {
-    // Add your behavior here. deltaSeconds is elapsed time in seconds.
+void TestComponent::Update(dxs::Entity& entity, float fDeltaSeconds) {
+    // Add your behavior here. fDeltaSeconds is elapsed time in seconds.
     (void)entity;
-    (void)deltaSeconds;
+    (void)fDeltaSeconds;
 }
 
 DXS_REGISTER_COMPONENT(TestComponent)

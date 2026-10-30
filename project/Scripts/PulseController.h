@@ -7,7 +7,7 @@
 class PulseController final : public dxs::Component {
 public:
     void Start(dxs::Entity& entity) override;
-    void Update(dxs::Entity& entity, float deltaSeconds) override;
+    void Update(dxs::Entity& entity, float fDeltaSeconds) override;
     std::vector<dxs::EditorField> EditorFields() override {
         return {dxs::EditField("Pulse Seconds", m_fPulseSeconds), dxs::EditField("Wait Seconds", m_fWaitSeconds),
                 dxs::EditField("Blink Count", m_nBlinkCount)};

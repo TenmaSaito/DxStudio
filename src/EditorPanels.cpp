@@ -18,7 +18,7 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
             const int x = GET_X_LPARAM(lp);
             if (x >= arrowX - 2 && x <= arrowX + 14) {
                 const int entity = e->vHierarchyRows[row];
-                e->vCollapsedEntities.resize(e->scene.entities.size(), 0);
+                e->vCollapsedEntities.resize(e->scene.vEntities.size(), 0);
                 e->vCollapsedEntities[entity] = !e->vCollapsedEntities[entity];
                 e->Populate();
                 return 0;
@@ -250,6 +250,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             return 0;
         }
         if (p->index == 2) {
+            e->SelectComponentForWindow(reinterpret_cast<HWND>(wp));
             e->ShowComponentMenu({GET_X_LPARAM(lp), GET_Y_LPARAM(lp)});
             return 0;
         }
@@ -388,17 +389,12 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             theme::Fill(dc, toolbar, theme::COLOR_TAB_ACTIVE);
             theme::Line(dc, 0, header + 29, r.right, header + 29, theme::COLOR_SEPARATOR);
         } else if (p->index == 2 && !p->collapsed) {
-            // Unreal-style coloured bars in front of X / Y / Z fields.
-            const COLORREF axes[] = {theme::COLOR_AXIS_X, theme::COLOR_AXIS_Y, theme::COLOR_AXIS_Z};
-            for (int field = 2; field <= 10; ++field) {
-                if (!IsWindowVisible(e->edits[field])) continue;
-                RECT edit{};
-                GetWindowRect(e->edits[field], &edit);
-                MapWindowPoints(nullptr, hwnd, reinterpret_cast<POINT*>(&edit), 2);
-                RECT bar{edit.left - 15, edit.top, edit.left - 12, edit.bottom};
-                theme::Fill(dc, bar, axes[(field - 2) % 3]);
-            }
-            theme::Line(dc, 0, 113 - e->nInspectorScroll, r.right, 113 - e->nInspectorScroll, theme::COLOR_SEPARATOR);
+            // Unity: separator under the GameObject header and above "Add Component".
+            theme::Line(dc, 0, e->nInspectorHeaderBottom - e->nInspectorScroll, r.right, e->nInspectorHeaderBottom - e->nInspectorScroll,
+                        theme::COLOR_SEPARATOR);
+            if (IsWindowVisible(e->componentAdd))
+                theme::Line(dc, 0, e->nAddComponentSeparator - e->nInspectorScroll, r.right, e->nAddComponentSeparator - e->nInspectorScroll,
+                            theme::COLOR_SEPARATOR);
             RECT footer{0, r.bottom - 40, r.right, r.bottom};
             theme::Fill(dc, footer, theme::COLOR_TAB_STRIP);
             theme::Line(dc, 0, r.bottom - 40, r.right, r.bottom - 40, theme::COLOR_SEPARATOR);
@@ -431,7 +427,7 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         if (!e->bRendererReady) return 0;
         if (!e->Apply()) return 0;
         const int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
-        if (!(wp & MK_CONTROL) && e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.entities.size()) {
+        if (!(wp & MK_CONTROL) && e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.vEntities.size()) {
             const auto item = WorldDraw(e->scene, e->nSelected);
             const int axis = e->renderer.HitGizmo(x, y, item, e->gizmoMode);
             if (axis >= 0) {
@@ -512,7 +508,7 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         }
         return 0;
     case WM_CAPTURECHANGED:
-        if (e->drag == Editor::Drag::Gizmo && e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.entities.size()) {
+        if (e->drag == Editor::Drag::Gizmo && e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.vEntities.size()) {
             e->RestoreDrag();
             e->SetStatus(L"Transform cancelled.");
         }
@@ -541,7 +537,7 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                 return 0;
             }
             if (e->drag == Editor::Drag::Gizmo) {
-                if (e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.entities.size()) {
+                if (e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.vEntities.size()) {
                     DrawItem updated;
                     if (e->renderer.DragGizmo(e->gizmoStartItem, e->gizmoMode, e->nGizmoAxis, e->gizmoStartMouse.x,
                                               e->gizmoStartMouse.y, x, y, updated)) {
@@ -563,18 +559,18 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                 const float height = static_cast<float>(std::max<LONG>(1, rect.bottom));
                 {
                     const float worldHeight =
-                        e->camera.distance *
-                        (e->camera.orthographic ? 10.0f / 6.32455532f : 2.0f * std::tan(DirectX::XM_PIDIV4 * 0.5f));
+                        e->camera.fDistance *
+                        (e->camera.bOrthographic ? 10.0f / 6.32455532f : 2.0f * std::tan(DirectX::XM_PIDIV4 * 0.5f));
                     const float speed = worldHeight / height;
-                    const float sy = std::sin(e->camera.yaw), cy = std::cos(e->camera.yaw);
-                    const float sp = std::sin(e->camera.pitch), cp = std::cos(e->camera.pitch);
+                    const float sy = std::sin(e->camera.fYaw), cy = std::cos(e->camera.fYaw);
+                    const float sp = std::sin(e->camera.fPitch), cp = std::cos(e->camera.fPitch);
                     e->camera.target.x += (-dx * cy - dy * sy * sp) * speed;
                     e->camera.target.y += dy * cp * speed;
                     e->camera.target.z += (-dx * sy + dy * cy * sp) * speed;
                 }
             }
             e->renderer.SetCamera(e->camera);
-        } else if (e->bRendererReady && e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.entities.size()) {
+        } else if (e->bRendererReady && e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.vEntities.size()) {
             TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd, 0};
             TrackMouseEvent(&track);
             e->renderer.SetGizmoHot(
@@ -586,7 +582,7 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_MOUSEWHEEL: {
         const float steps = static_cast<float>(GET_WHEEL_DELTA_WPARAM(wp)) / static_cast<float>(WHEEL_DELTA);
-        e->camera.distance = std::clamp(e->camera.distance * std::pow(0.85f, steps), 0.5f, 80.0f);
+        e->camera.fDistance = std::clamp(e->camera.fDistance * std::pow(0.85f, steps), 0.5f, 80.0f);
         e->renderer.SetCamera(e->camera);
         return 0;
     }

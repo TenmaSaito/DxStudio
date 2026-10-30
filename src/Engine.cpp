@@ -19,26 +19,26 @@
 namespace dxs {
 namespace {
 bool ValidCamera(const Camera& camera) {
-    const float values[] = {camera.target.x, camera.target.y,    camera.target.z, camera.yaw,    camera.pitch,
-                            camera.distance, camera.fieldOfView, camera.nearClip, camera.farClip};
+    const float values[] = {camera.target.x, camera.target.y,    camera.target.z, camera.fYaw,    camera.fPitch,
+                            camera.fDistance, camera.fFieldOfView, camera.fNearClip, camera.fFarClip};
     for (float value : values)
         if (!std::isfinite(value)) return false;
-    return camera.distance >= 0.2f && camera.distance <= 80.0f && camera.pitch >= -1.54f && camera.pitch <= 1.54f &&
-           camera.fieldOfView >= 1.0f && camera.fieldOfView <= 179.0f && camera.nearClip > 0.0f &&
-           camera.farClip > camera.nearClip;
+    return camera.fDistance >= 0.2f && camera.fDistance <= 80.0f && camera.fPitch >= -1.54f && camera.fPitch <= 1.54f &&
+           camera.fFieldOfView >= 1.0f && camera.fFieldOfView <= 179.0f && camera.fNearClip > 0.0f &&
+           camera.fFarClip > camera.fNearClip;
 }
 
 bool Valid(const Entity& e) {
     const auto& d = e.draw;
     const float values[] = {d.position.x, d.position.y, d.position.z, d.rotation.x, d.rotation.y, d.rotation.z, d.scale.x,
                             d.scale.y,    d.scale.z,    d.color.x,    d.color.y,    d.color.z,    d.color.w};
-    if (e.name.empty() || e.name.size() > 1024 || e.name.find_first_of("\r\n") != std::string::npos ||
-        e.components.size() > MaxComponentsPerEntity)
+    if (e.sName.empty() || e.sName.size() > 1024 || e.sName.find_first_of("\r\n") != std::string::npos ||
+        e.vComponents.size() > MaxComponentsPerEntity)
         return false;
-    for (size_t i = 0; i < e.components.size(); ++i) {
-        const auto& component = e.components[i];
+    for (size_t i = 0; i < e.vComponents.size(); ++i) {
+        const auto& component = e.vComponents[i];
         if (component.empty() || component.size() > 128 || component.find_first_of("\r\n") != std::string::npos ||
-            std::find(e.components.begin(), e.components.begin() + i, component) != e.components.begin() + i)
+            std::find(e.vComponents.begin(), e.vComponents.begin() + i, component) != e.vComponents.begin() + i)
             return false;
     }
     for (const auto& [component, fields] : e.componentProperties) {
@@ -69,13 +69,13 @@ std::unordered_map<std::string, Factory>& Components() {
 }
 
 bool ValidParents(const Scene& scene) {
-    for (size_t i = 0; i < scene.entities.size(); ++i) {
-        int parent = scene.entities[i].parent;
-        if (parent < -1 || parent >= static_cast<int>(scene.entities.size()) || parent == static_cast<int>(i)) return false;
+    for (size_t i = 0; i < scene.vEntities.size(); ++i) {
+        int parent = scene.vEntities[i].nParent;
+        if (parent < -1 || parent >= static_cast<int>(scene.vEntities.size()) || parent == static_cast<int>(i)) return false;
         size_t steps = 0;
         while (parent >= 0) {
-            if (++steps > scene.entities.size()) return false;
-            parent = scene.entities[static_cast<size_t>(parent)].parent;
+            if (++steps > scene.vEntities.size()) return false;
+            parent = scene.vEntities[static_cast<size_t>(parent)].nParent;
         }
     }
     return true;
@@ -217,27 +217,27 @@ Entity::~Entity() = default;
 Entity::Entity(Entity&&) noexcept = default;
 Entity& Entity::operator=(Entity&&) noexcept = default;
 Entity::Entity(const Entity& other)
-    : name(other.name), draw(other.draw), parent(other.parent), renderer(other.renderer), modelAsset(other.modelAsset),
-      materialAsset(other.materialAsset), textureAsset(other.textureAsset), playAnimation(other.playAnimation),
-      animationTime(other.animationTime), animationIndex(other.animationIndex), components(other.components),
+    : sName(other.sName), draw(other.draw), nParent(other.nParent), renderer(other.renderer), sModelAsset(other.sModelAsset),
+      sMaterialAsset(other.sMaterialAsset), sTextureAsset(other.sTextureAsset), bPlayAnimation(other.bPlayAnimation),
+      fAnimationTime(other.fAnimationTime), nAnimationIndex(other.nAnimationIndex), vComponents(other.vComponents),
       componentProperties(other.componentProperties) {}
 Entity& Entity::operator=(const Entity& other) {
     if (this != &other) {
-        name = other.name;
+        sName = other.sName;
         draw = other.draw;
-        parent = other.parent;
+        nParent = other.nParent;
         renderer = other.renderer;
-        modelAsset = other.modelAsset;
-        materialAsset = other.materialAsset;
-        textureAsset = other.textureAsset;
-        playAnimation = other.playAnimation;
-        animationTime = other.animationTime;
-        animationIndex = other.animationIndex;
-        components = other.components;
+        sModelAsset = other.sModelAsset;
+        sMaterialAsset = other.sMaterialAsset;
+        sTextureAsset = other.sTextureAsset;
+        bPlayAnimation = other.bPlayAnimation;
+        fAnimationTime = other.fAnimationTime;
+        nAnimationIndex = other.nAnimationIndex;
+        vComponents = other.vComponents;
         componentProperties = other.componentProperties;
-        runtimeComponentNames.clear();
-        runtimeComponents.clear();
-        runtimeComponentStarted.clear();
+        vRuntimeComponentNames.clear();
+        vRuntimeComponents.clear();
+        vRuntimeComponentStarted.clear();
     }
     return *this;
 }
@@ -249,8 +249,8 @@ bool LoadMaterial(const std::filesystem::path& path, Material& material, std::st
     unsigned version = 0;
     Material loaded;
     if (!file ||
-        !(file >> magic >> version >> std::quoted(loaded.name) >> loaded.baseColor.x >> loaded.baseColor.y >>
-          loaded.baseColor.z >> loaded.baseColor.w >> std::quoted(loaded.textureAsset) >> std::quoted(loaded.shaderAsset)) ||
+        !(file >> magic >> version >> std::quoted(loaded.sName) >> loaded.baseColor.x >> loaded.baseColor.y >>
+          loaded.baseColor.z >> loaded.baseColor.w >> std::quoted(loaded.sTextureAsset) >> std::quoted(loaded.sShaderAsset)) ||
         magic != "DXMATERIAL" || version != 1) {
         error = "Invalid material file: " + PathText(path);
         return false;
@@ -279,9 +279,9 @@ bool SaveMaterial(const std::filesystem::path& path, const Material& material, s
         error = "Cannot create material: " + PathText(path);
         return false;
     }
-    file << "DXMATERIAL 1 " << std::quoted(material.name) << ' ' << std::setprecision(std::numeric_limits<float>::max_digits10)
+    file << "DXMATERIAL 1 " << std::quoted(material.sName) << ' ' << std::setprecision(std::numeric_limits<float>::max_digits10)
          << material.baseColor.x << ' ' << material.baseColor.y << ' ' << material.baseColor.z << ' ' << material.baseColor.w
-         << ' ' << std::quoted(material.textureAsset) << ' ' << std::quoted(material.shaderAsset) << '\n';
+         << ' ' << std::quoted(material.sTextureAsset) << ' ' << std::quoted(material.sShaderAsset) << '\n';
     file.close();
     if (!file || !MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         error = "Cannot save material (Windows error " + std::to_string(GetLastError()) + ").";
@@ -311,48 +311,48 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
     if (version >= 4) {
         int orthographic = 0;
         auto& camera = loaded.camera;
-        if (!(file >> magic >> orthographic >> camera.target.x >> camera.target.y >> camera.target.z >> camera.yaw >>
-              camera.pitch >> camera.distance) ||
+        if (!(file >> magic >> orthographic >> camera.target.x >> camera.target.y >> camera.target.z >> camera.fYaw >>
+              camera.fPitch >> camera.fDistance) ||
             magic != "CAMERA" || (orthographic != 0 && orthographic != 1) || !ValidCamera(camera)) {
             error = "Invalid scene camera (projection, finite values, pitch or distance).";
             return false;
         }
-        camera.orthographic = orthographic == 1;
+        camera.bOrthographic = orthographic == 1;
     }
-    loaded.entities.reserve(count);
+    loaded.vEntities.reserve(count);
     for (size_t i = 0; i < count; ++i) {
         Entity e;
         int is2D = 0;
         auto& d = e.draw;
-        bool headerValid = static_cast<bool>(file >> std::quoted(e.name));
+        bool headerValid = static_cast<bool>(file >> std::quoted(e.sName));
         if (headerValid && version == 2) {
             std::string component;
             headerValid = static_cast<bool>(file >> std::quoted(component));
-            if (headerValid && !component.empty()) e.components.push_back(std::move(component));
+            if (headerValid && !component.empty()) e.vComponents.push_back(std::move(component));
         } else if (headerValid && version >= 3) {
             size_t componentCount = 0;
             headerValid = static_cast<bool>(file >> componentCount) && componentCount <= MaxComponentsPerEntity;
             for (size_t j = 0; headerValid && j < componentCount; ++j) {
                 std::string component;
                 headerValid = static_cast<bool>(file >> std::quoted(component));
-                if (headerValid) e.components.push_back(std::move(component));
+                if (headerValid) e.vComponents.push_back(std::move(component));
             }
         }
-        if (headerValid && version >= 5) headerValid = static_cast<bool>(file >> e.parent);
+        if (headerValid && version >= 5) headerValid = static_cast<bool>(file >> e.nParent);
         if (headerValid && version >= 6) {
             unsigned renderer = 0;
             headerValid =
-                static_cast<bool>(file >> renderer >> std::quoted(e.modelAsset)) && renderer <= (version >= 7 ? 3u : 2u);
+                static_cast<bool>(file >> renderer >> std::quoted(e.sModelAsset)) && renderer <= (version >= 7 ? 3u : 2u);
             e.renderer = static_cast<Entity::RendererKind>(renderer);
         }
         if (headerValid && version >= 7) {
             size_t propertyCount = 0;
             int playAnimation = 0;
-            headerValid = static_cast<bool>(file >> std::quoted(e.materialAsset) >> std::quoted(e.textureAsset) >>
-                                            playAnimation >> e.animationTime >> e.animationIndex >> propertyCount) &&
-                          (playAnimation == 0 || playAnimation == 1) && std::isfinite(e.animationTime) &&
-                          e.animationTime >= 0.0f && e.animationIndex >= 0 && propertyCount <= 8192;
-            e.playAnimation = playAnimation == 1;
+            headerValid = static_cast<bool>(file >> std::quoted(e.sMaterialAsset) >> std::quoted(e.sTextureAsset) >>
+                                            playAnimation >> e.fAnimationTime >> e.nAnimationIndex >> propertyCount) &&
+                          (playAnimation == 0 || playAnimation == 1) && std::isfinite(e.fAnimationTime) &&
+                          e.fAnimationTime >= 0.0f && e.nAnimationIndex >= 0 && propertyCount <= 8192;
+            e.bPlayAnimation = playAnimation == 1;
             for (size_t p = 0; headerValid && p < propertyCount; ++p) {
                 std::string component, field, value;
                 headerValid = static_cast<bool>(file >> std::quoted(component) >> std::quoted(field) >> std::quoted(value));
@@ -366,9 +366,9 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
             error = "Invalid entity at index " + std::to_string(i) + ".";
             return false;
         }
-        d.is2D = is2D == 1;
+        d.bIs2D = is2D == 1;
         if (version < 6) e.renderer = Entity::RendererKind::Polygon;
-        loaded.entities.push_back(std::move(e));
+        loaded.vEntities.push_back(std::move(e));
     }
     if (!ValidParents(loaded)) {
         error = "Invalid or cyclic entity parent relationship.";
@@ -387,7 +387,7 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
 
 bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::string& error) {
     error.clear();
-    if (scene.entities.size() > 10000) {
+    if (scene.vEntities.size() > 10000) {
         error = "Too many entities (maximum 10000).";
         return false;
     }
@@ -399,7 +399,7 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
         error = "Invalid or cyclic entity parent relationship.";
         return false;
     }
-    for (const auto& entity : scene.entities) {
+    for (const auto& entity : scene.vEntities) {
         if (!Valid(entity)) {
             error = "Invalid entity name or non-finite transform/color.";
             return false;
@@ -407,26 +407,26 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
     }
     std::ostringstream out;
     out.imbue(std::locale::classic());
-    out << "DXSCENE 7 " << scene.entities.size() << '\n';
+    out << "DXSCENE 7 " << scene.vEntities.size() << '\n';
     out << std::setprecision(std::numeric_limits<float>::max_digits10);
     const auto& camera = scene.camera;
-    out << "CAMERA " << (camera.orthographic ? 1 : 0) << ' ' << camera.target.x << ' ' << camera.target.y << ' '
-        << camera.target.z << ' ' << camera.yaw << ' ' << camera.pitch << ' ' << camera.distance << '\n';
-    for (const auto& e : scene.entities) {
+    out << "CAMERA " << (camera.bOrthographic ? 1 : 0) << ' ' << camera.target.x << ' ' << camera.target.y << ' '
+        << camera.target.z << ' ' << camera.fYaw << ' ' << camera.fPitch << ' ' << camera.fDistance << '\n';
+    for (const auto& e : scene.vEntities) {
         const auto& d = e.draw;
-        out << std::quoted(e.name) << ' ' << e.components.size();
-        for (const auto& component : e.components)
+        out << std::quoted(e.sName) << ' ' << e.vComponents.size();
+        for (const auto& component : e.vComponents)
             out << ' ' << std::quoted(component);
         size_t propertyCount = 0;
         for (const auto& [component, fields] : e.componentProperties)
             propertyCount += fields.size();
-        out << ' ' << e.parent << ' ' << static_cast<unsigned>(e.renderer) << ' ' << std::quoted(e.modelAsset) << ' '
-            << std::quoted(e.materialAsset) << ' ' << std::quoted(e.textureAsset) << ' ' << (e.playAnimation ? 1 : 0) << ' '
-            << e.animationTime << ' ' << e.animationIndex << ' ' << propertyCount;
+        out << ' ' << e.nParent << ' ' << static_cast<unsigned>(e.renderer) << ' ' << std::quoted(e.sModelAsset) << ' '
+            << std::quoted(e.sMaterialAsset) << ' ' << std::quoted(e.sTextureAsset) << ' ' << (e.bPlayAnimation ? 1 : 0) << ' '
+            << e.fAnimationTime << ' ' << e.nAnimationIndex << ' ' << propertyCount;
         for (const auto& [component, fields] : e.componentProperties)
             for (const auto& [field, value] : fields)
                 out << ' ' << std::quoted(component) << ' ' << std::quoted(field) << ' ' << std::quoted(value);
-        out << ' ' << (d.is2D ? 1 : 0) << ' ' << d.position.x << ' ' << d.position.y << ' ' << d.position.z << ' ' << d.rotation.x
+        out << ' ' << (d.bIs2D ? 1 : 0) << ' ' << d.position.x << ' ' << d.position.y << ' ' << d.position.z << ' ' << d.rotation.x
             << ' ' << d.rotation.y << ' ' << d.rotation.z << ' ' << d.scale.x << ' ' << d.scale.y << ' ' << d.scale.z << ' '
             << d.color.x << ' ' << d.color.y << ' ' << d.color.z << ' ' << d.color.w << '\n';
     }
@@ -471,14 +471,14 @@ DrawItem PolygonRenderer::BuildDrawItem(const Entity& entity) const {
 }
 DrawItem Image::BuildDrawItem(const Entity& entity) const {
     auto result = entity.draw;
-    result.is2D = true;
+    result.bIs2D = true;
     return result;
 }
 DrawItem ModelRenderer::BuildDrawItem(const Entity& entity) const {
     auto result = entity.draw;
-    result.is2D = false;
-    result.vertices = asset_.empty() ? nullptr : LoadModelMesh(asset_, animationTime_, animationIndex_);
-    result.visible = static_cast<bool>(result.vertices);
+    result.bIs2D = false;
+    result.pVertices = asset_.empty() ? nullptr : LoadModelMesh(asset_, animationTime_, animationIndex_);
+    result.bVisible = static_cast<bool>(result.pVertices);
     return result;
 }
 
@@ -497,27 +497,27 @@ bool AttachComponent(Entity& entity, const std::string& name, std::string& error
         error = "The component is not registered: " + name;
         return false;
     }
-    if (std::find(entity.components.begin(), entity.components.end(), name) != entity.components.end()) {
+    if (std::find(entity.vComponents.begin(), entity.vComponents.end(), name) != entity.vComponents.end()) {
         error = "This component is already attached.";
         return false;
     }
-    if (entity.components.size() >= MaxComponentsPerEntity) {
+    if (entity.vComponents.size() >= MaxComponentsPerEntity) {
         error = "An object can have up to " + std::to_string(MaxComponentsPerEntity) + " components.";
         return false;
     }
-    entity.components.push_back(name);
+    entity.vComponents.push_back(name);
     EngineEvents::Get().onComponentAttached.Broadcast(entity, name);
     return true;
 }
 
 bool DetachComponent(Entity& entity, std::size_t componentIndex) {
-    if (componentIndex >= entity.components.size()) return false;
-    const auto removed = entity.components[componentIndex];
-    entity.components.erase(entity.components.begin() + static_cast<std::ptrdiff_t>(componentIndex));
+    if (componentIndex >= entity.vComponents.size()) return false;
+    const auto removed = entity.vComponents[componentIndex];
+    entity.vComponents.erase(entity.vComponents.begin() + static_cast<std::ptrdiff_t>(componentIndex));
     entity.componentProperties.erase(removed);
-    entity.runtimeComponentNames.clear();
-    entity.runtimeComponents.clear();
-    entity.runtimeComponentStarted.clear();
+    entity.vRuntimeComponentNames.clear();
+    entity.vRuntimeComponents.clear();
+    entity.vRuntimeComponentStarted.clear();
     EngineEvents::Get().onComponentDetached.Broadcast(entity, removed);
     return true;
 }
@@ -534,34 +534,34 @@ std::vector<std::string> RegisteredComponentNames() {
 namespace {
 // Rebuilds the runtime instances when the attachment list changed.
 void SyncRuntimeComponents(Entity& entity) {
-    if (entity.runtimeComponentNames == entity.components) return;
-    entity.runtimeComponentNames = entity.components;
-    entity.runtimeComponents.clear();
-    entity.runtimeComponentStarted.clear();
-    for (const auto& name : entity.components) {
+    if (entity.vRuntimeComponentNames == entity.vComponents) return;
+    entity.vRuntimeComponentNames = entity.vComponents;
+    entity.vRuntimeComponents.clear();
+    entity.vRuntimeComponentStarted.clear();
+    for (const auto& name : entity.vComponents) {
         auto found = Components().find(name);
-        entity.runtimeComponents.push_back(found == Components().end() ? nullptr : found->second());
-        entity.runtimeComponentStarted.push_back(false);
+        entity.vRuntimeComponents.push_back(found == Components().end() ? nullptr : found->second());
+        entity.vRuntimeComponentStarted.push_back(false);
     }
 }
 
 // Applies serialized Inspector values, then calls Start() exactly once.
 void StartComponentIfNeeded(Entity& entity, std::size_t nIndex) {
-    if (nIndex >= entity.runtimeComponentStarted.size()) entity.runtimeComponentStarted.resize(nIndex + 1, false);
-    if (entity.runtimeComponentStarted[nIndex]) return;
-    auto& component = *entity.runtimeComponents[nIndex];
-    const auto saved = entity.componentProperties.find(entity.runtimeComponentNames[nIndex]);
+    if (nIndex >= entity.vRuntimeComponentStarted.size()) entity.vRuntimeComponentStarted.resize(nIndex + 1, false);
+    if (entity.vRuntimeComponentStarted[nIndex]) return;
+    auto& component = *entity.vRuntimeComponents[nIndex];
+    const auto saved = entity.componentProperties.find(entity.vRuntimeComponentNames[nIndex]);
     if (saved != entity.componentProperties.end()) {
         for (auto& field : component.EditorFields()) {
-            const auto value = saved->second.find(field.name);
+            const auto value = saved->second.find(field.sName);
             if (value == saved->second.end()) continue;
             std::string ignored;
-            SetComponentEditorValue(entity, nIndex, field.name, value->second, ignored);
+            SetComponentEditorValue(entity, nIndex, field.sName, value->second, ignored);
         }
     }
     component.Start(entity);
-    entity.runtimeComponentStarted[nIndex] = true;
-    EngineEvents::Get().onComponentStarted.Broadcast(entity, component, entity.runtimeComponentNames[nIndex]);
+    entity.vRuntimeComponentStarted[nIndex] = true;
+    EngineEvents::Get().onComponentStarted.Broadcast(entity, component, entity.vRuntimeComponentNames[nIndex]);
 }
 } // namespace
 
@@ -572,30 +572,30 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
     events.onPreUpdate.Broadcast(scene, fDelta);
 
     // Pass 1: Start (first frame) and Update, in Inspector order.
-    for (auto& entity : scene.entities) {
-        if (entity.renderer == Entity::RendererKind::Model && entity.playAnimation) entity.animationTime += fDelta;
+    for (auto& entity : scene.vEntities) {
+        if (entity.renderer == Entity::RendererKind::Model && entity.bPlayAnimation) entity.fAnimationTime += fDelta;
         SyncRuntimeComponents(entity);
-        const size_t nCount = std::min(entity.runtimeComponentNames.size(), entity.runtimeComponents.size());
+        const size_t nCount = std::min(entity.vRuntimeComponentNames.size(), entity.vRuntimeComponents.size());
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
-            if (!entity.runtimeComponents[nIndex]) continue;
+            if (!entity.vRuntimeComponents[nIndex]) continue;
             StartComponentIfNeeded(entity, nIndex);
-            entity.runtimeComponents[nIndex]->Update(entity, fDelta);
+            entity.vRuntimeComponents[nIndex]->Update(entity, fDelta);
         }
     }
 
     // Pass 2: coroutines resume after every Update (Unity order), then
     // LateUpdate, then the Inspector mirror of the live field values.
-    for (auto& entity : scene.entities) {
-        const size_t nCount = std::min(entity.runtimeComponentNames.size(), entity.runtimeComponents.size());
+    for (auto& entity : scene.vEntities) {
+        const size_t nCount = std::min(entity.vRuntimeComponentNames.size(), entity.vRuntimeComponents.size());
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
-            if (entity.runtimeComponents[nIndex])
-                entity.runtimeComponents[nIndex]->Coroutines().Tick(fDelta * Time::TimeScale(), fDelta);
+            if (entity.vRuntimeComponents[nIndex])
+                entity.vRuntimeComponents[nIndex]->Coroutines().Tick(fDelta * Time::TimeScale(), fDelta);
         }
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
-            if (entity.runtimeComponents[nIndex]) entity.runtimeComponents[nIndex]->LateUpdate(entity, fDelta);
+            if (entity.vRuntimeComponents[nIndex]) entity.vRuntimeComponents[nIndex]->LateUpdate(entity, fDelta);
         }
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
-            if (entity.runtimeComponents[nIndex]) ComponentEditorValues(entity, nIndex);
+            if (entity.vRuntimeComponents[nIndex]) ComponentEditorValues(entity, nIndex);
         }
     }
 
@@ -604,31 +604,31 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
 
 namespace {
 void EnsureComponentInstances(Entity& entity) {
-    if (entity.runtimeComponentNames == entity.components && entity.runtimeComponents.size() == entity.components.size()) return;
-    entity.runtimeComponentNames = entity.components;
-    entity.runtimeComponents.clear();
-    entity.runtimeComponentStarted.clear();
-    for (const auto& name : entity.components) {
+    if (entity.vRuntimeComponentNames == entity.vComponents && entity.vRuntimeComponents.size() == entity.vComponents.size()) return;
+    entity.vRuntimeComponentNames = entity.vComponents;
+    entity.vRuntimeComponents.clear();
+    entity.vRuntimeComponentStarted.clear();
+    for (const auto& name : entity.vComponents) {
         auto found = Components().find(name);
-        entity.runtimeComponents.push_back(found == Components().end() ? nullptr : found->second());
-        entity.runtimeComponentStarted.push_back(false);
+        entity.vRuntimeComponents.push_back(found == Components().end() ? nullptr : found->second());
+        entity.vRuntimeComponentStarted.push_back(false);
     }
 }
 std::string FieldText(const EditorField& field) {
     switch (field.type) {
     case EditorFieldType::Float: {
         std::ostringstream out;
-        out << std::setprecision(std::numeric_limits<float>::max_digits10) << *static_cast<float*>(field.value);
+        out << std::setprecision(std::numeric_limits<float>::max_digits10) << *static_cast<float*>(field.pValue);
         return out.str();
     }
-    case EditorFieldType::Integer: return std::to_string(*static_cast<int*>(field.value));
-    case EditorFieldType::Boolean: return *static_cast<bool*>(field.value) ? "true" : "false";
-    case EditorFieldType::String: return *static_cast<std::string*>(field.value);
+    case EditorFieldType::Integer: return std::to_string(*static_cast<int*>(field.pValue));
+    case EditorFieldType::Boolean: return *static_cast<bool*>(field.pValue) ? "true" : "false";
+    case EditorFieldType::String: return *static_cast<std::string*>(field.pValue);
     }
     return {};
 }
 bool AssignField(EditorField& field, const std::string& value, std::string& error) {
-    if (field.readOnly) {
+    if (field.bReadOnly) {
         error = "The selected field is read-only.";
         return false;
     }
@@ -637,20 +637,20 @@ bool AssignField(EditorField& field, const std::string& value, std::string& erro
         if (field.type == EditorFieldType::Float) {
             const float parsed = std::stof(value, &used);
             if (used != value.size() || !std::isfinite(parsed)) throw std::invalid_argument("float");
-            *static_cast<float*>(field.value) = parsed;
+            *static_cast<float*>(field.pValue) = parsed;
         } else if (field.type == EditorFieldType::Integer) {
             const int parsed = std::stoi(value, &used);
             if (used != value.size()) throw std::invalid_argument("int");
-            *static_cast<int*>(field.value) = parsed;
+            *static_cast<int*>(field.pValue) = parsed;
         } else if (field.type == EditorFieldType::Boolean) {
             if (value == "true" || value == "1")
-                *static_cast<bool*>(field.value) = true;
+                *static_cast<bool*>(field.pValue) = true;
             else if (value == "false" || value == "0")
-                *static_cast<bool*>(field.value) = false;
+                *static_cast<bool*>(field.pValue) = false;
             else
                 throw std::invalid_argument("bool");
         } else
-            *static_cast<std::string*>(field.value) = value;
+            *static_cast<std::string*>(field.pValue) = value;
     } catch (...) {
         error = "The value does not match the component field type.";
         return false;
@@ -662,18 +662,18 @@ bool AssignField(EditorField& field, const std::string& value, std::string& erro
 std::vector<std::pair<std::string, std::string>> ComponentEditorValues(Entity& entity, std::size_t componentIndex) {
     EnsureComponentInstances(entity);
     std::vector<std::pair<std::string, std::string>> result;
-    if (componentIndex >= entity.runtimeComponents.size() || !entity.runtimeComponents[componentIndex]) return result;
-    const auto component = entity.runtimeComponentNames[componentIndex];
-    auto fields = entity.runtimeComponents[componentIndex]->EditorFields();
+    if (componentIndex >= entity.vRuntimeComponents.size() || !entity.vRuntimeComponents[componentIndex]) return result;
+    const auto component = entity.vRuntimeComponentNames[componentIndex];
+    auto fields = entity.vRuntimeComponents[componentIndex]->EditorFields();
     auto& saved = entity.componentProperties[component];
     for (auto& field : fields) {
-        if (auto found = saved.find(field.name); found != saved.end() && !entity.runtimeComponentStarted[componentIndex]) {
+        if (auto found = saved.find(field.sName); found != saved.end() && !entity.vRuntimeComponentStarted[componentIndex]) {
             std::string ignored;
             AssignField(field, found->second, ignored);
         }
         auto value = FieldText(field);
-        saved[field.name] = value;
-        result.emplace_back(field.name, std::move(value));
+        saved[field.sName] = value;
+        result.emplace_back(field.sName, std::move(value));
     }
     return result;
 }
@@ -682,15 +682,15 @@ bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex, const s
                              std::string& error) {
     error.clear();
     EnsureComponentInstances(entity);
-    if (componentIndex >= entity.runtimeComponents.size() || !entity.runtimeComponents[componentIndex]) {
+    if (componentIndex >= entity.vRuntimeComponents.size() || !entity.vRuntimeComponents[componentIndex]) {
         error = "The component class is not registered.";
         return false;
     }
-    auto fields = entity.runtimeComponents[componentIndex]->EditorFields();
+    auto fields = entity.vRuntimeComponents[componentIndex]->EditorFields();
     for (auto& field : fields)
-        if (field.name == name) {
+        if (field.sName == name) {
             if (!AssignField(field, value, error)) return false;
-            entity.componentProperties[entity.runtimeComponentNames[componentIndex]][name] = FieldText(field);
+            entity.componentProperties[entity.vRuntimeComponentNames[componentIndex]][name] = FieldText(field);
             return true;
         }
     error = "The component field no longer exists.";
@@ -698,10 +698,10 @@ bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex, const s
 }
 
 Camera ActiveGameCamera(Scene& scene) {
-    for (size_t i = 0; i < scene.entities.size(); ++i) {
-        const auto& entity = scene.entities[i];
-        const auto found = std::find(entity.components.begin(), entity.components.end(), "Camera");
-        if (found == entity.components.end()) continue;
+    for (size_t i = 0; i < scene.vEntities.size(); ++i) {
+        const auto& entity = scene.vEntities[i];
+        const auto found = std::find(entity.vComponents.begin(), entity.vComponents.end(), "Camera");
+        if (found == entity.vComponents.end()) continue;
         const auto props = entity.componentProperties.find("Camera");
         if (props != entity.componentProperties.end()) {
             auto active = props->second.find("Active");
@@ -709,16 +709,16 @@ Camera ActiveGameCamera(Scene& scene) {
         }
         const auto world = WorldDraw(scene, static_cast<int>(i));
         Camera result;
-        result.yaw = world.rotation.y;
-        result.pitch = world.rotation.x;
-        result.distance = 10.0f;
-        const float cp = std::cos(result.pitch);
-        DirectX::XMFLOAT3 forward{std::sin(result.yaw) * cp, std::sin(result.pitch), std::cos(result.yaw) * cp};
-        result.target = {world.position.x + forward.x * result.distance, world.position.y + forward.y * result.distance,
-                         world.position.z + forward.z * result.distance};
+        result.fYaw = world.rotation.y;
+        result.fPitch = world.rotation.x;
+        result.fDistance = 10.0f;
+        const float cp = std::cos(result.fPitch);
+        DirectX::XMFLOAT3 forward{std::sin(result.fYaw) * cp, std::sin(result.fPitch), std::cos(result.fYaw) * cp};
+        result.target = {world.position.x + forward.x * result.fDistance, world.position.y + forward.y * result.fDistance,
+                         world.position.z + forward.z * result.fDistance};
         if (props != entity.componentProperties.end()) {
             auto ortho = props->second.find("Orthographic");
-            result.orthographic = ortho != props->second.end() && (ortho->second == "true" || ortho->second == "1");
+            result.bOrthographic = ortho != props->second.end() && (ortho->second == "true" || ortho->second == "1");
         }
         if (props != entity.componentProperties.end()) {
             auto number = [&](const char* name, float fallback) {
@@ -730,9 +730,9 @@ Camera ActiveGameCamera(Scene& scene) {
                     return fallback;
                 }
             };
-            result.fieldOfView = std::clamp(number("Field of View", 60.0f), 1.0f, 179.0f);
-            result.nearClip = std::max(number("Near Clip", 0.1f), 0.001f);
-            result.farClip = std::max(number("Far Clip", 1000.0f), result.nearClip + 0.001f);
+            result.fFieldOfView = std::clamp(number("Field of View", 60.0f), 1.0f, 179.0f);
+            result.fNearClip = std::max(number("Near Clip", 0.1f), 0.001f);
+            result.fFarClip = std::max(number("Far Clip", 1000.0f), result.fNearClip + 0.001f);
         }
         return result;
     }
@@ -741,41 +741,41 @@ Camera ActiveGameCamera(Scene& scene) {
 
 std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
     using namespace DirectX;
-    std::vector<DrawItem> result(scene.entities.size());
-    std::vector<unsigned char> state(scene.entities.size(), 0);
+    std::vector<DrawItem> result(scene.vEntities.size());
+    std::vector<unsigned char> state(scene.vEntities.size(), 0);
     std::function<void(int)> resolve = [&](int index) {
-        if (index < 0 || static_cast<size_t>(index) >= scene.entities.size() || state[index] == 2) return;
+        if (index < 0 || static_cast<size_t>(index) >= scene.vEntities.size() || state[index] == 2) return;
         if (state[index] == 1) {
-            result[index] = scene.entities[index].draw;
+            result[index] = scene.vEntities[index].draw;
             state[index] = 2;
             return;
         }
         state[index] = 1;
-        const auto& entity = scene.entities[index];
+        const auto& entity = scene.vEntities[index];
         auto world = entity.draw;
         if (entity.renderer == Entity::RendererKind::None)
-            world.visible = false;
+            world.bVisible = false;
         else if (entity.renderer == Entity::RendererKind::Polygon)
             world = PolygonRenderer{}.BuildDrawItem(entity);
         else if (entity.renderer == Entity::RendererKind::Model)
-            world = ModelRenderer(scene.projectRoot / std::filesystem::u8path(entity.modelAsset), entity.animationTime,
-                                  entity.animationIndex)
+            world = ModelRenderer(scene.projectRoot / std::filesystem::u8path(entity.sModelAsset), entity.fAnimationTime,
+                                  entity.nAnimationIndex)
                         .BuildDrawItem(entity);
         else
             world = Image{}.BuildDrawItem(entity);
-        if (!entity.materialAsset.empty()) {
+        if (!entity.sMaterialAsset.empty()) {
             Material material;
             std::string ignored;
-            if (LoadMaterial(scene.projectRoot / std::filesystem::u8path(entity.materialAsset), material, ignored)) {
+            if (LoadMaterial(scene.projectRoot / std::filesystem::u8path(entity.sMaterialAsset), material, ignored)) {
                 world.color.x *= material.baseColor.x;
                 world.color.y *= material.baseColor.y;
                 world.color.z *= material.baseColor.z;
                 world.color.w *= material.baseColor.w;
             }
         }
-        if (entity.parent >= 0 && static_cast<size_t>(entity.parent) < scene.entities.size()) {
-            resolve(entity.parent);
-            const auto& parent = result[entity.parent];
+        if (entity.nParent >= 0 && static_cast<size_t>(entity.nParent) < scene.vEntities.size()) {
+            resolve(entity.nParent);
+            const auto& parent = result[entity.nParent];
             XMVECTOR position = XMVectorSet(world.position.x * parent.scale.x, world.position.y * parent.scale.y,
                                             world.position.z * parent.scale.z, 1.0f);
             position = XMVector3TransformCoord(
@@ -789,7 +789,7 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
         result[index] = world;
         state[index] = 2;
     };
-    for (int i = 0; i < static_cast<int>(scene.entities.size()); ++i)
+    for (int i = 0; i < static_cast<int>(scene.vEntities.size()); ++i)
         resolve(i);
     return result;
 }
@@ -801,9 +801,9 @@ DrawItem WorldDraw(const Scene& scene, int index) {
 
 DrawItem LocalDrawFromWorld(const Scene& scene, int index, const DrawItem& world) {
     using namespace DirectX;
-    if (index < 0 || static_cast<size_t>(index) >= scene.entities.size()) return world;
-    const int parentIndex = scene.entities[index].parent;
-    if (parentIndex < 0 || static_cast<size_t>(parentIndex) >= scene.entities.size()) return world;
+    if (index < 0 || static_cast<size_t>(index) >= scene.vEntities.size()) return world;
+    const int parentIndex = scene.vEntities[index].nParent;
+    if (parentIndex < 0 || static_cast<size_t>(parentIndex) >= scene.vEntities.size()) return world;
     const auto parent = WorldDraw(scene, parentIndex);
     DrawItem local = world;
     local.rotation = {world.rotation.x - parent.rotation.x, world.rotation.y - parent.rotation.y,
@@ -824,24 +824,24 @@ DrawItem LocalDrawFromWorld(const Scene& scene, int index, const DrawItem& world
 
 bool SetEntityParent(Scene& scene, int child, int parent, std::string& error) {
     error.clear();
-    if (child < 0 || static_cast<size_t>(child) >= scene.entities.size() || parent < -1 ||
-        parent >= static_cast<int>(scene.entities.size()) || child == parent) {
+    if (child < 0 || static_cast<size_t>(child) >= scene.vEntities.size() || parent < -1 ||
+        parent >= static_cast<int>(scene.vEntities.size()) || child == parent) {
         error = "Invalid parent selection.";
         return false;
     }
-    for (int p = parent, steps = 0; p >= 0 && steps <= static_cast<int>(scene.entities.size()); ++steps) {
+    for (int p = parent, steps = 0; p >= 0 && steps <= static_cast<int>(scene.vEntities.size()); ++steps) {
         if (p == child) {
             error = "An object cannot be parented to one of its descendants.";
             return false;
         }
-        p = scene.entities[p].parent;
+        p = scene.vEntities[p].nParent;
     }
     const auto world = WorldDraw(scene, child);
-    const int old = scene.entities[child].parent;
-    scene.entities[child].parent = parent;
-    scene.entities[child].draw = LocalDrawFromWorld(scene, child, world);
+    const int old = scene.vEntities[child].nParent;
+    scene.vEntities[child].nParent = parent;
+    scene.vEntities[child].draw = LocalDrawFromWorld(scene, child, world);
     if (!ValidParents(scene)) {
-        scene.entities[child].parent = old;
+        scene.vEntities[child].nParent = old;
         error = "The parent relationship would be cyclic.";
         return false;
     }
@@ -978,7 +978,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         error = "Project shader was not found: " + PathText(shader);
         return false;
     }
-    if (scene.entities.size() > 10000) {
+    if (scene.vEntities.size() > 10000) {
         error = "Too many entities (maximum 10000).";
         return false;
     }
@@ -986,7 +986,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         error = "Invalid or cyclic entity parent relationship.";
         return false;
     }
-    for (const auto& entity : scene.entities) {
+    for (const auto& entity : scene.vEntities) {
         if (!Valid(entity)) {
             error = "Invalid entity name or non-finite transform/color.";
             return false;

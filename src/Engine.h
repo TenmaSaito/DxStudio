@@ -19,10 +19,10 @@ namespace dxs {
 struct Entity;
 
 struct Material {
-    std::string name = "Material";
+    std::string sName = "Material";
     DirectX::XMFLOAT4 baseColor{1, 1, 1, 1};
-    std::string textureAsset;
-    std::string shaderAsset = "Default.hlsl";
+    std::string sTextureAsset;
+    std::string sShaderAsset = "Default.hlsl";
 };
 bool LoadMaterial(const std::filesystem::path& path, Material& material, std::string& error);
 bool SaveMaterial(const std::filesystem::path& path, const Material& material, std::string& error);
@@ -64,17 +64,17 @@ static_assert(IsRenderComponent<PolygonRenderer> && IsRenderComponent<ModelRende
 
 enum class EditorFieldType : unsigned char { Float, Integer, Boolean, String };
 struct EditorField {
-    std::string name;
+    std::string sName;
     EditorFieldType type{};
-    void* value{};
-    bool readOnly = false;
+    void* pValue{};
+    bool bReadOnly = false;
 };
 
-template<class T> constexpr EditorField EditField(std::string name, T& value, bool readOnly = false) {
-    if constexpr (std::same_as<T, float>) return {std::move(name), EditorFieldType::Float, &value, readOnly};
-    else if constexpr (std::same_as<T, int>) return {std::move(name), EditorFieldType::Integer, &value, readOnly};
-    else if constexpr (std::same_as<T, bool>) return {std::move(name), EditorFieldType::Boolean, &value, readOnly};
-    else if constexpr (std::same_as<T, std::string>) return {std::move(name), EditorFieldType::String, &value, readOnly};
+template<class T> constexpr EditorField EditField(std::string sName, T& value, bool bReadOnly = false) {
+    if constexpr (std::same_as<T, float>) return {std::move(sName), EditorFieldType::Float, &value, bReadOnly};
+    else if constexpr (std::same_as<T, int>) return {std::move(sName), EditorFieldType::Integer, &value, bReadOnly};
+    else if constexpr (std::same_as<T, bool>) return {std::move(sName), EditorFieldType::Boolean, &value, bReadOnly};
+    else if constexpr (std::same_as<T, std::string>) return {std::move(sName), EditorFieldType::String, &value, bReadOnly};
     else static_assert(!sizeof(T), "DxStudio editor fields support float, int, bool and std::string");
 }
 
@@ -86,9 +86,9 @@ class Component {
 public:
     virtual ~Component() = default;
     virtual void Start(Entity&) {}
-    virtual void Update(Entity&, float deltaSeconds) = 0;
+    virtual void Update(Entity&, float fDeltaSeconds) = 0;
     // Runs after every Update and coroutine of the frame (camera follow, etc.).
-    virtual void LateUpdate(Entity&, float /*deltaSeconds*/) {}
+    virtual void LateUpdate(Entity&, float /*fDeltaSeconds*/) {}
     // Return fields that should be editable in Inspector. A private member may
     // deliberately be exposed by returning EditField() from this member function.
     virtual std::vector<EditorField> EditorFields() { return {}; }
@@ -107,16 +107,16 @@ private:
 
 class CameraComponent final : public Component {
 public:
-    bool active = true;
-    bool orthographic = false;
-    float fieldOfView = 60.0f;
-    float nearClip = 0.1f;
-    float farClip = 1000.0f;
+    bool m_bActive = true;
+    bool m_bOrthographic = false;
+    float m_fFieldOfView = 60.0f;
+    float m_fNearClip = 0.1f;
+    float m_fFarClip = 1000.0f;
     void Update(Entity&, float) override {}
     std::vector<EditorField> EditorFields() override {
-        return {EditField("Active", active), EditField("Orthographic", orthographic),
-                EditField("Field of View", fieldOfView), EditField("Near Clip", nearClip),
-                EditField("Far Clip", farClip)};
+        return {EditField("Active", m_bActive), EditField("Orthographic", m_bOrthographic),
+                EditField("Field of View", m_fFieldOfView), EditField("Near Clip", m_fNearClip),
+                EditField("Far Clip", m_fFarClip)};
     }
 };
 
@@ -124,23 +124,23 @@ using ComponentFactory = std::unique_ptr<Component> (*)();
 
 struct Entity {
     enum class RendererKind : unsigned char { None, Polygon, Model, Image };
-    std::string name;
+    std::string sName;
     DrawItem draw;
-    int parent = -1;
+    int nParent = -1;
     RendererKind renderer = RendererKind::Polygon;
-    std::string modelAsset;
-    std::string materialAsset;
-    std::string textureAsset;
-    bool playAnimation = true;
-    float animationTime = 0.0f;
-    int animationIndex = 0;
+    std::string sModelAsset;
+    std::string sMaterialAsset;
+    std::string sTextureAsset;
+    bool bPlayAnimation = true;
+    float fAnimationTime = 0.0f;
+    int nAnimationIndex = 0;
     // Attachments are resolved against the project component registry.
-    std::vector<std::string> components;
+    std::vector<std::string> vComponents;
     using PropertyMap = std::unordered_map<std::string, std::string>;
     std::unordered_map<std::string, PropertyMap> componentProperties;
-    std::vector<std::string> runtimeComponentNames;
-    std::vector<std::unique_ptr<Component>> runtimeComponents;
-    std::vector<bool> runtimeComponentStarted;
+    std::vector<std::string> vRuntimeComponentNames;
+    std::vector<std::unique_ptr<Component>> vRuntimeComponents;
+    std::vector<bool> vRuntimeComponentStarted;
 
     Entity() = default;
     ~Entity();
@@ -153,7 +153,7 @@ struct Entity {
 constexpr std::size_t MaxComponentsPerEntity = 64;
 
 struct Scene {
-    std::vector<Entity> entities;
+    std::vector<Entity> vEntities;
     Camera camera;
     // Runtime-only base for project-relative model assets; never serialized.
     std::filesystem::path projectRoot;
@@ -186,7 +186,7 @@ bool AttachComponent(Entity& entity, const std::string& name, std::string& error
 bool DetachComponent(Entity& entity, std::size_t componentIndex);
 // Alphabetically sorted registry snapshot for the editor's component picker.
 std::vector<std::string> RegisteredComponentNames();
-void UpdateUserComponents(Scene& scene, float deltaSeconds);
+void UpdateUserComponents(Scene& scene, float fDeltaSeconds);
 std::vector<std::pair<std::string, std::string>> ComponentEditorValues(Entity& entity, std::size_t componentIndex);
 bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex,
                              const std::string& field, const std::string& value, std::string& error);

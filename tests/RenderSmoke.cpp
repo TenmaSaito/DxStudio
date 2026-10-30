@@ -20,12 +20,12 @@ int main() {
     // Explicit front orthographic camera: handles are 90 pixels at the origin.
     // Quad geometry itself no longer selects an independent projection.
     dxs::Camera frontCamera;
-    frontCamera.orthographic = true;
-    frontCamera.pitch = 0;
+    frontCamera.bOrthographic = true;
+    frontCamera.fPitch = 0;
     renderer.SetCamera(frontCamera);
     // Verify hit tests,
     // drag mapping and a quarter-turn without depending on scene contents.
-    dxs::DrawItem sprite; sprite.is2D = true;
+    dxs::DrawItem sprite; sprite.bIs2D = true;
     dxs::DrawItem changed;
     if (renderer.HitGizmo(350, 210, sprite, dxs::GizmoMode::Translate) != 5 ||
         !renderer.DragGizmo(sprite, dxs::GizmoMode::Translate, 5, 350, 210, 380, 190, changed) ||
@@ -68,9 +68,9 @@ int main() {
     // A world-space quad follows perspective depth and shares occlusion with
     // cubes. Its screen bounds differ from orthographic projection.
     dxs::Camera perspective = frontCamera;
-    perspective.orthographic = false;
+    perspective.bOrthographic = false;
     renderer.SetCamera(perspective);
-    dxs::DrawItem nearQuad; nearQuad.is2D = true; nearQuad.position.x = 1.2f;
+    dxs::DrawItem nearQuad; nearQuad.bIs2D = true; nearQuad.position.x = 1.2f;
     dxs::DrawItem farQuad = nearQuad; farQuad.position.z = 6;
     if (renderer.Pick(430, 240, {nearQuad}) != 0 || renderer.Pick(430, 240, {farQuad}) != -1) return 34;
     if (renderer.Pick(377, 240, {farQuad}) != 0 || renderer.Pick(377, 240, {nearQuad}) != -1) return 35;
@@ -78,17 +78,17 @@ int main() {
     if (renderer.Pick(377, 240, {nearQuad}) != 0 || renderer.Pick(377, 240, {farQuad}) != 0 ||
         renderer.Pick(430, 240, {nearQuad}) != -1) return 36;
     renderer.SetCamera(perspective);
-    dxs::DrawItem frontQuad; frontQuad.is2D = true; frontQuad.position.z = -1;
+    dxs::DrawItem frontQuad; frontQuad.bIs2D = true; frontQuad.position.z = -1;
     if (renderer.Pick(320, 240, {solid, frontQuad}) != 1) return 37;
     frontQuad.position.z = 1;
     if (renderer.Pick(320, 240, {frontQuad, solid}) != 1) return 38;
-    dxs::DrawItem tiltedQuad; tiltedQuad.is2D = true;
+    dxs::DrawItem tiltedQuad; tiltedQuad.bIs2D = true;
     if (renderer.Pick(355, 240, {tiltedQuad}) != 0) return 39;
     tiltedQuad.rotation.y = DirectX::XM_PI / 3;
     if (renderer.Pick(320, 240, {tiltedQuad}) != 0 || renderer.Pick(355, 240, {tiltedQuad}) != -1 ||
         !renderer.PickRect(352, 237, 356, 243, {tiltedQuad}).empty()) return 40;
     for (bool ortho : {false, true}) {
-        perspective.orthographic = ortho;
+        perspective.bOrthographic = ortho;
         renderer.SetCamera(perspective);
         if (!renderer.Render({solid, tiltedQuad, farQuad}, error, 1, true, dxs::GizmoMode::Rotate, true)) return 41;
     }
@@ -99,7 +99,7 @@ int main() {
     cube.rotation.y = 0.4f;
     std::vector<dxs::DrawItem> one{cube};
     if (renderer.Pick(320, 240, one) != 0 || renderer.Pick(0, 0, one) != -1) return 11;
-    one[0].is2D = true;
+    one[0].bIs2D = true;
     one[0].rotation.z = 0.3f;
     if (renderer.Pick(320, 240, one) != 0 || renderer.Pick(0, 0, one) != -1) return 12;
     dxs::Camera camera;
@@ -107,12 +107,12 @@ int main() {
     renderer.SetCamera(camera);
     one[0].position.x = 2.0f;
     if (renderer.Pick(320, 240, one) != 0) return 13;
-    one[0].is2D = false;
+    one[0].bIs2D = false;
     if (renderer.Pick(320, 240, one) != 0) return 14;
     renderer.Resize(320, 240);
     if (renderer.Pick(160, 120, one) != 0) return 15;
     if (!renderer.Render(one, error, 0, true)) { std::cerr << "Grid/outline: " << error << '\n'; return 16; }
-    one[0].is2D = true;
+    one[0].bIs2D = true;
     if (!renderer.Render(one, error, 0, true)) { std::cerr << "2D grid/outline: " << error << '\n'; return 17; }
     renderer.SetCamera(dxs::Camera{});
     dxs::Scene scene;
@@ -120,9 +120,9 @@ int main() {
     std::vector<dxs::DrawItem> draws;
     auto modelVertices=std::make_shared<std::vector<DirectX::XMFLOAT3>>();
     modelVertices->push_back({-.5f,-.5f,0});modelVertices->push_back({0,.5f,0});modelVertices->push_back({.5f,-.5f,0});
-    dxs::DrawItem modelItem;modelItem.vertices=modelVertices;modelItem.position.x=-1.5f;draws.push_back(modelItem);
-    dxs::DrawItem hidden;hidden.visible=false;draws.push_back(hidden);
-    for (const auto& e : scene.entities) draws.push_back(e.draw);
+    dxs::DrawItem modelItem;modelItem.pVertices=modelVertices;modelItem.position.x=-1.5f;draws.push_back(modelItem);
+    dxs::DrawItem hidden;hidden.bVisible=false;draws.push_back(hidden);
+    for (const auto& e : scene.vEntities) draws.push_back(e.draw);
     if (!renderer.Render(draws, error)) { std::cerr << error << '\n'; return 5; }
     renderer.Resize(320, 240);
     if (!renderer.Render(draws, error)) { std::cerr << error << '\n'; return 6; }
@@ -132,7 +132,7 @@ int main() {
         std::cerr << "Export: " << error << '\n'; return 7;
     }
     dxs::Scene exported;
-    if (!dxs::LoadScene(exportDir / L"scene.dxs", exported, error) || exported.entities.size() != scene.entities.size()) return 8;
+    if (!dxs::LoadScene(exportDir / L"scene.dxs", exported, error) || exported.vEntities.size() != scene.vEntities.size()) return 8;
     if (!std::filesystem::is_regular_file(exportDir / L"Game.exe") ||
         !std::filesystem::is_regular_file(exportDir / L"Default.vs.cso") ||
         !std::filesystem::is_regular_file(exportDir / L"Default.ps.cso") ||

@@ -163,7 +163,7 @@ public:
     dxs::Coroutine Blink(dxs::Entity& entity) {
         while (true) {
             co_yield dxs::WaitForSeconds(0.5f);
-            entity.draw.visible = !entity.draw.visible;
+            entity.draw.bVisible = !entity.draw.bVisible;
         }
     }
     int m_nUpdates = 0;
@@ -174,20 +174,20 @@ DXS_REGISTER_COMPONENT(CBlinker)
 void TestComponentCoroutines() {
     dxs::Scene scene;
     dxs::Entity entity;
-    entity.name = "Blinker";
+    entity.sName = "Blinker";
     std::string error;
     Check(dxs::AttachComponent(entity, "CBlinker", error), "AttachComponent registered class");
     Check(!dxs::AttachComponent(entity, "CBlinker", error), "AttachComponent rejects duplicates");
-    scene.entities.push_back(entity);
+    scene.vEntities.push_back(entity);
     int nStarted = 0;
     dxs::ScopedDelegateHandle started(dxs::EngineEvents::Get().onComponentStarted,
                                       dxs::EngineEvents::Get().onComponentStarted.AddLambda(
                                           [&](dxs::Entity&, dxs::Component&, const std::string& sName) { nStarted += sName == "CBlinker"; }));
     dxs::UpdateUserComponents(scene, 0.3f);
-    Check(scene.entities[0].draw.visible, "blink not yet toggled");
+    Check(scene.vEntities[0].draw.bVisible, "blink not yet toggled");
     dxs::UpdateUserComponents(scene, 0.3f);
-    Check(!scene.entities[0].draw.visible, "component coroutine toggled visibility after 0.5 s");
-    auto* pBlinker = dynamic_cast<CBlinker*>(scene.entities[0].runtimeComponents[0].get());
+    Check(!scene.vEntities[0].draw.bVisible, "component coroutine toggled visibility after 0.5 s");
+    auto* pBlinker = dynamic_cast<CBlinker*>(scene.vEntities[0].vRuntimeComponents[0].get());
     Check(pBlinker && pBlinker->m_nUpdates == 2 && pBlinker->m_bLateAfterUpdate, "Update and LateUpdate order");
     Check(nStarted == 1, "onComponentStarted fired once");
 }

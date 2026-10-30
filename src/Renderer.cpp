@@ -122,17 +122,17 @@ XMMATRIX World(const DrawItem& item) {
 
 XMMATRIX View(const Camera& camera) {
     const XMVECTOR target = XMLoadFloat3(&camera.target);
-    const float fCosPitch = std::cos(camera.pitch);
-    const XMVECTOR offset = XMVectorSet(std::sin(camera.yaw) * fCosPitch * camera.distance,
-        std::sin(camera.pitch) * camera.distance, -std::cos(camera.yaw) * fCosPitch * camera.distance, 0);
+    const float fCosPitch = std::cos(camera.fPitch);
+    const XMVECTOR offset = XMVectorSet(std::sin(camera.fYaw) * fCosPitch * camera.fDistance,
+        std::sin(camera.fPitch) * camera.fDistance, -std::cos(camera.fYaw) * fCosPitch * camera.fDistance, 0);
     return XMMatrixLookAtLH(XMVectorAdd(target, offset), target, XMVectorSet(0, 1, 0, 0));
 }
 
 XMMATRIX ViewProjection(const Camera& camera, float fAspect) {
-    const float fHeight = camera.distance * (10.0f / 6.32455532f);
-    const auto projection = camera.orthographic
-        ? XMMatrixOrthographicLH(fHeight * fAspect, fHeight, camera.nearClip, camera.farClip)
-        : XMMatrixPerspectiveFovLH(XMConvertToRadians(camera.fieldOfView), fAspect, camera.nearClip, camera.farClip);
+    const float fHeight = camera.fDistance * (10.0f / 6.32455532f);
+    const auto projection = camera.bOrthographic
+        ? XMMatrixOrthographicLH(fHeight * fAspect, fHeight, camera.fNearClip, camera.fFarClip)
+        : XMMatrixPerspectiveFovLH(XMConvertToRadians(camera.fFieldOfView), fAspect, camera.fNearClip, camera.fFarClip);
     return View(camera) * projection;
 }
 
@@ -153,7 +153,7 @@ bool GizmoLength(const Camera& camera, const DrawItem& item, unsigned uWidth, un
     const auto clip = XMVector4Transform(XMVectorSet(item.position.x, item.position.y, item.position.z, 1), vp);
     const float fW = XMVectorGetW(clip), fZ = XMVectorGetZ(clip);
     if (!std::isfinite(fW) || fW <= 0 || fZ < 0 || fZ > fW) return false;
-    const float fWorldHeight = camera.orthographic ? camera.distance * (10.0f / 6.32455532f) : 2.0f * std::tan(XM_PIDIV4 / 2) * fW;
+    const float fWorldHeight = camera.bOrthographic ? camera.fDistance * (10.0f / 6.32455532f) : 2.0f * std::tan(XM_PIDIV4 / 2) * fW;
     fLength = fWorldHeight * 90.0f / uHeight;
     return std::isfinite(fLength) && fLength > 0;
 }
@@ -306,12 +306,12 @@ void Renderer::Resize(unsigned width, unsigned height) {
 }
 
 void Renderer::SetCamera(const Camera& camera) {
-    if (!p_ || !std::isfinite(camera.distance) || !std::isfinite(camera.yaw) ||
-        !std::isfinite(camera.pitch) || !std::isfinite(camera.target.x) ||
+    if (!p_ || !std::isfinite(camera.fDistance) || !std::isfinite(camera.fYaw) ||
+        !std::isfinite(camera.fPitch) || !std::isfinite(camera.target.x) ||
         !std::isfinite(camera.target.y) || !std::isfinite(camera.target.z)) return;
     p_->camera = camera;
-    p_->camera.distance = std::clamp(camera.distance, 0.2f, 80.0f);
-    p_->camera.pitch = std::clamp(camera.pitch, -1.54f, 1.54f);
+    p_->camera.fDistance = std::clamp(camera.fDistance, 0.2f, 80.0f);
+    p_->camera.fPitch = std::clamp(camera.fPitch, -1.54f, 1.54f);
 }
 
 void Renderer::SetDrawMode(DrawMode mode) {
@@ -334,7 +334,7 @@ int Renderer::Pick(int x, int y, const std::vector<DrawItem>& items) const {
     int nBest = -1;
     for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
         const auto& item = items[nIndex];
-        if (!item.visible) continue;
+        if (!item.bVisible) continue;
         const XMMATRIX mvp = World(item) * ViewProjection(p_->camera, fAspect);
         XMVECTOR determinant;
         const XMMATRIX inverse = XMMatrixInverse(&determinant, mvp);
@@ -348,8 +348,8 @@ int Renderer::Pick(int x, int y, const std::vector<DrawItem>& items) const {
         float fMin = 0.0f, fMax = 1.0f;
         bool bHit = true;
         for (int nAxis = 0; nAxis < 3; ++nAxis) {
-            const float fLo = item.is2D && nAxis == 2 ? 0.0f : -0.5f;
-            const float fHi = item.is2D && nAxis == 2 ? 0.0f : 0.5f;
+            const float fLo = item.bIs2D && nAxis == 2 ? 0.0f : -0.5f;
+            const float fHi = item.bIs2D && nAxis == 2 ? 0.0f : 0.5f;
             if (std::abs(aDirection[nAxis]) < 1e-8f) {
                 if (aOrigin[nAxis] < fLo || aOrigin[nAxis] > fHi) { bHit = false; break; }
             } else {
@@ -386,17 +386,17 @@ std::vector<int> Renderer::PickRect(int x0, int y0, int x1, int y1, const std::v
     const float fAspect = static_cast<float>(p_->uWidth) / p_->uHeight;
     for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
         const auto& item = items[nIndex];
-        if (!item.visible) continue;
+        if (!item.bVisible) continue;
         const auto mvp = World(item) * ViewProjection(p_->camera, fAspect);
         float fMinX = std::numeric_limits<float>::infinity(), fMinY = fMinX;
         float fMaxX = -fMinX, fMaxY = -fMinX;
         bool bProjected = false;
-        for (int nZ = 0; nZ < (item.is2D ? 1 : 2); ++nZ)
+        for (int nZ = 0; nZ < (item.bIs2D ? 1 : 2); ++nZ)
             for (int nY = 0; nY < 2; ++nY)
                 for (int nX = 0; nX < 2; ++nX) {
                     XMFLOAT2 point;
                     if (!ScreenPoint(XMVectorSet(nX ? 0.5f : -0.5f, nY ? 0.5f : -0.5f,
-                                                 item.is2D ? 0.0f : (nZ ? 0.5f : -0.5f), 1),
+                                                 item.bIs2D ? 0.0f : (nZ ? 0.5f : -0.5f), 1),
                                      mvp, p_->uWidth, p_->uHeight, point)) continue;
                     bProjected = true;
                     fMinX = std::min(fMinX, point.x); fMaxX = std::max(fMaxX, point.x);
@@ -548,18 +548,18 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
     std::vector<UINT> vModelStarts(items.size(), 0), vModelCounts(items.size(), 0);
     size_t nCursor = p.uBaseVertexCount;
     for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
-        if (!items[nIndex].visible || !items[nIndex].vertices) continue;
-        if (nCursor + items[nIndex].vertices->size() > MAX_VERTEX_COUNT) {
+        if (!items[nIndex].bVisible || !items[nIndex].pVertices) continue;
+        if (nCursor + items[nIndex].pVertices->size() > MAX_VERTEX_COUNT) {
             error = "Model vertex limit exceeded (1,048,576 vertices per frame).";
             return false;
         }
         vModelStarts[nIndex] = static_cast<UINT>(nCursor);
-        vModelCounts[nIndex] = static_cast<UINT>(items[nIndex].vertices->size());
-        nCursor += items[nIndex].vertices->size();
+        vModelCounts[nIndex] = static_cast<UINT>(items[nIndex].pVertices->size());
+        nCursor += items[nIndex].pVertices->size();
     }
     for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
         if (!vModelCounts[nIndex]) continue;
-        const auto& vModel = *items[nIndex].vertices;
+        const auto& vModel = *items[nIndex].pVertices;
         static_assert(sizeof(XMFLOAT3) == sizeof(Vertex));
         if (!device.UploadVertices(vModelStarts[nIndex], reinterpret_cast<const Vertex*>(vModel.data()), vModel.size(), error)) return false;
     }
@@ -573,12 +573,12 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
         device.SetPipeline(bWireframe ? PipelineKind::SCENE_WIREFRAME : PipelineKind::SCENE);
         for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
             const auto& item = items[nIndex];
-            if (!item.visible) continue;
+            if (!item.bVisible) continue;
             const XMMATRIX mvp = World(item) * vp;
             const XMFLOAT4 color = pOverride ? *pOverride : item.color;
             if (vModelCounts[nIndex]) {
                 device.Draw(MakeConstants(mvp, color), vModelCounts[nIndex], vModelStarts[nIndex]);
-            } else if (item.is2D) {
+            } else if (item.bIs2D) {
                 device.Draw(MakeConstants(mvp, color), 6, QUAD_START);
             } else {
                 // Distinguish the cube's faces even with the minimal default shader.
@@ -600,7 +600,7 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
 
     // 3. Editor grid and world axes.
     if (showGrid) {
-        const bool bGrid2D = selected >= 0 && static_cast<size_t>(selected) < items.size() && items[selected].is2D;
+        const bool bGrid2D = selected >= 0 && static_cast<size_t>(selected) < items.size() && items[selected].bIs2D;
         const XMMATRIX gridMvp = bGrid2D ? XMMatrixRotationX(XM_PIDIV2) * vp : vp;
         device.SetPipeline(PipelineKind::GRID);
         device.Draw(MakeConstants(gridMvp, {0.27f, 0.30f, 0.34f, 1.0f}), GRID_COUNT, GRID_START);
@@ -613,10 +613,10 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
     auto outline = [&](int nIndex) {
         if (nIndex < 0 || static_cast<size_t>(nIndex) >= items.size()) return;
         const auto& item = items[nIndex];
-        if (!item.visible) return;
+        if (!item.bVisible) return;
         const auto color = nIndex == selected ? XMFLOAT4{1.0f, 0.63f, 0.08f, 1.0f} : XMFLOAT4{1.0f, 0.76f, 0.25f, 1.0f};
         device.Draw(MakeConstants(XMMatrixScaling(1.025f, 1.025f, 1.025f) * World(item) * vp, color),
-                    item.is2D ? 8 : 24, item.is2D ? QUAD_LINES_START : CUBE_LINES_START);
+                    item.bIs2D ? 8 : 24, item.bIs2D ? QUAD_LINES_START : CUBE_LINES_START);
     };
     if (showGrid || showGizmo) {
         for (int nIndex : p.vSelection) if (nIndex != selected) outline(nIndex);

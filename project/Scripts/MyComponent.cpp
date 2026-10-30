@@ -1,7 +1,7 @@
 #include "MyComponent.h"
 
-void Spin::Update(dxs::Entity& entity, float deltaSeconds) {
-    entity.draw.rotation.y += deltaSeconds * 0.7f;
+void Spin::Update(dxs::Entity& entity, float fDeltaSeconds) {
+    entity.draw.rotation.y += fDeltaSeconds * 0.7f;
 }
 
 namespace dxs {
