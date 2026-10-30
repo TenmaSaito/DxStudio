@@ -31,6 +31,8 @@ Windows 向けの小さな 2D / 3D ゲーム制作環境です。DirectX 12 と 
 
 ### Unity / Unreal Engine 風エディターUI
 
+要素ごとの Unity / UE との対応表とスクリーンショットは [docs/UI_REFERENCE.md](docs/UI_REFERENCE.md) にあります。
+
 Unity 2022 の Dark スキン配色（パネル `#383838`、タブ帯 `#282828`、ツールバー `#191919`、選択 `#2C5D87`）を基準に、UE5 の要素（アクティブツールの青、X/Y/Z 入力欄の色付きバー）を組み合わせています。
 
 - ダークテーマのメニューバー（File / Edit / Assets / GameObject / Component / Build / Window / Help、Alt+頭文字で開く）、ダークタイトルバー、ダークのポップアップメニューとスクロールバー。

@@ -6,23 +6,25 @@
   <PropertyGroup Label="Configuration"><ConfigurationType>Makefile</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset></PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
-    <NMakeBuildCommandLine>&quot;C:\Users\student\Documents\ChatGPT\All\DxStudio\build-debug.cmd&quot; &quot;C:\Users\student\Documents\ChatGPT\All\DxStudio\project&quot;</NMakeBuildCommandLine>
+    <NMakeBuildCommandLine>&quot;C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\build-debug.cmd&quot; &quot;C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project&quot;</NMakeBuildCommandLine>
     <NMakeReBuildCommandLine>$(NMakeBuildCommandLine)</NMakeReBuildCommandLine><NMakeCleanCommandLine>echo Clean build outputs from DxStudio</NMakeCleanCommandLine>
-    <NMakeIncludeSearchPath>C:\Users\student\Documents\ChatGPT\All\DxStudio\src;C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>
+    <NMakeIncludeSearchPath>C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\src;C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project\Scripts;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>
     <NMakePreprocessorDefinitions>UNICODE;_UNICODE;NOMINMAX;WIN32_LEAN_AND_MEAN;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions><NMakeForcedIncludes></NMakeForcedIncludes>
   </PropertyGroup>
-  <ItemDefinitionGroup><ClCompile><LanguageStandard>stdcpp20</LanguageStandard><AdditionalIncludeDirectories>C:\Users\student\Documents\ChatGPT\All\DxStudio\src;C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile></ItemDefinitionGroup>
+  <ItemDefinitionGroup><ClCompile><LanguageStandard>stdcpp20</LanguageStandard><AdditionalIncludeDirectories>C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\src;C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project\Scripts;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\BoxController.cpp" />
-    <ClCompile Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\MyComponent.cpp" />
-    <ClCompile Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\TestComponent.cpp" />
+    <ClCompile Include="C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project\Scripts\BoxController.cpp" />
+    <ClCompile Include="C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project\Scripts\MyComponent.cpp" />
+    <ClCompile Include="C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project\Scripts\PulseController.cpp" />
+    <ClCompile Include="C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project\Scripts\TestComponent.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\BoxController.h" />
-    <ClInclude Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\MyComponent.h" />
-    <ClInclude Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\TestComponent.h" />
-    <ClInclude Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\src\Engine.h"><Link>Engine API\Engine.h</Link></ClInclude>
-    <ClInclude Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\src\Renderer.h"><Link>Engine API\Renderer.h</Link></ClInclude>
+    <ClInclude Include="C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project\Scripts\BoxController.h" />
+    <ClInclude Include="C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project\Scripts\MyComponent.h" />
+    <ClInclude Include="C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project\Scripts\PulseController.h" />
+    <ClInclude Include="C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\project\Scripts\TestComponent.h" />
+    <ClInclude Include="C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\src\Engine.h"><Link>Engine API\Engine.h</Link></ClInclude>
+    <ClInclude Include="C:\Users\student\AppData\Local\Claude-Data\claude_pzs8sxrjxfjjc\scratch-workspaces\d0cddbe2-bc62-4683-8191-c6b4a84bfbe5\eb487eec-25f8-4730-bf58-94dc083d7408\scratch-2026-10-30-fe19cb\DxStudio\src\Renderer.h"><Link>Engine API\Renderer.h</Link></ClInclude>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
