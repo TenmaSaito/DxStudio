@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations"><ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration></ItemGroup>
+  <PropertyGroup Label="Globals"><ProjectGuid>{7B9A71C4-7A86-4AF4-95AC-55388502D811}</ProjectGuid><Keyword>MakeFileProj</Keyword><RootNamespace>DxStudioProject</RootNamespace></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Makefile</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <NMakeBuildCommandLine>&quot;C:\Users\student\Documents\ChatGPT\All\DxStudio\build-debug.cmd&quot; &quot;C:\Users\student\Documents\ChatGPT\All\DxStudio\project&quot;</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>$(NMakeBuildCommandLine)</NMakeReBuildCommandLine><NMakeCleanCommandLine>echo Clean build outputs from DxStudio</NMakeCleanCommandLine>
+    <NMakeIncludeSearchPath>C:\Users\student\Documents\ChatGPT\All\DxStudio\src;C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>
+    <NMakePreprocessorDefinitions>UNICODE;_UNICODE;NOMINMAX;WIN32_LEAN_AND_MEAN;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions><NMakeForcedIncludes></NMakeForcedIncludes>
+  </PropertyGroup>
+  <ItemDefinitionGroup><ClCompile><LanguageStandard>stdcpp20</LanguageStandard><AdditionalIncludeDirectories>C:\Users\student\Documents\ChatGPT\All\DxStudio\src;C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile></ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\BoxController.cpp" />
+    <ClCompile Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\MyComponent.cpp" />
+    <ClCompile Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\TestComponent.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\BoxController.h" />
+    <ClInclude Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\MyComponent.h" />
+    <ClInclude Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\project\Scripts\TestComponent.h" />
+    <ClInclude Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\src\Engine.h"><Link>Engine API\Engine.h</Link></ClInclude>
+    <ClInclude Include="C:\Users\student\Documents\ChatGPT\All\DxStudio\src\Renderer.h"><Link>Engine API\Renderer.h</Link></ClInclude>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

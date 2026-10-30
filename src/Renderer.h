@@ -1,0 +1,73 @@
+#pragma once
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#include <DirectXMath.h>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace dxs {
+
+struct DrawItem {
+    DirectX::XMFLOAT3 position{0, 0, 0};
+    DirectX::XMFLOAT3 rotation{0, 0, 0};
+    DirectX::XMFLOAT3 scale{1, 1, 1};
+    DirectX::XMFLOAT4 color{1, 1, 1, 1};
+    // Mesh choice only: true is a world-space XY quad, false is a cube.
+    bool is2D = false;
+    // False keeps the transform/selectable entity alive without submitting
+    // polygon work to DirectX 12.
+    bool visible = true;
+    // Optional normalized triangle list used by ModelRenderer. Empty selects
+    // the built-in cube/quad polygon geometry.
+    std::shared_ptr<const std::vector<DirectX::XMFLOAT3>> vertices;
+};
+
+// Shared scene camera. Target is in world units, angles in radians. Orthographic
+// projection retains the same view direction and uses distance to control zoom.
+struct Camera {
+    DirectX::XMFLOAT3 target{0, 0, 0};
+    float yaw = 0.0f;
+    float pitch = 0.32175055f;
+    float distance = 6.32455532f;
+    bool orthographic = false;
+    float fieldOfView = 45.0f;
+    float nearClip = 0.1f;
+    float farClip = 1000.0f;
+};
+
+// Editor-only transform handles: 0=X, 1=Y, 2=Z, 3/4/5=YZ/XZ/XY
+// translation planes, 6=uniform scale.
+enum class GizmoMode { Translate, Rotate, Scale };
+
+class Renderer {
+public:
+    Renderer();
+    ~Renderer();
+    Renderer(const Renderer&) = delete;
+    Renderer& operator=(const Renderer&) = delete;
+    bool Initialize(HWND hwnd, unsigned width, unsigned height, const std::wstring& shaderPath, std::string& error);
+    void Resize(unsigned width, unsigned height);
+    void SetCamera(const Camera& camera);
+    // Client coordinates relative to the viewport. Returns -1 for a miss.
+    int Pick(int x, int y, const std::vector<DrawItem>& items) const;
+    // Select objects whose projected bounds intersect the rectangle.
+    std::vector<int> PickRect(int x0, int y0, int x1, int y1, const std::vector<DrawItem>& items) const;
+    void SetSelection(const std::vector<int>& indices);
+    void SetMarquee(bool visible, int x0, int y0, int x1, int y1);
+    void SetGizmoHot(int handle);
+    int HitGizmo(int x, int y, const DrawItem& item, GizmoMode mode) const;
+    bool DragGizmo(const DrawItem& start, GizmoMode mode, int axis,
+                   int startX, int startY, int x, int y, DrawItem& out) const;
+    bool Render(const std::vector<DrawItem>& items, std::string& error,
+                int selected = -1, bool showGrid = false,
+                GizmoMode mode = GizmoMode::Translate, bool showGizmo = false);
+    void Shutdown();
+private:
+    struct Impl;
+    std::unique_ptr<Impl> p_;
+};
+}
