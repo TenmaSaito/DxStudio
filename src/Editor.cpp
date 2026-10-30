@@ -34,6 +34,9 @@ constexpr int kNewProject = 131, kAddEmpty = 132, kAddModel = 133;
 constexpr int kComponentFields = 134, kComponentValue = 135, kApplyComponentValue = 136;
 constexpr int kMoveComponentUp = 137, kMoveComponentDown = 138, kSplitter = 460;
 constexpr int kDuplicate = 139;
+constexpr int kCreateMenu = 140;
+constexpr int kHierarchySearch = 141;
+constexpr int kInspectorEnabled = 142;
 constexpr int kPanelShow = 400, kPanelFloat = 410, kPanelMinimize = 420, kPanelHide = 430;
 constexpr int kSectionToggle = 440, kResetLayout = 450, kExit = 451;
 constexpr int kSaveLayout = 452, kLoadLayout = 453;
@@ -198,7 +201,7 @@ const wchar_t* kPanelNames[] = {L"Hierarchy", L"Scene", L"Inspector", L"Project"
 
 struct Editor {
     HINSTANCE instance{};
-    HWND window{}, viewport{}, hierarchy{}, status{}, projectPanel{};
+    HWND window{}, viewport{}, hierarchy{}, hierarchySearch{}, status{}, projectPanel{};
     HWND splitters[3]{};
     HWND controls[11]{}, gizmoButtons[3]{}, groupLabels[3]{};
     HWND labels[kFieldCount]{}, edits[kFieldCount]{};
@@ -208,6 +211,8 @@ struct Editor {
     EditorPanel panels[4]{};
     HWND projectionButtons[2]{}, rowLabels[3]{}, inspectorHint{};
     HWND materialLabel{}, materialEdit{}, textureLabel{}, textureEdit{};
+    HWND inspectorEnabled{}, inspectorIcon{}, inspectorTagLabel{}, inspectorTagValue{};
+    HWND inspectorLayerLabel{}, inspectorLayerValue{};
     bool sectionOpen[3]{true, true, true};
     bool shellReady = false, arranging = false;
     HFONT font{}, titleFont{};
@@ -224,6 +229,9 @@ struct Editor {
     ULONGLONG playTick = 0;
     int selected = -1;
     std::vector<int> selectedIndices;
+    // Listbox rows may be filtered; retain an explicit mapping instead of
+    // accidentally treating a visual row index as an entity index.
+    std::vector<int> hierarchyRows;
     GizmoMode gizmoMode = GizmoMode::Translate;
     enum class Drag { None, Orbit, Pan, Gizmo, Select } drag = Drag::None;
     POINT lastMouse{};
@@ -240,7 +248,7 @@ struct Editor {
     int hierarchyDrag = -1;
     POINT hierarchyDragStart{};
     bool hierarchyDragging = false;
-    int dockLeft = 210, dockRight = 340, dockProject = 210;
+    int dockLeft = 210, dockRight = 430, dockProject = 210;
     int inspectorScroll = 0;
     enum class LayoutDrag { None, Left, Right, Project } layoutDrag = LayoutDrag::None;
 
@@ -260,8 +268,11 @@ struct Editor {
 
     void SyncHierarchy() {
         SendMessageW(hierarchy, LB_SETSEL, FALSE, -1);
-        for (int index : selectedIndices) SendMessageW(hierarchy, LB_SETSEL, TRUE, index);
-        if (selected >= 0) SendMessageW(hierarchy, LB_SETCARETINDEX, selected, FALSE);
+        for (size_t row = 0; row < hierarchyRows.size(); ++row) {
+            if (std::find(selectedIndices.begin(), selectedIndices.end(), hierarchyRows[row]) != selectedIndices.end())
+                SendMessageW(hierarchy, LB_SETSEL, TRUE, static_cast<WPARAM>(row));
+            if (hierarchyRows[row] == selected) SendMessageW(hierarchy, LB_SETCARETINDEX, row, FALSE);
+        }
     }
     void SetSelection(std::vector<int> indices, int active = -1) {
         indices.erase(std::remove_if(indices.begin(), indices.end(), [&](int i) { return i < 0 || static_cast<size_t>(i) >= scene.entities.size(); }), indices.end());
@@ -341,15 +352,17 @@ struct Editor {
             auto& p = panels[i]; p.editor = this; p.index = i;
             p.window = CreateWindowExW(WS_EX_CONTROLPARENT, wc.lpszClassName, kPanelNames[i],
                 WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | (i==2?WS_VSCROLL:0), 0, 0, 100, 100, window, nullptr, instance, &p);
-            const wchar_t* labels[] = {L"Float", L"_", L"x"};
+            // Compact glyph controls keep the title bar readable even when a
+            // docked panel is narrow (the old text buttons overlapped it).
+            const wchar_t* labels[] = {L"⇱", L"–", L"×"};
             const int ids[] = {kPanelFloat + i, kPanelMinimize + i, kPanelHide + i};
             for (int b = 0; b < 3; ++b) {
                 p.buttons[b] = Make(L"BUTTON", labels[b], BS_OWNERDRAW | WS_TABSTOP, ids[b]);
                 SetParent(p.buttons[b], p.window);
             }
         }
-        HMENU bar = CreateMenu(), file = CreatePopupMenu(), objects = CreatePopupMenu();
-        HMENU build = CreatePopupMenu(), settings = CreatePopupMenu(), windows = CreatePopupMenu();
+        HMENU bar = CreateMenu(), file = CreatePopupMenu(), edit = CreatePopupMenu(), objects = CreatePopupMenu();
+        HMENU assets = CreatePopupMenu(), build = CreatePopupMenu(), settings = CreatePopupMenu(), windows = CreatePopupMenu();
         AppendMenuW(file, MF_STRING, kSave, L"Save scene\tCtrl+S");
         AppendMenuW(file, MF_STRING, kLoad, L"Reload scene");
         AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
@@ -358,6 +371,10 @@ struct Editor {
         AppendMenuW(file, MF_STRING, kSaveProjectAs, L"Save project file as...");
         AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(file, MF_STRING, kExit, L"Exit");
+        AppendMenuW(edit, MF_STRING, kDuplicate, L"Duplicate\tCtrl+D");
+        AppendMenuW(edit, MF_STRING, kDelete, L"Delete\tDel");
+        AppendMenuW(edit, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(edit, MF_STRING, kFrameSelection, L"Frame Selected\tF");
         AppendMenuW(objects, MF_STRING, kAddCube, L"Create cube");
         AppendMenuW(objects, MF_STRING, kAddSprite, L"Create world quad");
         AppendMenuW(objects, MF_STRING, kAddEmpty, L"Create empty object");
@@ -366,6 +383,8 @@ struct Editor {
         AppendMenuW(objects, MF_STRING, kFrameSelection, L"Frame selection\tF");
         AppendMenuW(objects, MF_STRING, kDuplicate, L"Duplicate\tCtrl+D");
         AppendMenuW(objects, MF_STRING, kDelete, L"Delete selection");
+        AppendMenuW(assets, MF_STRING, kReloadShader, L"Reimport / Reload shader");
+        AppendMenuW(assets, MF_STRING, kChooseScriptEditor, L"Open selected script editor...");
         AppendMenuW(build, MF_STRING, kExport, L"Export Windows game...");
         AppendMenuW(build, MF_STRING, kBuildDebug, L"Play in Editor\tCtrl+P");
         AppendMenuW(build, MF_STRING, kBuildAndroid, L"Build Android Debug APK");
@@ -387,7 +406,9 @@ struct Editor {
         AppendMenuW(windows, MF_STRING, kLoadLayout, L"Load saved layout");
         AppendMenuW(windows, MF_STRING, kResetLayout, L"Reset layout");
         AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"File");
+        AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(edit), L"Edit");
         AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(objects), L"GameObject");
+        AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(assets), L"Assets");
         AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(build), L"Build");
         AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(settings), L"Settings");
         AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(windows), L"Window");
@@ -606,18 +627,33 @@ struct Editor {
     }
     void Populate() {
         SendMessageW(hierarchy, LB_RESETCONTENT, 0, 0);
-        for (size_t index = 0; index < scene.entities.size(); ++index) {
-            const auto& e = scene.entities[index];
-            int depth = 0, parent = e.parent;
-            while (parent >= 0 && static_cast<size_t>(parent) < scene.entities.size() && depth < 16) {
-                ++depth; parent = scene.entities[parent].parent;
+        hierarchyRows.clear();
+        auto lower = [](std::wstring value) {
+            std::transform(value.begin(), value.end(), value.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+            return value;
+        };
+        const auto filter = lower(Text(hierarchySearch));
+        std::vector<unsigned char> visible(scene.entities.size(), filter.empty() ? 1 : 0);
+        if (!filter.empty()) {
+            for (size_t i=0;i<scene.entities.size();++i) if (lower(Wide(scene.entities[i].name)).find(filter)!=std::wstring::npos) {
+                for (int node=static_cast<int>(i), steps=0; node>=0 && static_cast<size_t>(node)<scene.entities.size() && steps++<64; node=scene.entities[node].parent)
+                    visible[static_cast<size_t>(node)]=1;
             }
+        }
+        auto add = [&](auto&& self, int parent, int depth) -> void {
+            for (size_t index=0;index<scene.entities.size();++index) {
+                const auto& e=scene.entities[index];
+                if (e.parent!=parent || !visible[index]) continue;
             std::wstring name(static_cast<size_t>(depth) * 3, L' ');
             if (depth) name += L"↳ ";
             const wchar_t* icon=e.renderer==Entity::RendererKind::None?L"○  ":e.renderer==Entity::RendererKind::Model?L"◇  ":e.renderer==Entity::RendererKind::Image?L"▣  ":e.draw.is2D?L"▣  ":L"◆  ";
             name += std::wstring(icon) + Wide(e.name);
             SendMessageW(hierarchy, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
-        }
+            hierarchyRows.push_back(static_cast<int>(index));
+                self(self, static_cast<int>(index), depth+1);
+            }
+        };
+        add(add, -1, 0);
         selectedIndices.erase(std::remove_if(selectedIndices.begin(), selectedIndices.end(), [&](int i) { return i < 0 || static_cast<size_t>(i) >= scene.entities.size(); }), selectedIndices.end());
         if (std::find(selectedIndices.begin(), selectedIndices.end(), selected) == selectedIndices.end()) selected = selectedIndices.empty() ? -1 : selectedIndices.back();
         SyncHierarchy();
@@ -637,6 +673,8 @@ struct Editor {
         EnableWindow(componentFields, single);
         EnableWindow(componentValue, single);
         EnableWindow(componentValueApply, single);
+        EnableWindow(inspectorEnabled, single);
+        SendMessageW(inspectorEnabled, BM_SETCHECK, BST_UNCHECKED, 0);
         int componentSelection = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
         SendMessageW(componentList, LB_RESETCONTENT, 0, 0);
         SendMessageW(componentFields, LB_RESETCONTENT, 0, 0); inspectedComponentFields.clear();
@@ -648,6 +686,7 @@ struct Editor {
             return;
         }
         const auto& entity = scene.entities[selected];
+        SendMessageW(inspectorEnabled, BM_SETCHECK, entity.draw.visible ? BST_CHECKED : BST_UNCHECKED, 0);
         SetWindowTextW(edits[0], Wide(entity.name).c_str());
         SetWindowTextW(materialEdit,Wide(entity.materialAsset).c_str());
         SetWindowTextW(textureEdit,Wide(entity.textureAsset).c_str());
@@ -742,7 +781,9 @@ struct Editor {
         if (!shellReady || arranging || IsIconic(window)) return;
         arranging = true;
         RECT r{}; GetClientRect(window, &r);
-        const int w = r.right, h = r.bottom, top = 48, bottom = 28, gap = 5;
+        // Keep the docked workspace close to Unity's compact chrome: a thin
+        // transport bar, a persistent status line, and no panel overlap.
+        const int w = r.right, h = r.bottom, top = 52, bottom = 28, gap = 4;
         auto docked = [&](int i) { return !panels[i].floating && !panels[i].hidden; };
         const int left = docked(0) ? std::clamp(dockLeft,160,std::max(160,w/2)) : 0;
         const int right = docked(2) ? std::clamp(dockRight,240,std::max(240,w/2)) : 0;
@@ -761,9 +802,11 @@ struct Editor {
         SetWindowPos(splitters[1],HWND_TOP,w-right-4,top,9,std::max(1,h-top-bottom),SWP_NOACTIVATE);
         SetWindowPos(splitters[2],HWND_TOP,gap,lower-4,std::max(1,w-right-gap*2),9,SWP_NOACTIVATE);
         ShowWindow(splitters[0],showLeft?SW_SHOWNA:SW_HIDE); ShowWindow(splitters[1],showRight?SW_SHOWNA:SW_HIDE); ShowWindow(splitters[2],showProject?SW_SHOWNA:SW_HIDE);
-        int x = 236;
+        // The transport controls intentionally sit near the center, while file
+        // and build actions stay grouped on the right like Unity's toolbar.
+        int x = std::max(228, (w - 470) / 2);
         const int toolbar[] = {4,5,9,10,6,7};
-        const int widths[] = {64,64,82,88,82,82};
+        const int widths[] = {54,54,70,76,66,66};
         for (int i=0;i<6;++i) { MoveWindow(controls[toolbar[i]],x,10,widths[i],28,TRUE); x+=widths[i]+7; }
         ShowWindow(controls[8], SW_HIDE);
         MoveWindow(status, 10, h-23, std::max(1,w-20),20,TRUE);
@@ -776,9 +819,9 @@ struct Editor {
         if (IsIconic(p.window)) return;
         RECT r{}; GetClientRect(p.window,&r);
         const int w = r.right, h = r.bottom;
-        const int closeX=std::max(4,w-27),minimizeX=std::max(4,closeX-25),floatWidth=w>=220?52:24;
+        const int closeX=std::max(4,w-27),minimizeX=std::max(4,closeX-25),floatWidth=24;
         const int floatX=std::max(4,minimizeX-floatWidth-3);
-        SetWindowTextW(p.buttons[0],w>=220?(p.floating?L"Dock":L"Float"):L"↗");
+        SetWindowTextW(p.buttons[0],p.floating?L"⇲":L"⇱");
         MoveWindow(p.buttons[0],floatX,3,floatWidth,22,TRUE);
         MoveWindow(p.buttons[1],minimizeX,3,22,22,TRUE);
         MoveWindow(p.buttons[2],closeX,3,22,22,TRUE);
@@ -790,13 +833,14 @@ struct Editor {
             ShowWindow(control,expanded && visible ? SW_SHOWNA : SW_HIDE);
         };
         if (index == 0) {
-            place(controls[0],7,34,(w-20)/2,25);
-            place(controls[1],10+(w-20)/2,34,(w-20)/2,25);
+            place(controls[0],7,34,78,25);
+            place(controls[1],89,34,76,25);
+            place(hierarchySearch,169,34,w-176,25);
             place(hierarchy,7,64,w-14,std::max(1,h-103));
             place(controls[2],7,h-32,w-14,25);
         } else if (index == 1) {
-            for (int i=0;i<3;++i) place(gizmoButtons[i],7+i*72,33,68,25);
-            for (int i=0;i<2;++i) place(projectionButtons[i],231+i*72,33,68,25);
+            for (int i=0;i<3;++i) place(gizmoButtons[i],7+i*58,33,54,25);
+            for (int i=0;i<2;++i) place(projectionButtons[i],190+i*62,33,58,25);
             place(viewport,1,64,w-2,std::max(1,h-65));
             if (rendererReady && expanded && !p.hidden && w>2 && h>65) {
                 RECT actual{}; GetClientRect(viewport,&actual);
@@ -805,10 +849,17 @@ struct Editor {
         } else if (index == 3) {
             place(projectPanel,1,29,w-2,std::max(1,h-30));
         } else {
-            place(labels[0],10,39,46,20);
-            place(edits[0],59,34,w-69,27);
-            place(inspectorHint,10,65,w-20,20);
-            int y=91;
+            // Unity-like object header: icon, active state, object name, and
+            // metadata strip always precede editable component sections.
+            place(inspectorIcon,10,35,26,26);
+            place(inspectorEnabled,41,38,21,21);
+            place(edits[0],67,34,w-77,27);
+            place(inspectorTagLabel,10,67,28,20);
+            place(inspectorTagValue,40,65,83,23);
+            place(inspectorLayerLabel,130,67,36,20);
+            place(inspectorLayerValue,168,65,std::max(45,w-178),23);
+            place(inspectorHint,10,91,w-20,18);
+            int y=114;
             const wchar_t* names[] = {L"Transform",L"Rendering / Color",L"Components"};
             for (int group=0;group<3;++group) {
                 std::wstring title=(sectionOpen[group]?L"▼  ":L"▶  ")+std::wstring(names[group]);
@@ -817,11 +868,15 @@ struct Editor {
                 if (group==0) {
                     for (int row=0;row<3;++row) {
                         place(rowLabels[row],10,y+5,78,20,sectionOpen[group]);
-                        const int cell=std::max(45,(w-102)/3);
+                        // Leave a fixed gutter for the row caption and for
+                        // every axis caption. This prevents the X/Y/Z labels
+                        // and numeric values from colliding in narrow docks.
+                        const int fieldStart=82;
+                        const int cell=std::max(43,(w-fieldStart-10)/3);
                         for (int a=0;a<3;++a) {
-                            const int field=2+row*3+a, x=91+a*cell;
+                            const int field=2+row*3+a, x=fieldStart+a*cell;
                             place(labels[field],x,y+5,12,20,sectionOpen[group]);
-                            place(edits[field],x+14,y,cell-17,26,sectionOpen[group]);
+                            place(edits[field],x+14,y,cell-16,25,sectionOpen[group]);
                         }
                         if (sectionOpen[group]) y+=31;
                     }
@@ -840,19 +895,22 @@ struct Editor {
                     place(textureEdit,78,y,w-88,26,sectionOpen[group]);
                     if(sectionOpen[group])y+=31;
                 } else {
-                    place(componentList,10,y,w-20,76,sectionOpen[group]);
-                    place(componentChoice,10,y+82,w-20,180,sectionOpen[group]);
-                    place(componentAdd,10,y+114,(w-25)/2,27,sectionOpen[group]);
-                    place(componentRemove,15+(w-25)/2,y+114,(w-25)/2,27,sectionOpen[group]);
-                    place(componentFields,10,y+147,w-20,72,sectionOpen[group]);
-                    place(componentValue,10,y+225,w-105,27,sectionOpen[group]);
-                    place(componentValueApply,w-89,y+225,79,27,sectionOpen[group]);
-                    if (sectionOpen[group]) y+=260;
+                    place(componentList,10,y,w-20,58,sectionOpen[group]);
+                    place(componentChoice,10,y+64,w-20,180,sectionOpen[group]);
+                    place(componentAdd,10,y+96,(w-25)/2,27,sectionOpen[group]);
+                    place(componentRemove,15+(w-25)/2,y+96,(w-25)/2,27,sectionOpen[group]);
+                    place(componentFields,10,y+129,w-20,56,sectionOpen[group]);
+                    place(componentValue,10,y+191,w-105,27,sectionOpen[group]);
+                    place(componentValueApply,w-89,y+191,79,27,sectionOpen[group]);
+                    if (sectionOpen[group]) y+=226;
                 }
                 y+=5;
             }
-            place(controls[3],10,y,w-20,28);
-            const int contentBottom=y+40,visibleHeight=std::max(1,h-29);
+            // Keep Apply in a fixed footer instead of letting it disappear
+            // below the scrollable component content.
+            MoveWindow(controls[3],10,std::max(29,h-34),std::max(1,w-20),27,TRUE);
+            ShowWindow(controls[3], expanded ? SW_SHOWNA : SW_HIDE);
+            const int contentBottom=y+8,visibleHeight=std::max(1,h-62);
             const int maxScroll=std::max(0,contentBottom-visibleHeight);
             const int clamped=std::clamp(inspectorScroll,0,maxScroll);
             if(clamped!=inspectorScroll){inspectorScroll=clamped;LayoutPanel(index);return;}
@@ -943,11 +1001,22 @@ struct Editor {
         }
         if (id == kHierarchy && notification == LBN_SELCHANGE) {
             const int count = static_cast<int>(SendMessageW(hierarchy, LB_GETSELCOUNT, 0, 0));
-            std::vector<int> next(count > 0 ? count : 0);
-            if (count > 0) SendMessageW(hierarchy, LB_GETSELITEMS, count, reinterpret_cast<LPARAM>(next.data()));
-            const int caret = static_cast<int>(SendMessageW(hierarchy, LB_GETCARETINDEX, 0, 0));
+            std::vector<int> rows(count > 0 ? count : 0), next;
+            if (count > 0) SendMessageW(hierarchy, LB_GETSELITEMS, count, reinterpret_cast<LPARAM>(rows.data()));
+            for (const int row : rows) if (row >= 0 && static_cast<size_t>(row) < hierarchyRows.size()) next.push_back(hierarchyRows[row]);
+            const int caretRow = static_cast<int>(SendMessageW(hierarchy, LB_GETCARETINDEX, 0, 0));
+            const int caret = caretRow >= 0 && static_cast<size_t>(caretRow) < hierarchyRows.size() ? hierarchyRows[caretRow] : -1;
             if (!Apply()) { SyncHierarchy(); return; }
             SetSelection(std::move(next), caret);
+            return;
+        }
+        if (id == kHierarchySearch && notification == EN_CHANGE) { Populate(); return; }
+        if (id == kInspectorEnabled && notification == BN_CLICKED) {
+            if (selected >= 0 && static_cast<size_t>(selected) < scene.entities.size() && selectedIndices.size() == 1) {
+                scene.entities[selected].draw.visible = SendMessageW(inspectorEnabled, BM_GETCHECK, 0, 0) == BST_CHECKED;
+                SetStatus(scene.entities[selected].draw.visible ? L"GameObject enabled." : L"GameObject disabled. It remains in the hierarchy.");
+                InvalidateRect(viewport, nullptr, FALSE);
+            }
             return;
         }
         if (id == kComponentList && notification == LBN_SELCHANGE) { RefreshComponentFields(); return; }
@@ -957,6 +1026,11 @@ struct Editor {
             return;
         }
         if (notification != BN_CLICKED) return;
+        if (id == kCreateMenu) {
+            RECT r{}; GetWindowRect(controls[0], &r);
+            ShowObjectMenu({r.left, r.bottom});
+            return;
+        }
         if(id==kApplyComponentValue) {
             if(selected<0||static_cast<size_t>(selected)>=scene.entities.size())return;
             auto& entity=scene.entities[selected];
@@ -1101,7 +1175,8 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
     switch (message) {
     case WM_LBUTTONDOWN: {
         const DWORD hit = static_cast<DWORD>(SendMessageW(hwnd, LB_ITEMFROMPOINT, 0, lp));
-        e->hierarchyDrag = HIWORD(hit) ? -1 : LOWORD(hit);
+        const int row = HIWORD(hit) ? -1 : static_cast<int>(LOWORD(hit));
+        e->hierarchyDrag = row >= 0 && static_cast<size_t>(row) < e->hierarchyRows.size() ? e->hierarchyRows[row] : -1;
         e->hierarchyDragStart = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         e->hierarchyDragging = false;
         break;
@@ -1115,12 +1190,28 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
         }
         break;
     case WM_LBUTTONUP:
-        if (e->hierarchyDragging && e->hierarchyDrag >= 0) {
+        // Some input sources coalesce the mouse-move message into the final
+        // button-up.  Treat a meaningful start/end displacement as a drag as
+        // well, so hierarchy parenting is not dependent on an intermediate
+        // WM_MOUSEMOVE being delivered.
+        if ((e->hierarchyDragging ||
+             (e->hierarchyDrag >= 0 &&
+              (std::abs(GET_X_LPARAM(lp)-e->hierarchyDragStart.x) > 5 ||
+               std::abs(GET_Y_LPARAM(lp)-e->hierarchyDragStart.y) > 5))) &&
+            e->hierarchyDrag >= 0) {
+            const int child = e->hierarchyDrag;
             const DWORD hit = static_cast<DWORD>(SendMessageW(hwnd, LB_ITEMFROMPOINT, 0, lp));
-            const int parent = HIWORD(hit) ? -1 : static_cast<int>(LOWORD(hit));
+            const int row = HIWORD(hit) ? -1 : static_cast<int>(LOWORD(hit));
+            const int parent = row >= 0 && static_cast<size_t>(row) < e->hierarchyRows.size() ? e->hierarchyRows[row] : -1;
             std::string error;
-            if (!SetEntityParent(e->scene, e->hierarchyDrag, parent, error)) Error(e->window, error);
-            else { e->Populate(); e->SetStatus(parent < 0 ? L"Object moved to the hierarchy root." : L"Parent relationship changed. Save the scene to keep it."); }
+            if (!SetEntityParent(e->scene, child, parent, error)) Error(e->window, error);
+            else {
+                // Preserve the dragged object as the active selection. The
+                // list is rebuilt depth-first so a successful drop is visible
+                // immediately as a parent/child indentation change.
+                e->selected=child; e->selectedIndices={child}; e->Populate();
+                e->SetStatus(parent < 0 ? L"Object moved to the hierarchy root." : L"Parent set by drag and drop. Save the scene to keep it.");
+            }
             e->hierarchyDragging = false; e->hierarchyDrag = -1; ReleaseCapture(); return 0;
         }
         break;
@@ -1211,10 +1302,10 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     case WM_PAINT: {
         PAINTSTRUCT ps{}; HDC dc=BeginPaint(hwnd,&ps);
         RECT r{}; GetClientRect(hwnd,&r);
-        HBRUSH border=CreateSolidBrush(RGB(64,67,73));
+        HBRUSH border=CreateSolidBrush(RGB(78,78,78));
         FrameRect(dc,&r,border);
         r.bottom=28; FillRect(dc,&r,border); DeleteObject(border);
-        SetBkMode(dc,TRANSPARENT); SetTextColor(dc,RGB(228,231,236));
+        SetBkMode(dc,TRANSPARENT); SetTextColor(dc,RGB(242,242,242));
         auto old=SelectObject(dc,e->titleFont);
         r.left=9; r.right=std::max<LONG>(r.left,r.right-122);
         DrawTextW(dc,kPanelNames[p->index],-1,&r,DT_LEFT|DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS);
@@ -1401,23 +1492,25 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                               CLIP_DEFAULT_PRECIS, CLEARTYPE_NATURAL_QUALITY, DEFAULT_PITCH, L"Segoe UI");
         e->titleFont = CreateFontW(titleFontHeight, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                    CLIP_DEFAULT_PRECIS, CLEARTYPE_NATURAL_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        e->background = CreateSolidBrush(RGB(43, 45, 50)); e->inputBackground = CreateSolidBrush(RGB(54, 57, 63));
+        // Unity's dark theme uses restrained neutral greys, with blue reserved
+        // for the active tool, selected transport state, and focus borders.
+        e->background = CreateSolidBrush(RGB(53, 53, 53)); e->inputBackground = CreateSolidBrush(RGB(43, 43, 43));
         e->CreatePanels();
         for(int i=0;i<3;++i){
             e->splitters[i]=e->Make(L"STATIC",L"",SS_NOTIFY,kSplitter+i);
             SetWindowSubclass(e->splitters[i],SplitterSubclassProc,static_cast<UINT_PTR>(i),reinterpret_cast<DWORD_PTR>(e));
         }
-        const wchar_t* names[] = {L"+ Cube", L"+ Quad", L"Delete selection", L"Apply changes", L"Save", L"Load", L"Export game...", L"Reload Shader", L""};
-        const int ids[] = {kAddCube, kAddSprite, kDelete, kApply, kSave, kLoad, kExport, kReloadShader, 0};
+        const wchar_t* names[] = {L"+ Create", L"2D Image", L"Delete", L"Apply", L"Save", L"Load", L"Export game...", L"Shader", L""};
+        const int ids[] = {kCreateMenu, kAddSprite, kDelete, kApply, kSave, kLoad, kExport, kReloadShader, 0};
         for (int i = 0; i < 8; ++i) e->controls[i] = e->Make(L"BUTTON", names[i], BS_OWNERDRAW | WS_TABSTOP, ids[i]);
         e->controls[8] = e->Make(L"STATIC", L"DX12", SS_CENTER);
-        e->controls[9] = e->Make(L"BUTTON", L"Play", BS_OWNERDRAW | WS_TABSTOP, kBuildDebug);
+        e->controls[9] = e->Make(L"BUTTON", L"▶ Play", BS_OWNERDRAW | WS_TABSTOP, kBuildDebug);
         e->controls[10] = e->Make(L"BUTTON", L"Android", BS_OWNERDRAW | WS_TABSTOP, kBuildAndroid);
         SetWindowTextW(e->controls[6], L"Export");
         SetWindowTextW(e->controls[7], L"Shader");
         for (int i=0;i<3;++i) SetParent(e->controls[i],e->panels[0].window);
         SetParent(e->controls[3],e->panels[2].window);
-        const wchar_t* modeNames[] = {L"Move", L"Rotate", L"Scale"};
+        const wchar_t* modeNames[] = {L"W Move", L"E Rotate", L"R Scale"};
         for (int i = 0; i < 3; ++i)
             e->gizmoButtons[i] = e->Make(L"BUTTON", modeNames[i], BS_OWNERDRAW | WS_TABSTOP, kMoveMode + i);
         for (auto button:e->gizmoButtons) SetParent(button,e->panels[1].window);
@@ -1429,6 +1522,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         e->hierarchy = e->Make(L"LISTBOX", L"", LBS_NOTIFY | LBS_EXTENDEDSEL | WS_VSCROLL | WS_BORDER | WS_TABSTOP, kHierarchy);
         SetParent(e->hierarchy,e->panels[0].window);
         SetWindowSubclass(e->hierarchy, HierarchySubclassProc, 1, reinterpret_cast<DWORD_PTR>(e));
+        e->hierarchySearch = e->Make(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, kHierarchySearch);
+        SendMessageW(e->hierarchySearch, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Search Hierarchy"));
+        SetParent(e->hierarchySearch,e->panels[0].window);
         e->viewport = CreateWindowExW(0, L"DxStudioViewport", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                                       0, 0, 1, 1, e->panels[1].window, nullptr, e->instance, e);
         for (int i = 0; i < kFieldCount; ++i) {
@@ -1440,7 +1536,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             if (i>=2 && i<=10) SetWindowTextW(e->labels[i],((i-2)%3)==0?L"X":((i-2)%3)==1?L"Y":L"Z");
             if (i>=11) SetWindowTextW(e->labels[i],i==11?L"R":i==12?L"G":i==13?L"B":L"A");
         }
+        e->inspectorIcon=e->Make(L"STATIC",L"◇",SS_CENTER);
+        e->inspectorEnabled=e->Make(L"BUTTON",L"",BS_AUTOCHECKBOX|WS_TABSTOP,kInspectorEnabled);
+        e->inspectorTagLabel=e->Make(L"STATIC",L"Tag",SS_LEFT);
+        e->inspectorTagValue=e->Make(L"STATIC",L"Untagged",SS_CENTER|WS_BORDER);
+        e->inspectorLayerLabel=e->Make(L"STATIC",L"Layer",SS_LEFT);
+        e->inspectorLayerValue=e->Make(L"STATIC",L"Default",SS_CENTER|WS_BORDER);
         e->inspectorHint=e->Make(L"STATIC",L"Edit values, then Apply changes",SS_LEFT);
+        for(auto control:{e->inspectorIcon,e->inspectorEnabled,e->inspectorTagLabel,e->inspectorTagValue,e->inspectorLayerLabel,e->inspectorLayerValue})SetParent(control,e->panels[2].window);
         SetParent(e->inspectorHint,e->panels[2].window);
         e->materialLabel=e->Make(L"STATIC",L"Material",SS_LEFT);
         e->materialEdit=e->Make(L"EDIT",L"",WS_BORDER|ES_AUTOHSCROLL|WS_TABSTOP);
@@ -1458,7 +1561,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         }
         e->componentList = e->Make(L"LISTBOX", L"", LBS_NOTIFY | WS_VSCROLL | WS_BORDER | WS_TABSTOP, kComponentList);
         e->componentChoice = e->Make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, kComponentChoice);
-        e->componentAdd = e->Make(L"BUTTON", L"Attach", BS_OWNERDRAW | WS_TABSTOP, kAddComponent);
+        e->componentAdd = e->Make(L"BUTTON", L"Add Component", BS_OWNERDRAW | WS_TABSTOP, kAddComponent);
         e->componentRemove = e->Make(L"BUTTON", L"Remove", BS_OWNERDRAW | WS_TABSTOP, kRemoveComponent);
         e->componentFields = e->Make(L"LISTBOX", L"", LBS_NOTIFY | WS_VSCROLL | WS_BORDER | WS_TABSTOP, kComponentFields);
         e->componentValue = e->Make(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, kComponentValue);
@@ -1539,17 +1642,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             (id == kRotateMode && e->gizmoMode == GizmoMode::Rotate) || (id == kScaleMode && e->gizmoMode == GizmoMode::Scale) ||
             (id == kPerspective && !e->camera.orthographic) || (id == kOrthographic && e->camera.orthographic);
         const bool section=id>=kSectionToggle && id<kSectionToggle+3;
-        const COLORREF bg = id == kBuildDebug && e->playing ? RGB(45,112,70) : active ? RGB(68,96,124) :
-            (item->itemState & ODS_SELECTED) ? RGB(83,87,94) : RGB(57,60,66);
+        const COLORREF bg = id == kBuildDebug && e->playing ? RGB(53,124,75) : active ? RGB(58,115,175) :
+            (item->itemState & ODS_SELECTED) ? RGB(92,92,92) : RGB(68,68,68);
         HBRUSH brush = CreateSolidBrush(bg);
         FillRect(item->hDC, &item->rcItem, brush);
         DeleteObject(brush);
-        HBRUSH border = CreateSolidBrush(active ? RGB(97,151,199) : RGB(77,80,86));
+        HBRUSH border = CreateSolidBrush(active ? RGB(95,160,220) : RGB(87,87,87));
         FrameRect(item->hDC, &item->rcItem, border);
         DeleteObject(border);
         wchar_t text[128]{}; GetWindowTextW(item->hwndItem, text, 128);
         SetBkMode(item->hDC, TRANSPARENT);
-        SetTextColor(item->hDC, (item->itemState & ODS_DISABLED) ? RGB(125,127,131) : RGB(225,228,232));
+        SetTextColor(item->hDC, (item->itemState & ODS_DISABLED) ? RGB(145,145,145) : RGB(238,238,238));
         auto old = SelectObject(item->hDC, section ? e->titleFont : e->font);
         RECT r = item->rcItem;
         InflateRect(&r, -4, -2);
@@ -1563,7 +1666,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     case WM_CTLCOLORSTATIC:
     case WM_CTLCOLORLISTBOX:
     case WM_CTLCOLOREDIT: {
-        HDC dc = reinterpret_cast<HDC>(wp); SetTextColor(dc, RGB(225, 228, 234));
+        HDC dc = reinterpret_cast<HDC>(wp); SetTextColor(dc, RGB(235, 235, 235));
         if (message==WM_CTLCOLORSTATIC) {
             HWND control=reinterpret_cast<HWND>(lp);
             for (int i=2;i<=10;++i) if (e->labels[i]==control) {
@@ -1572,7 +1675,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             }
         }
         const bool input = message != WM_CTLCOLORSTATIC;
-        SetBkColor(dc, input ? RGB(54, 57, 63) : RGB(43, 45, 50));
+        SetBkColor(dc, input ? RGB(43, 43, 43) : RGB(53, 53, 53));
         return reinterpret_cast<LRESULT>(input ? e->inputBackground : e->background);
     }
     case WM_ERASEBKGND: {
