@@ -420,9 +420,10 @@ void Editor::LayoutPanel(int index) {
         y += S(16) + S(25) + S(12);
         // Keep Apply in a fixed footer instead of letting it disappear
         // below the scrollable component content.
-        MoveWindow(controls[3], 10, std::max(29, h - 34), std::max(1, w - 20), 26, TRUE);
-        ShowWindow(controls[3], expanded ? SW_SHOWNA : SW_HIDE);
-        const int contentBottom = y + 8, visibleHeight = std::max(1, h - 62);
+        // Unity has no Apply button: edits apply on Enter or focus loss
+        // (Edit > Apply Inspector Changes keeps the explicit command).
+        ShowWindow(controls[3], SW_HIDE);
+        const int contentBottom = y + 8, visibleHeight = std::max(1, h - header);
         const int maxScroll = std::max(0, contentBottom - visibleHeight);
         const int clamped = std::clamp(nInspectorScroll, 0, maxScroll);
         if (clamped != nInspectorScroll) {

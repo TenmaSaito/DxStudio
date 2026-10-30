@@ -254,7 +254,7 @@ bool Editor::Apply() {
     if (vSelectedIndices.size() != 1 || nSelected < 0 || nSelected >= static_cast<int>(scene.vEntities.size())) return true;
     std::string name = Utf8(Text(edits[0]));
     if (name.empty() || name.find_first_of("\r\n") != std::string::npos) {
-        Error(window, "Enter a non-empty, single-line name.");
+        ReportApplyError("Enter a non-empty, single-line name.");
         return false;
     }
     float values[13]{};
@@ -267,8 +267,8 @@ bool Editor::Apply() {
                 ++consumed;
             if (consumed != s.size() || !std::isfinite(values[i])) throw std::invalid_argument("number");
         } catch (...) {
-            Error(window, "Enter a finite number for each transform and color field.");
-            SetFocus(edits[i + 2]);
+            ReportApplyError("Enter a finite number for each transform and color field.");
+            if (!bQuietApply) SetFocus(edits[i + 2]);
             return false;
         }
     }
@@ -282,8 +282,8 @@ bool Editor::Apply() {
         }
         auto relative = std::filesystem::u8path(value).lexically_normal();
         if (relative.is_absolute() || relative.empty() || *relative.begin() == L"..") {
-            Error(window, std::string(label) + " must be a project-relative path.");
-            SetFocus(edit);
+            ReportApplyError(std::string(label) + " must be a project-relative path.");
+            if (!bQuietApply) SetFocus(edit);
             return false;
         }
         std::error_code ec;
@@ -291,8 +291,8 @@ bool Editor::Apply() {
         const auto root = std::filesystem::weakly_canonical(projectRoot, ec);
         const auto inside = full.lexically_relative(root);
         if (ec || inside.empty() || *inside.begin() == L".." || !std::filesystem::is_regular_file(full, ec) || ec) {
-            Error(window, std::string(label) + " must refer to a file inside the active project.");
-            SetFocus(edit);
+            ReportApplyError(std::string(label) + " must refer to a file inside the active project.");
+            if (!bQuietApply) SetFocus(edit);
             return false;
         }
         const auto normalized = inside.generic_u8string();
@@ -542,6 +542,37 @@ void Editor::ShowAddComponentMenu() {
     if (choice <= 0) return;
     SendMessageW(componentChoice, CB_SETCURSEL, choice - 1, 0);
     Command(ID_ADD_COMPONENT, BN_CLICKED); // existing attach logic
+}
+
+} // namespace dxs::editor
+
+namespace dxs::editor {
+
+void Editor::ReportApplyError(const std::string& message) {
+    if (!bQuietApply) {
+        Error(window, message);
+        return;
+    }
+    // Focus-loss apply: no modal box (it would steal focus again); the field
+    // is restored from the scene by the caller.
+    Debug::LogWarning(message);
+    SetStatus(Wide(message).c_str());
+}
+
+bool Editor::IsInspectorEdit(HWND control) const {
+    if (!control) return false;
+    if (control == materialEdit || control == textureEdit) return true;
+    for (int field = 0; field < FIELD_COUNT; ++field)
+        if (field != 1 && edits[field] == control) return true;
+    return false;
+}
+
+void Editor::ApplyOnFocusLoss(HWND control) {
+    if (bQuietApply || vSelectedIndices.size() != 1 || !SendMessageW(control, EM_GETMODIFY, 0, 0)) return;
+    bQuietApply = true;
+    const bool bApplied = Apply();
+    bQuietApply = false;
+    if (!bApplied) Inspect(); // invalid input: show the values the object really has
 }
 
 } // namespace dxs::editor

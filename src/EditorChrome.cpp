@@ -313,6 +313,7 @@ void Editor::CreateMainMenu() {
     AppendMenuW(edit, MF_STRING, ID_DELETE, L"Delete\tDel");
     AppendMenuW(edit, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(edit, MF_STRING, ID_FRAME_SELECTION, L"Frame Selected\tF");
+    AppendMenuW(edit, MF_STRING, ID_APPLY, L"Apply Inspector Changes\tEnter");
     AppendMenuW(edit, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(edit, MF_STRING, ID_BUILD_DEBUG, L"Play\tCtrl+P");
     AppendMenuW(edit, MF_STRING, ID_PAUSE, L"Pause\tCtrl+Shift+P");

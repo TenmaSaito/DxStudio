@@ -395,9 +395,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             if (IsWindowVisible(e->componentAdd))
                 theme::Line(dc, 0, e->nAddComponentSeparator - e->nInspectorScroll, r.right, e->nAddComponentSeparator - e->nInspectorScroll,
                             theme::COLOR_SEPARATOR);
-            RECT footer{0, r.bottom - 40, r.right, r.bottom};
-            theme::Fill(dc, footer, theme::COLOR_TAB_STRIP);
-            theme::Line(dc, 0, r.bottom - 40, r.right, r.bottom - 40, theme::COLOR_SEPARATOR);
+
         }
         if (!p->collapsed) e->PaintInputBoxes(dc, hwnd);
         EndPaint(hwnd, &ps);

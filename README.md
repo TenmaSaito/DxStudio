@@ -7,7 +7,7 @@ Windows 向けの小さな 2D / 3D ゲーム制作環境です。DirectX 12 と 
 - Windows 10/11、DirectX 12 対応 GPU、Windows SDK、Visual Studio の「C++ によるデスクトップ開発」が必要です。
 - このフォルダーにある `DxStudio.exe` を起動します。標準プロジェクトは `project/DxStudio.dxproject` です。`File > Open project...` で別の `.dxproject` を開き、複数のプロジェクトを切り替えられます。
 - ソースを変更した場合は `build.cmd` を実行します。Visual Studio の C++ ツールを探し、C++20でエディターとゲームをビルドします。
-- エディターは英語 UI です。`+ Cube` / `+ Quad`、または Scene と Hierarchy の右クリックメニューで作成します。左の Hierarchy または Scene で選択すると、オレンジ色の枠で表示されます。Inspector は Transform、Rendering、Components に折りたたみでき、回転は度、色は RGBA です。値を入力して Enter または `Apply changes` で反映します。数値欄は上下キーで増減し、Shift を加えると増分が10倍になります。
+- エディターは英語 UI です。`+ Cube` / `+ Quad`、または Scene と Hierarchy の右クリックメニューで作成します。左の Hierarchy または Scene で選択すると、オレンジ色の枠で表示されます。Inspector は Transform、Rendering、Components に折りたたみでき、回転は度、色は RGBA です。値は Enter を押すか、別の欄へ移ると反映されます（Unity と同じ。`Edit > Apply Inspector Changes` でも反映できます）。不正な値は反映せず、元の値に戻します。数値欄は上下キーで増減し、Shift を加えると増分が10倍になります。
 - Scene 上で左クリックするとオブジェクトを選択します。右ボタンを押しながらマウスで向きを変え、W/S、A/D、Q/E で前後・左右・上下へ移動できます。Shift は高速移動です。Alt + 右ドラッグは選択物を中心に回転、中ドラッグは平行移動、ホイールは拡大・縮小です。右クリックだけなら生成・削除などのメニューが開きます。
 - Scene 上部の `Persp` / `Ortho` はEditor専用カメラです。平面（Quad）も立方体と同じ3D空間にあり、透視投影、奥行き、XYZ回転の影響を受けます。ゲーム側はEntityへアタッチした `Camera` コンポーネントを使います。Cameraは複数配置でき、最初のActiveカメラがPlayと書き出しゲームで使用されます。
 - Scene の空いている場所から左ドラッグすると矩形の範囲選択ができます。Shift は追加、Ctrl は選択の切り替えです。Hierarchy でも Shift / Ctrl で複数選択できます。複数選択時は、最後のアクティブなオブジェクトを基準にギズモで一括操作します。Inspector の個別値とコンポーネント操作は単一選択時のみ編集できます。範囲選択は画面上の投影範囲による判定で、重なりや遮蔽を考慮したピクセル単位の判定ではありません。
@@ -40,7 +40,7 @@ Unity 2022 の Dark スキン配色（パネル `#383838`、タブ帯 `#282828`�
 - Pause（`Ctrl+Shift+P`）と Step（`Ctrl+Alt+P`、1/60秒だけ進める）を追加しました。
 - ドックのタブ見出し（アイコン＋タイトル、フォーカス時は青いライン）。下部は `Project | Console` のタブ切り替えです。
 - Hierarchy: シーン名の行、折りたたみ可能なツリー（▼/▶ をクリック）、種類ごとのアイコン（Cube / Quad / Camera / Model / 空オブジェクト）、スクリプト付きの印。非アクティブなオブジェクトは灰色で表示します。
-- Inspector: Unity のコンポーネント見出し（折りたたみ・アイコン・⋮）、Tag / Layer の欄、X/Y/Z の色付きバー、プロパティ行の形式で表示するコンポーネント値、青い `Add Component` / `Apply changes` ボタン。
+- Inspector: Unity と同じ構成と寸法です。GameObject ヘッダーと Tag / Layer の行、コンポーネントごとのタイトルバー（折りたたみ・アイコン・⋮）、`Script` 欄とプロパティ行、中央の `Add Component` ボタンがあります。値は Enter か別の欄へ移った時点で反映されます。
 - Scene ビュー: アイコンのツール切り替え（Move / Rotate / Scale）、右上に X/Y/Z の向きを示すギズモ。`Scene | Game` タブで Game ビュー（最初の有効な Camera から見た、グリッドやギズモのない表示）に切り替えられます。Unity と同様に Play 中は自動で Game ビューになり、Stop で Scene に戻ります。
 - Hierarchy の行はマウスを乗せると強調表示され、親子付けのドラッグ中はドロップ先が青枠で示されます。
 - Scene ツールバーの `Shaded ▾` で Shaded / Wireframe / Shaded Wireframe を切り替えられます（DX12 / 11 / 9 のすべてで動作）。Game ビューの `Free Aspect ▾` で 16:9 / 16:10 / 4:3 / 1:1 に固定できます。

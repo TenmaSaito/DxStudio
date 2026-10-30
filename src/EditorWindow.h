@@ -106,6 +106,11 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     bool IsOverTitlebarMenu(HWND header) const;
     void ShowTitlebarMenu(HWND header);
     void ShowAddComponentMenu();
+    // Unity applies Inspector edits when a field loses focus (no Apply button).
+    bool bQuietApply = false;
+    void ReportApplyError(const std::string& message);
+    bool IsInspectorEdit(HWND control) const;
+    void ApplyOnFocusLoss(HWND control);
     // ---- Unity/UE shell (menu bar, toolbar, tabs, console, status) ----------
     HWND menuButtons[MENU_COUNT]{};
     HMENU menuPopups[MENU_COUNT]{};
