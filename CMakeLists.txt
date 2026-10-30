@@ -9,15 +9,22 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-add_library(DxStudioCore STATIC src/Renderer.cpp src/Engine.cpp third_party/ufbx/ufbx.c)
+add_library(DxStudioCore STATIC
+  src/Engine.cpp src/Core/Log.cpp src/Core/Coroutine.cpp src/Core/EngineCallbacks.cpp
+  src/Renderer.cpp src/Graphics/ShaderLoader.cpp
+  src/Graphics/DeviceD3D12.cpp src/Graphics/DeviceD3D11.cpp src/Graphics/DeviceD3D9.cpp
+  third_party/ufbx/ufbx.c)
 target_include_directories(DxStudioCore PUBLIC src)
 target_compile_definitions(DxStudioCore PUBLIC UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(DxStudioCore PUBLIC d3d12 dxgi d3dcompiler)
+target_link_libraries(DxStudioCore PUBLIC d3d12 d3d11 d3d9 dxgi d3dcompiler shell32)
+target_compile_definitions(DxStudioCore PUBLIC _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
 
 # Compile project scripts into both the editor's picker and the player.
 file(GLOB PROJECT_SCRIPTS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/project/Scripts/*.cpp")
-add_executable(DxStudio WIN32 src/EditorMain.cpp src/Editor.cpp src/ProjectPanel.cpp ${PROJECT_SCRIPTS})
-target_link_libraries(DxStudio PRIVATE DxStudioCore comctl32 comdlg32 ole32 shell32 uuid)
+add_executable(DxStudio WIN32 src/EditorMain.cpp src/Editor.cpp src/EditorPanels.cpp src/EditorChrome.cpp
+  src/EditorLayout.cpp src/EditorActions.cpp src/EditorInspector.cpp src/EditorTheme.cpp src/EditorUtility.cpp
+  src/ConsolePanel.cpp src/ProjectPanel.cpp ${PROJECT_SCRIPTS})
+target_link_libraries(DxStudio PRIVATE DxStudioCore comctl32 comdlg32 ole32 shell32 uuid dwmapi uxtheme gdiplus)
 
 add_executable(Game WIN32 src/GameMain.cpp ${PROJECT_SCRIPTS})
 target_link_libraries(Game PRIVATE DxStudioCore)

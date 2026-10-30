@@ -141,7 +141,7 @@ int main() {
         !renderer.Render(draws, error)) { std::cerr << "Compiled shader: " << error << '\n'; return 10; }
     renderer.Shutdown();
     DestroyWindow(window);
-    for (const auto* file : {L"Game.exe", L"scene.dxs", L"Default.vs.cso", L"Default.ps.cso"})
+    for (const auto* file : {L"Game.exe", L"scene.dxs", L"Default.vs.cso", L"Default.ps.cso", L"Default9.vs.cso", L"Default9.ps.cso", L"ProjectSettings.dxsettings"})
         std::filesystem::remove(exportDir / file);
     std::filesystem::remove_all(exportDir / L"Assets");
     std::filesystem::remove(exportDir);

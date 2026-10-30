@@ -47,7 +47,7 @@ int main() {
             CloseHandle(process.hProcess);
         }
     }
-    for (const auto* file : {L"Game.exe", L"scene.dxs", L"Default.vs.cso", L"Default.ps.cso"}) {
+    for (const auto* file : {L"Game.exe", L"scene.dxs", L"Default.vs.cso", L"Default.ps.cso", L"Default9.vs.cso", L"Default9.ps.cso", L"ProjectSettings.dxsettings"}) {
         std::error_code ignored;
         std::filesystem::remove(dir / file, ignored);
     }

@@ -1,0 +1,20 @@
+# DxStudio formatting. One statement per line, 4-space indent, 130 columns.
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 130
+AccessModifierOffset: -4
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortLambdasOnASingleLine: Inline
+AllowShortCaseLabelsOnASingleLine: true
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBraces: Attach
+DerivePointerAlignment: false
+PointerAlignment: Left
+NamespaceIndentation: None
+FixNamespaceComments: true
+SortIncludes: Never
+IncludeBlocks: Preserve
+SpaceAfterTemplateKeyword: false

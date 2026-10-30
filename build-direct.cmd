@@ -5,10 +5,11 @@ for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\
 if not defined VSROOT (echo Visual Studio C++ tools not found.& exit /b 1)
 call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat"
 if errorlevel 1 exit /b 1
+call "%~dp0build-sources.cmd"
 if not exist build-direct mkdir build-direct
-cl /nologo /std:c++20 /EHsc /O2 /MT /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /Isrc /Febuild-direct\DxStudio.exe /Fobuild-direct\ src\EditorMain.cpp src\Editor.cpp src\ProjectPanel.cpp project\Scripts\*.cpp src\Engine.cpp src\Renderer.cpp third_party\ufbx\ufbx.c /link /SUBSYSTEM:WINDOWS d3d12.lib dxgi.lib d3dcompiler.lib user32.lib gdi32.lib comctl32.lib comdlg32.lib ole32.lib shell32.lib uuid.lib
+cl %DXS_CL_FLAGS% /O2 /Febuild-direct\DxStudio.exe /Fobuild-direct\ %DXS_EDITOR_SOURCES% project\Scripts\*.cpp %DXS_ENGINE_SOURCES% %DXS_RENDER_SOURCES% /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED %DXS_RENDER_LIBS% %DXS_WINDOW_LIBS% %DXS_EDITOR_LIBS%
 if errorlevel 1 exit /b 1
-cl /nologo /std:c++20 /EHsc /O2 /MT /utf-8 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /Isrc /Febuild-direct\Game.exe /Fobuild-direct\ src\GameMain.cpp project\Scripts\*.cpp src\Engine.cpp src\Renderer.cpp third_party\ufbx\ufbx.c /link /SUBSYSTEM:WINDOWS d3d12.lib dxgi.lib d3dcompiler.lib user32.lib gdi32.lib
+cl %DXS_CL_FLAGS% /O2 /Febuild-direct\Game.exe /Fobuild-direct\ src\GameMain.cpp project\Scripts\*.cpp %DXS_ENGINE_SOURCES% %DXS_RENDER_SOURCES% /link /SUBSYSTEM:WINDOWS %DXS_RENDER_LIBS% %DXS_WINDOW_LIBS%
 if errorlevel 1 exit /b 1
 copy /y build-direct\DxStudio.exe DxStudio.exe >nul
 if errorlevel 1 (echo Could not update DxStudio.exe. Close the editor and retry.& exit /b 1)
