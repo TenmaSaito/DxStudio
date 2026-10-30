@@ -19,33 +19,37 @@
 namespace dxs {
 namespace {
 bool ValidCamera(const Camera& camera) {
-    const float values[] = {camera.target.x, camera.target.y, camera.target.z,
-        camera.yaw, camera.pitch, camera.distance, camera.fieldOfView, camera.nearClip, camera.farClip};
-    for (float value : values) if (!std::isfinite(value)) return false;
-    return camera.distance >= 0.2f && camera.distance <= 80.0f &&
-        camera.pitch >= -1.54f && camera.pitch <= 1.54f && camera.fieldOfView>=1.0f && camera.fieldOfView<=179.0f &&
-        camera.nearClip>0.0f && camera.farClip>camera.nearClip;
+    const float values[] = {camera.target.x, camera.target.y,    camera.target.z, camera.yaw,    camera.pitch,
+                            camera.distance, camera.fieldOfView, camera.nearClip, camera.farClip};
+    for (float value : values)
+        if (!std::isfinite(value)) return false;
+    return camera.distance >= 0.2f && camera.distance <= 80.0f && camera.pitch >= -1.54f && camera.pitch <= 1.54f &&
+           camera.fieldOfView >= 1.0f && camera.fieldOfView <= 179.0f && camera.nearClip > 0.0f &&
+           camera.farClip > camera.nearClip;
 }
 
 bool Valid(const Entity& e) {
     const auto& d = e.draw;
-    const float values[] = {d.position.x, d.position.y, d.position.z,
-        d.rotation.x, d.rotation.y, d.rotation.z, d.scale.x, d.scale.y, d.scale.z,
-        d.color.x, d.color.y, d.color.z, d.color.w};
+    const float values[] = {d.position.x, d.position.y, d.position.z, d.rotation.x, d.rotation.y, d.rotation.z, d.scale.x,
+                            d.scale.y,    d.scale.z,    d.color.x,    d.color.y,    d.color.z,    d.color.w};
     if (e.name.empty() || e.name.size() > 1024 || e.name.find_first_of("\r\n") != std::string::npos ||
-        e.components.size() > MaxComponentsPerEntity) return false;
+        e.components.size() > MaxComponentsPerEntity)
+        return false;
     for (size_t i = 0; i < e.components.size(); ++i) {
         const auto& component = e.components[i];
         if (component.empty() || component.size() > 128 || component.find_first_of("\r\n") != std::string::npos ||
-            std::find(e.components.begin(), e.components.begin() + i, component) != e.components.begin() + i) return false;
+            std::find(e.components.begin(), e.components.begin() + i, component) != e.components.begin() + i)
+            return false;
     }
     for (const auto& [component, fields] : e.componentProperties) {
         if (component.empty() || component.size() > 128 || fields.size() > 128) return false;
         for (const auto& [name, value] : fields)
-            if (name.empty() || name.size() > 128 || value.size() > 4096 ||
-                name.find_first_of("\r\n") != std::string::npos || value.find_first_of("\r\n") != std::string::npos) return false;
+            if (name.empty() || name.size() > 128 || value.size() > 4096 || name.find_first_of("\r\n") != std::string::npos ||
+                value.find_first_of("\r\n") != std::string::npos)
+                return false;
     }
-    for (float v : values) if (!std::isfinite(v)) return false;
+    for (float v : values)
+        if (!std::isfinite(v)) return false;
     return true;
 }
 
@@ -79,129 +83,223 @@ bool ValidParents(const Scene& scene) {
 
 using Mesh = std::vector<DirectX::XMFLOAT3>;
 struct NumberScanner {
-    const char* p{}; const char* end{};
+    const char* p{};
+    const char* end{};
     bool Next(double& value) {
-        while (p < end && !((*p >= '0' && *p <= '9') || *p == '-' || *p == '+' || *p == '.')) ++p;
+        while (p < end && !((*p >= '0' && *p <= '9') || *p == '-' || *p == '+' || *p == '.'))
+            ++p;
         if (p >= end) return false;
-        char* next{}; value = std::strtod(p, &next);
-        if (next == p) { ++p; return Next(value); }
-        p = next; return std::isfinite(value);
+        char* next{};
+        value = std::strtod(p, &next);
+        if (next == p) {
+            ++p;
+            return Next(value);
+        }
+        p = next;
+        return std::isfinite(value);
     }
-    bool NextInt(int& value) { double number{}; if (!Next(number)) return false; value = static_cast<int>(number); return true; }
+    bool NextInt(int& value) {
+        double number{};
+        if (!Next(number)) return false;
+        value = static_cast<int>(number);
+        return true;
+    }
 };
 void Normalize(Mesh& mesh) {
     if (mesh.empty()) return;
     DirectX::XMFLOAT3 lo = mesh.front(), hi = mesh.front();
-    for (const auto& v : mesh) { lo.x=std::min(lo.x,v.x); lo.y=std::min(lo.y,v.y); lo.z=std::min(lo.z,v.z); hi.x=std::max(hi.x,v.x); hi.y=std::max(hi.y,v.y); hi.z=std::max(hi.z,v.z); }
-    const DirectX::XMFLOAT3 center{(lo.x+hi.x)*.5f,(lo.y+hi.y)*.5f,(lo.z+hi.z)*.5f};
-    const float extent = std::max({hi.x-lo.x,hi.y-lo.y,hi.z-lo.z,1e-6f});
-    for (auto& v : mesh) { v.x=(v.x-center.x)/extent; v.y=(v.y-center.y)/extent; v.z=(v.z-center.z)/extent; }
+    for (const auto& v : mesh) {
+        lo.x = std::min(lo.x, v.x);
+        lo.y = std::min(lo.y, v.y);
+        lo.z = std::min(lo.z, v.z);
+        hi.x = std::max(hi.x, v.x);
+        hi.y = std::max(hi.y, v.y);
+        hi.z = std::max(hi.z, v.z);
+    }
+    const DirectX::XMFLOAT3 center{(lo.x + hi.x) * .5f, (lo.y + hi.y) * .5f, (lo.z + hi.z) * .5f};
+    const float extent = std::max({hi.x - lo.x, hi.y - lo.y, hi.z - lo.z, 1e-6f});
+    for (auto& v : mesh) {
+        v.x = (v.x - center.x) / extent;
+        v.y = (v.y - center.y) / extent;
+        v.z = (v.z - center.z) / extent;
+    }
 }
 std::shared_ptr<const Mesh> LoadModelMesh(const std::filesystem::path& path, float animationTime = 0.0f, int animationIndex = 0) {
     static std::unordered_map<std::wstring, std::weak_ptr<const Mesh>> cache;
     const auto key = path.lexically_normal().wstring();
     const auto ext = path.extension().wstring();
     if (_wcsicmp(ext.c_str(), L".fbx") != 0)
-        if (auto found=cache.find(key); found!=cache.end()) if (auto mesh=found->second.lock()) return mesh;
+        if (auto found = cache.find(key); found != cache.end())
+            if (auto mesh = found->second.lock()) return mesh;
     std::ifstream input(path, std::ios::binary);
     if (!input) return {};
     std::string text((std::istreambuf_iterator<char>(input)), {});
-    if (text.empty() || text.size() > 64u*1024u*1024u) return {};
-    std::vector<DirectX::XMFLOAT3> points; Mesh triangles;
+    if (text.empty() || text.size() > 64u * 1024u * 1024u) return {};
+    std::vector<DirectX::XMFLOAT3> points;
+    Mesh triangles;
     if (_wcsicmp(ext.c_str(), L".x") == 0) {
-        const auto begin=text.find("Mesh"); const auto brace=begin==std::string::npos?begin:text.find('{',begin);
-        if (brace==std::string::npos) return {};
-        NumberScanner scan{text.data()+brace+1,text.data()+text.size()}; int count{};
-        if (!scan.NextInt(count) || count<3 || count>1000000) return {};
+        const auto begin = text.find("Mesh");
+        const auto brace = begin == std::string::npos ? begin : text.find('{', begin);
+        if (brace == std::string::npos) return {};
+        NumberScanner scan{text.data() + brace + 1, text.data() + text.size()};
+        int count{};
+        if (!scan.NextInt(count) || count < 3 || count > 1000000) return {};
         points.resize(count);
-        for (auto& v:points) { double x,y,z; if(!scan.Next(x)||!scan.Next(y)||!scan.Next(z))return{}; v={static_cast<float>(x),static_cast<float>(y),static_cast<float>(z)}; }
-        int faces{}; if(!scan.NextInt(faces)||faces<1||faces>1000000)return{};
-        for(int f=0;f<faces;++f){int n{};if(!scan.NextInt(n)||n<3||n>1024)return{};std::vector<int> ids(n);for(int& id:ids)if(!scan.NextInt(id)||id<0||id>=count)return{};for(int i=1;i+1<n;++i){triangles.push_back(points[ids[0]]);triangles.push_back(points[ids[i]]);triangles.push_back(points[ids[i+1]]);}}
-    } else if (_wcsicmp(ext.c_str(), L".fbx") == 0) {
-        ufbx_load_opts opts{}; opts.generate_missing_normals = true;
-        ufbx_error loadError{}; const auto pathUtf8=PathText(path);
-        ufbx_scene* source=ufbx_load_file(pathUtf8.c_str(),&opts,&loadError); if(!source)return{};
-        ufbx_scene* evaluated=nullptr; ufbx_scene* active=source;
-        if(source->anim_stacks.count>0) {
-            const size_t clip=std::min(static_cast<size_t>(std::max(animationIndex,0)),source->anim_stacks.count-1);
-            const auto* stack=source->anim_stacks.data[clip]; const double duration=stack->time_end-stack->time_begin;
-            const double time=duration>0.0?stack->time_begin+std::fmod(std::max(animationTime,0.0f),duration):stack->time_begin;
-            ufbx_error evaluateError{}; evaluated=ufbx_evaluate_scene(source,stack->anim,time,nullptr,&evaluateError); if(evaluated)active=evaluated;
+        for (auto& v : points) {
+            double x, y, z;
+            if (!scan.Next(x) || !scan.Next(y) || !scan.Next(z)) return {};
+            v = {static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)};
         }
-        for(size_t m=0;m<active->meshes.count;++m) {
-            const auto* mesh=active->meshes.data[m]; if(!mesh||!mesh->vertex_position.exists)continue;
-            std::vector<uint32_t> indices(std::max<size_t>(3,mesh->max_face_triangles*3));
-            const size_t instanceCount=std::max<size_t>(1,mesh->instances.count);
-            for(size_t instance=0;instance<instanceCount;++instance) {
-                const ufbx_matrix* matrix=mesh->instances.count?&mesh->instances.data[instance]->geometry_to_world:nullptr;
-                for(size_t f=0;f<mesh->faces.count;++f) {
-                    const uint32_t count=ufbx_triangulate_face(indices.data(),indices.size(),mesh,mesh->faces.data[f]);
-                    for(size_t t=0;t<static_cast<size_t>(count)*3;++t) {
-                        ufbx_vec3 value=ufbx_get_vertex_vec3(&mesh->skinned_position,indices[t]);
-                        if(matrix)value=ufbx_transform_position(matrix,value);
-                        triangles.push_back({static_cast<float>(value.x),static_cast<float>(value.y),static_cast<float>(value.z)});
+        int faces{};
+        if (!scan.NextInt(faces) || faces < 1 || faces > 1000000) return {};
+        for (int f = 0; f < faces; ++f) {
+            int n{};
+            if (!scan.NextInt(n) || n < 3 || n > 1024) return {};
+            std::vector<int> ids(n);
+            for (int& id : ids)
+                if (!scan.NextInt(id) || id < 0 || id >= count) return {};
+            for (int i = 1; i + 1 < n; ++i) {
+                triangles.push_back(points[ids[0]]);
+                triangles.push_back(points[ids[i]]);
+                triangles.push_back(points[ids[i + 1]]);
+            }
+        }
+    } else if (_wcsicmp(ext.c_str(), L".fbx") == 0) {
+        ufbx_load_opts opts{};
+        opts.generate_missing_normals = true;
+        ufbx_error loadError{};
+        const auto pathUtf8 = PathText(path);
+        ufbx_scene* source = ufbx_load_file(pathUtf8.c_str(), &opts, &loadError);
+        if (!source) return {};
+        ufbx_scene* evaluated = nullptr;
+        ufbx_scene* active = source;
+        if (source->anim_stacks.count > 0) {
+            const size_t clip = std::min(static_cast<size_t>(std::max(animationIndex, 0)), source->anim_stacks.count - 1);
+            const auto* stack = source->anim_stacks.data[clip];
+            const double duration = stack->time_end - stack->time_begin;
+            const double time =
+                duration > 0.0 ? stack->time_begin + std::fmod(std::max(animationTime, 0.0f), duration) : stack->time_begin;
+            ufbx_error evaluateError{};
+            evaluated = ufbx_evaluate_scene(source, stack->anim, time, nullptr, &evaluateError);
+            if (evaluated) active = evaluated;
+        }
+        for (size_t m = 0; m < active->meshes.count; ++m) {
+            const auto* mesh = active->meshes.data[m];
+            if (!mesh || !mesh->vertex_position.exists) continue;
+            std::vector<uint32_t> indices(std::max<size_t>(3, mesh->max_face_triangles * 3));
+            const size_t instanceCount = std::max<size_t>(1, mesh->instances.count);
+            for (size_t instance = 0; instance < instanceCount; ++instance) {
+                const ufbx_matrix* matrix = mesh->instances.count ? &mesh->instances.data[instance]->geometry_to_world : nullptr;
+                for (size_t f = 0; f < mesh->faces.count; ++f) {
+                    const uint32_t count = ufbx_triangulate_face(indices.data(), indices.size(), mesh, mesh->faces.data[f]);
+                    for (size_t t = 0; t < static_cast<size_t>(count) * 3; ++t) {
+                        ufbx_vec3 value = ufbx_get_vertex_vec3(&mesh->skinned_position, indices[t]);
+                        if (matrix) value = ufbx_transform_position(matrix, value);
+                        triangles.push_back(
+                            {static_cast<float>(value.x), static_cast<float>(value.y), static_cast<float>(value.z)});
                     }
                 }
             }
         }
-        if(evaluated)ufbx_free_scene(evaluated); ufbx_free_scene(source);
-    } else return {};
-    if (triangles.empty() || triangles.size()>1000000) return {};
-    Normalize(triangles); auto result=std::make_shared<Mesh>(std::move(triangles));
-    if (_wcsicmp(ext.c_str(), L".fbx") != 0) cache[key]=result;
+        if (evaluated) ufbx_free_scene(evaluated);
+        ufbx_free_scene(source);
+    } else
+        return {};
+    if (triangles.empty() || triangles.size() > 1000000) return {};
+    Normalize(triangles);
+    auto result = std::make_shared<Mesh>(std::move(triangles));
+    if (_wcsicmp(ext.c_str(), L".fbx") != 0) cache[key] = result;
     return result;
 }
-}
+} // namespace
 
 Entity::~Entity() = default;
 Entity::Entity(Entity&&) noexcept = default;
 Entity& Entity::operator=(Entity&&) noexcept = default;
 Entity::Entity(const Entity& other)
-    : name(other.name), draw(other.draw), parent(other.parent), renderer(other.renderer),
-      modelAsset(other.modelAsset), materialAsset(other.materialAsset), textureAsset(other.textureAsset),
-      playAnimation(other.playAnimation), animationTime(other.animationTime), animationIndex(other.animationIndex),
-      components(other.components), componentProperties(other.componentProperties) {}
+    : name(other.name), draw(other.draw), parent(other.parent), renderer(other.renderer), modelAsset(other.modelAsset),
+      materialAsset(other.materialAsset), textureAsset(other.textureAsset), playAnimation(other.playAnimation),
+      animationTime(other.animationTime), animationIndex(other.animationIndex), components(other.components),
+      componentProperties(other.componentProperties) {}
 Entity& Entity::operator=(const Entity& other) {
     if (this != &other) {
-        name = other.name; draw = other.draw; parent = other.parent; renderer = other.renderer;
-        modelAsset = other.modelAsset; materialAsset = other.materialAsset; textureAsset = other.textureAsset;
-        playAnimation=other.playAnimation; animationTime=other.animationTime; animationIndex=other.animationIndex;
-        components = other.components; componentProperties = other.componentProperties;
-        runtimeComponentNames.clear(); runtimeComponents.clear(); runtimeComponentStarted.clear();
+        name = other.name;
+        draw = other.draw;
+        parent = other.parent;
+        renderer = other.renderer;
+        modelAsset = other.modelAsset;
+        materialAsset = other.materialAsset;
+        textureAsset = other.textureAsset;
+        playAnimation = other.playAnimation;
+        animationTime = other.animationTime;
+        animationIndex = other.animationIndex;
+        components = other.components;
+        componentProperties = other.componentProperties;
+        runtimeComponentNames.clear();
+        runtimeComponents.clear();
+        runtimeComponentStarted.clear();
     }
     return *this;
 }
 
 bool LoadMaterial(const std::filesystem::path& path, Material& material, std::string& error) {
-    error.clear(); std::ifstream file(path,std::ios::binary); std::string magic; unsigned version=0; Material loaded;
-    if(!file||!(file>>magic>>version>>std::quoted(loaded.name)
-        >>loaded.baseColor.x>>loaded.baseColor.y>>loaded.baseColor.z>>loaded.baseColor.w
-        >>std::quoted(loaded.textureAsset)>>std::quoted(loaded.shaderAsset))||magic!="DXMATERIAL"||version!=1) {
-        error="Invalid material file: "+PathText(path); return false;
+    error.clear();
+    std::ifstream file(path, std::ios::binary);
+    std::string magic;
+    unsigned version = 0;
+    Material loaded;
+    if (!file ||
+        !(file >> magic >> version >> std::quoted(loaded.name) >> loaded.baseColor.x >> loaded.baseColor.y >>
+          loaded.baseColor.z >> loaded.baseColor.w >> std::quoted(loaded.textureAsset) >> std::quoted(loaded.shaderAsset)) ||
+        magic != "DXMATERIAL" || version != 1) {
+        error = "Invalid material file: " + PathText(path);
+        return false;
     }
-    const float values[]={loaded.baseColor.x,loaded.baseColor.y,loaded.baseColor.z,loaded.baseColor.w};
-    for(float value:values)if(!std::isfinite(value)){error="Material contains a non-finite color.";return false;}
-    file>>std::ws; if(file.peek()!=std::char_traits<char>::eof()){error="Unexpected data in material file.";return false;}
-    material=std::move(loaded); return true;
+    const float values[] = {loaded.baseColor.x, loaded.baseColor.y, loaded.baseColor.z, loaded.baseColor.w};
+    for (float value : values)
+        if (!std::isfinite(value)) {
+            error = "Material contains a non-finite color.";
+            return false;
+        }
+    file >> std::ws;
+    if (file.peek() != std::char_traits<char>::eof()) {
+        error = "Unexpected data in material file.";
+        return false;
+    }
+    material = std::move(loaded);
+    return true;
 }
 
 bool SaveMaterial(const std::filesystem::path& path, const Material& material, std::string& error) {
-    error.clear(); auto temp=path; temp+=L".tmp"; std::ofstream file(temp,std::ios::binary|std::ios::trunc);
-    if(!file){error="Cannot create material: "+PathText(path);return false;}
-    file<<"DXMATERIAL 1 "<<std::quoted(material.name)<<' '<<std::setprecision(std::numeric_limits<float>::max_digits10)
-        <<material.baseColor.x<<' '<<material.baseColor.y<<' '<<material.baseColor.z<<' '<<material.baseColor.w<<' '
-        <<std::quoted(material.textureAsset)<<' '<<std::quoted(material.shaderAsset)<<'\n'; file.close();
-    if(!file||!MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
-        error="Cannot save material (Windows error "+std::to_string(GetLastError())+").";
-        std::error_code ignored;std::filesystem::remove(temp,ignored);return false;
-    } return true;
+    error.clear();
+    auto temp = path;
+    temp += L".tmp";
+    std::ofstream file(temp, std::ios::binary | std::ios::trunc);
+    if (!file) {
+        error = "Cannot create material: " + PathText(path);
+        return false;
+    }
+    file << "DXMATERIAL 1 " << std::quoted(material.name) << ' ' << std::setprecision(std::numeric_limits<float>::max_digits10)
+         << material.baseColor.x << ' ' << material.baseColor.y << ' ' << material.baseColor.z << ' ' << material.baseColor.w
+         << ' ' << std::quoted(material.textureAsset) << ' ' << std::quoted(material.shaderAsset) << '\n';
+    file.close();
+    if (!file || !MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        error = "Cannot save material (Windows error " + std::to_string(GetLastError()) + ").";
+        std::error_code ignored;
+        std::filesystem::remove(temp, ignored);
+        return false;
+    }
+    return true;
 }
 
 bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& error) {
     error.clear();
     std::ifstream file(path, std::ios::binary);
     file.imbue(std::locale::classic());
-    if (!file) { error = "Cannot open scene: " + PathText(path); return false; }
+    if (!file) {
+        error = "Cannot open scene: " + PathText(path);
+        return false;
+    }
     std::string magic;
     unsigned version = 0;
     size_t count = 0;
@@ -213,9 +311,9 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
     if (version >= 4) {
         int orthographic = 0;
         auto& camera = loaded.camera;
-        if (!(file >> magic >> orthographic >> camera.target.x >> camera.target.y >> camera.target.z
-                   >> camera.yaw >> camera.pitch >> camera.distance) || magic != "CAMERA" ||
-            (orthographic != 0 && orthographic != 1) || !ValidCamera(camera)) {
+        if (!(file >> magic >> orthographic >> camera.target.x >> camera.target.y >> camera.target.z >> camera.yaw >>
+              camera.pitch >> camera.distance) ||
+            magic != "CAMERA" || (orthographic != 0 && orthographic != 1) || !ValidCamera(camera)) {
             error = "Invalid scene camera (projection, finite values, pitch or distance).";
             return false;
         }
@@ -243,28 +341,28 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
         if (headerValid && version >= 5) headerValid = static_cast<bool>(file >> e.parent);
         if (headerValid && version >= 6) {
             unsigned renderer = 0;
-            headerValid = static_cast<bool>(file >> renderer >> std::quoted(e.modelAsset)) && renderer <= (version >= 7 ? 3u : 2u);
+            headerValid =
+                static_cast<bool>(file >> renderer >> std::quoted(e.modelAsset)) && renderer <= (version >= 7 ? 3u : 2u);
             e.renderer = static_cast<Entity::RendererKind>(renderer);
         }
         if (headerValid && version >= 7) {
             size_t propertyCount = 0;
-            int playAnimation=0;
-            headerValid = static_cast<bool>(file >> std::quoted(e.materialAsset) >> std::quoted(e.textureAsset)
-                >> playAnimation >> e.animationTime >> e.animationIndex >> propertyCount) && (playAnimation==0||playAnimation==1) &&
-                std::isfinite(e.animationTime) && e.animationTime>=0.0f && e.animationIndex>=0 && propertyCount <= 8192;
-            e.playAnimation=playAnimation==1;
+            int playAnimation = 0;
+            headerValid = static_cast<bool>(file >> std::quoted(e.materialAsset) >> std::quoted(e.textureAsset) >>
+                                            playAnimation >> e.animationTime >> e.animationIndex >> propertyCount) &&
+                          (playAnimation == 0 || playAnimation == 1) && std::isfinite(e.animationTime) &&
+                          e.animationTime >= 0.0f && e.animationIndex >= 0 && propertyCount <= 8192;
+            e.playAnimation = playAnimation == 1;
             for (size_t p = 0; headerValid && p < propertyCount; ++p) {
                 std::string component, field, value;
                 headerValid = static_cast<bool>(file >> std::quoted(component) >> std::quoted(field) >> std::quoted(value));
                 if (headerValid) e.componentProperties[component][field] = value;
             }
         }
-        if (!headerValid || !(file >> is2D
-              >> d.position.x >> d.position.y >> d.position.z
-              >> d.rotation.x >> d.rotation.y >> d.rotation.z
-              >> d.scale.x >> d.scale.y >> d.scale.z
-              >> d.color.x >> d.color.y >> d.color.z >> d.color.w)
-            || (is2D != 0 && is2D != 1) || !Valid(e)) {
+        if (!headerValid ||
+            !(file >> is2D >> d.position.x >> d.position.y >> d.position.z >> d.rotation.x >> d.rotation.y >> d.rotation.z >>
+              d.scale.x >> d.scale.y >> d.scale.z >> d.color.x >> d.color.y >> d.color.z >> d.color.w) ||
+            (is2D != 0 && is2D != 1) || !Valid(e)) {
             error = "Invalid entity at index " + std::to_string(i) + ".";
             return false;
         }
@@ -272,7 +370,10 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
         if (version < 6) e.renderer = Entity::RendererKind::Polygon;
         loaded.entities.push_back(std::move(e));
     }
-    if (!ValidParents(loaded)) { error = "Invalid or cyclic entity parent relationship."; return false; }
+    if (!ValidParents(loaded)) {
+        error = "Invalid or cyclic entity parent relationship.";
+        return false;
+    }
     file >> std::ws;
     if (file.peek() != std::char_traits<char>::eof()) {
         error = "Unexpected data after the scene entities.";
@@ -280,42 +381,53 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
     }
     loaded.projectRoot = path.parent_path();
     scene = std::move(loaded);
+    EngineEvents::Get().onSceneLoaded.Broadcast(scene);
     return true;
 }
 
 bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::string& error) {
     error.clear();
-    if (scene.entities.size() > 10000) { error = "Too many entities (maximum 10000)."; return false; }
-    if (!ValidCamera(scene.camera)) { error = "Invalid scene camera (finite values, pitch or distance)."; return false; }
-    if (!ValidParents(scene)) { error = "Invalid or cyclic entity parent relationship."; return false; }
+    if (scene.entities.size() > 10000) {
+        error = "Too many entities (maximum 10000).";
+        return false;
+    }
+    if (!ValidCamera(scene.camera)) {
+        error = "Invalid scene camera (finite values, pitch or distance).";
+        return false;
+    }
+    if (!ValidParents(scene)) {
+        error = "Invalid or cyclic entity parent relationship.";
+        return false;
+    }
     for (const auto& entity : scene.entities) {
-        if (!Valid(entity)) { error = "Invalid entity name or non-finite transform/color."; return false; }
+        if (!Valid(entity)) {
+            error = "Invalid entity name or non-finite transform/color.";
+            return false;
+        }
     }
     std::ostringstream out;
     out.imbue(std::locale::classic());
     out << "DXSCENE 7 " << scene.entities.size() << '\n';
     out << std::setprecision(std::numeric_limits<float>::max_digits10);
     const auto& camera = scene.camera;
-    out << "CAMERA " << (camera.orthographic ? 1 : 0) << ' '
-        << camera.target.x << ' ' << camera.target.y << ' ' << camera.target.z << ' '
-        << camera.yaw << ' ' << camera.pitch << ' ' << camera.distance << '\n';
+    out << "CAMERA " << (camera.orthographic ? 1 : 0) << ' ' << camera.target.x << ' ' << camera.target.y << ' '
+        << camera.target.z << ' ' << camera.yaw << ' ' << camera.pitch << ' ' << camera.distance << '\n';
     for (const auto& e : scene.entities) {
         const auto& d = e.draw;
         out << std::quoted(e.name) << ' ' << e.components.size();
-        for (const auto& component : e.components) out << ' ' << std::quoted(component);
+        for (const auto& component : e.components)
+            out << ' ' << std::quoted(component);
         size_t propertyCount = 0;
-        for (const auto& [component, fields] : e.componentProperties) propertyCount += fields.size();
-        out << ' ' << e.parent << ' ' << static_cast<unsigned>(e.renderer) << ' ' << std::quoted(e.modelAsset)
-            << ' ' << std::quoted(e.materialAsset) << ' ' << std::quoted(e.textureAsset)
-            << ' ' << (e.playAnimation?1:0) << ' ' << e.animationTime << ' ' << e.animationIndex << ' ' << propertyCount;
+        for (const auto& [component, fields] : e.componentProperties)
+            propertyCount += fields.size();
+        out << ' ' << e.parent << ' ' << static_cast<unsigned>(e.renderer) << ' ' << std::quoted(e.modelAsset) << ' '
+            << std::quoted(e.materialAsset) << ' ' << std::quoted(e.textureAsset) << ' ' << (e.playAnimation ? 1 : 0) << ' '
+            << e.animationTime << ' ' << e.animationIndex << ' ' << propertyCount;
         for (const auto& [component, fields] : e.componentProperties)
             for (const auto& [field, value] : fields)
                 out << ' ' << std::quoted(component) << ' ' << std::quoted(field) << ' ' << std::quoted(value);
-        out
-            << ' ' << (d.is2D ? 1 : 0) << ' '
-            << d.position.x << ' ' << d.position.y << ' ' << d.position.z << ' '
-            << d.rotation.x << ' ' << d.rotation.y << ' ' << d.rotation.z << ' '
-            << d.scale.x << ' ' << d.scale.y << ' ' << d.scale.z << ' '
+        out << ' ' << (d.is2D ? 1 : 0) << ' ' << d.position.x << ' ' << d.position.y << ' ' << d.position.z << ' ' << d.rotation.x
+            << ' ' << d.rotation.y << ' ' << d.rotation.z << ' ' << d.scale.x << ' ' << d.scale.y << ' ' << d.scale.z << ' '
             << d.color.x << ' ' << d.color.y << ' ' << d.color.z << ' ' << d.color.w << '\n';
     }
     // Stage in the same directory and replace only after writing succeeds.
@@ -323,10 +435,16 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
     temp += L".tmp";
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);
-        if (!file) { error = "Cannot write scene: " + PathText(temp); return false; }
+        if (!file) {
+            error = "Cannot write scene: " + PathText(temp);
+            return false;
+        }
         file << out.str();
         file.close();
-        if (!file) { error = "Failed to write scene: " + PathText(temp); return false; }
+        if (!file) {
+            error = "Failed to write scene: " + PathText(temp);
+            return false;
+        }
     }
     if (!MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         error = "Cannot replace scene (Windows error " + std::to_string(GetLastError()) + "): " + PathText(path);
@@ -334,12 +452,12 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
         std::filesystem::remove(temp, ignored);
         return false;
     }
+    EngineEvents::Get().onSceneSaved.Broadcast(scene);
     return true;
 }
 
 bool RegisterComponent(const std::string& name, ComponentUpdate update) {
-    if (name.empty() || name.size() > 128 || name.find_first_of("\r\n") != std::string::npos || !update)
-        return false;
+    if (name.empty() || name.size() > 128 || name.find_first_of("\r\n") != std::string::npos || !update) return false;
     struct CallbackComponent final : Component {
         explicit CallbackComponent(ComponentUpdate callback) : callback_(callback) {}
         void Update(Entity& entity, float dt) override { callback_(entity, dt); }
@@ -348,8 +466,14 @@ bool RegisterComponent(const std::string& name, ComponentUpdate update) {
     return Components().emplace(name, [update]() { return std::make_unique<CallbackComponent>(update); }).second;
 }
 
-DrawItem PolygonRenderer::BuildDrawItem(const Entity& entity) const { return entity.draw; }
-DrawItem Image::BuildDrawItem(const Entity& entity) const { auto result = entity.draw; result.is2D = true; return result; }
+DrawItem PolygonRenderer::BuildDrawItem(const Entity& entity) const {
+    return entity.draw;
+}
+DrawItem Image::BuildDrawItem(const Entity& entity) const {
+    auto result = entity.draw;
+    result.is2D = true;
+    return result;
+}
 DrawItem ModelRenderer::BuildDrawItem(const Entity& entity) const {
     auto result = entity.draw;
     result.is2D = false;
@@ -367,58 +491,123 @@ bool IsComponentRegistered(const std::string& name) {
     return Components().find(name) != Components().end();
 }
 
+bool AttachComponent(Entity& entity, const std::string& name, std::string& error) {
+    error.clear();
+    if (!IsComponentRegistered(name)) {
+        error = "The component is not registered: " + name;
+        return false;
+    }
+    if (std::find(entity.components.begin(), entity.components.end(), name) != entity.components.end()) {
+        error = "This component is already attached.";
+        return false;
+    }
+    if (entity.components.size() >= MaxComponentsPerEntity) {
+        error = "An object can have up to " + std::to_string(MaxComponentsPerEntity) + " components.";
+        return false;
+    }
+    entity.components.push_back(name);
+    EngineEvents::Get().onComponentAttached.Broadcast(entity, name);
+    return true;
+}
+
 bool DetachComponent(Entity& entity, std::size_t componentIndex) {
-    if(componentIndex>=entity.components.size())return false;
-    const auto removed=entity.components[componentIndex];
-    entity.components.erase(entity.components.begin()+static_cast<std::ptrdiff_t>(componentIndex));
+    if (componentIndex >= entity.components.size()) return false;
+    const auto removed = entity.components[componentIndex];
+    entity.components.erase(entity.components.begin() + static_cast<std::ptrdiff_t>(componentIndex));
     entity.componentProperties.erase(removed);
-    entity.runtimeComponentNames.clear(); entity.runtimeComponents.clear(); entity.runtimeComponentStarted.clear();
+    entity.runtimeComponentNames.clear();
+    entity.runtimeComponents.clear();
+    entity.runtimeComponentStarted.clear();
+    EngineEvents::Get().onComponentDetached.Broadcast(entity, removed);
     return true;
 }
 
 std::vector<std::string> RegisteredComponentNames() {
     std::vector<std::string> result;
     result.reserve(Components().size());
-    for (const auto& component : Components()) result.push_back(component.first);
+    for (const auto& component : Components())
+        result.push_back(component.first);
     std::sort(result.begin(), result.end());
     return result;
 }
 
-void UpdateUserComponents(Scene& scene, float deltaSeconds) {
-    for (auto& entity : scene.entities) {
-        if(entity.renderer==Entity::RendererKind::Model&&entity.playAnimation)entity.animationTime+=std::max(deltaSeconds,0.0f);
-        if (entity.runtimeComponentNames != entity.components) {
-            entity.runtimeComponentNames = entity.components;
-            entity.runtimeComponents.clear();
-            entity.runtimeComponentStarted.clear();
-            for (const auto& name : entity.components) {
-                auto found = Components().find(name);
-                auto instance = found == Components().end() ? nullptr : found->second();
-                entity.runtimeComponents.push_back(std::move(instance));
-                entity.runtimeComponentStarted.push_back(false);
-            }
-        }
-        const size_t count = std::min(entity.runtimeComponentNames.size(), entity.runtimeComponents.size());
-        for (size_t i = 0; i < count; ++i) {
-            if (!entity.runtimeComponents[i]) continue;
-            auto fields = entity.runtimeComponents[i]->EditorFields();
-            const auto saved = entity.componentProperties.find(entity.runtimeComponentNames[i]);
-            if (i < entity.runtimeComponentStarted.size() && !entity.runtimeComponentStarted[i] && saved != entity.componentProperties.end()) for (auto& field : fields) {
-                const auto value = saved->second.find(field.name);
-                if (value != saved->second.end()) { std::string ignored; SetComponentEditorValue(entity, i, field.name, value->second, ignored); }
-            }
-            if (i >= entity.runtimeComponentStarted.size()) entity.runtimeComponentStarted.resize(i + 1, false);
-            if (!entity.runtimeComponentStarted[i]) { entity.runtimeComponents[i]->Start(entity); entity.runtimeComponentStarted[i] = true; }
-            entity.runtimeComponents[i]->Update(entity, deltaSeconds);
-            ComponentEditorValues(entity, i);
+namespace {
+// Rebuilds the runtime instances when the attachment list changed.
+void SyncRuntimeComponents(Entity& entity) {
+    if (entity.runtimeComponentNames == entity.components) return;
+    entity.runtimeComponentNames = entity.components;
+    entity.runtimeComponents.clear();
+    entity.runtimeComponentStarted.clear();
+    for (const auto& name : entity.components) {
+        auto found = Components().find(name);
+        entity.runtimeComponents.push_back(found == Components().end() ? nullptr : found->second());
+        entity.runtimeComponentStarted.push_back(false);
+    }
+}
+
+// Applies serialized Inspector values, then calls Start() exactly once.
+void StartComponentIfNeeded(Entity& entity, std::size_t nIndex) {
+    if (nIndex >= entity.runtimeComponentStarted.size()) entity.runtimeComponentStarted.resize(nIndex + 1, false);
+    if (entity.runtimeComponentStarted[nIndex]) return;
+    auto& component = *entity.runtimeComponents[nIndex];
+    const auto saved = entity.componentProperties.find(entity.runtimeComponentNames[nIndex]);
+    if (saved != entity.componentProperties.end()) {
+        for (auto& field : component.EditorFields()) {
+            const auto value = saved->second.find(field.name);
+            if (value == saved->second.end()) continue;
+            std::string ignored;
+            SetComponentEditorValue(entity, nIndex, field.name, value->second, ignored);
         }
     }
+    component.Start(entity);
+    entity.runtimeComponentStarted[nIndex] = true;
+    EngineEvents::Get().onComponentStarted.Broadcast(entity, component, entity.runtimeComponentNames[nIndex]);
+}
+} // namespace
+
+void UpdateUserComponents(Scene& scene, float deltaSeconds) {
+    const float fDelta = std::max(deltaSeconds, 0.0f);
+    Time::Advance(fDelta);
+    auto& events = EngineEvents::Get();
+    events.onPreUpdate.Broadcast(scene, fDelta);
+
+    // Pass 1: Start (first frame) and Update, in Inspector order.
+    for (auto& entity : scene.entities) {
+        if (entity.renderer == Entity::RendererKind::Model && entity.playAnimation) entity.animationTime += fDelta;
+        SyncRuntimeComponents(entity);
+        const size_t nCount = std::min(entity.runtimeComponentNames.size(), entity.runtimeComponents.size());
+        for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
+            if (!entity.runtimeComponents[nIndex]) continue;
+            StartComponentIfNeeded(entity, nIndex);
+            entity.runtimeComponents[nIndex]->Update(entity, fDelta);
+        }
+    }
+
+    // Pass 2: coroutines resume after every Update (Unity order), then
+    // LateUpdate, then the Inspector mirror of the live field values.
+    for (auto& entity : scene.entities) {
+        const size_t nCount = std::min(entity.runtimeComponentNames.size(), entity.runtimeComponents.size());
+        for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
+            if (entity.runtimeComponents[nIndex])
+                entity.runtimeComponents[nIndex]->Coroutines().Tick(fDelta * Time::TimeScale(), fDelta);
+        }
+        for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
+            if (entity.runtimeComponents[nIndex]) entity.runtimeComponents[nIndex]->LateUpdate(entity, fDelta);
+        }
+        for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
+            if (entity.runtimeComponents[nIndex]) ComponentEditorValues(entity, nIndex);
+        }
+    }
+
+    events.onPostUpdate.Broadcast(scene, fDelta);
 }
 
 namespace {
 void EnsureComponentInstances(Entity& entity) {
     if (entity.runtimeComponentNames == entity.components && entity.runtimeComponents.size() == entity.components.size()) return;
-    entity.runtimeComponentNames = entity.components; entity.runtimeComponents.clear(); entity.runtimeComponentStarted.clear();
+    entity.runtimeComponentNames = entity.components;
+    entity.runtimeComponents.clear();
+    entity.runtimeComponentStarted.clear();
     for (const auto& name : entity.components) {
         auto found = Components().find(name);
         entity.runtimeComponents.push_back(found == Components().end() ? nullptr : found->second());
@@ -427,24 +616,48 @@ void EnsureComponentInstances(Entity& entity) {
 }
 std::string FieldText(const EditorField& field) {
     switch (field.type) {
-    case EditorFieldType::Float: { std::ostringstream out; out << std::setprecision(std::numeric_limits<float>::max_digits10) << *static_cast<float*>(field.value); return out.str(); }
+    case EditorFieldType::Float: {
+        std::ostringstream out;
+        out << std::setprecision(std::numeric_limits<float>::max_digits10) << *static_cast<float*>(field.value);
+        return out.str();
+    }
     case EditorFieldType::Integer: return std::to_string(*static_cast<int*>(field.value));
     case EditorFieldType::Boolean: return *static_cast<bool*>(field.value) ? "true" : "false";
     case EditorFieldType::String: return *static_cast<std::string*>(field.value);
-    } return {};
+    }
+    return {};
 }
 bool AssignField(EditorField& field, const std::string& value, std::string& error) {
-    if (field.readOnly) { error = "The selected field is read-only."; return false; }
+    if (field.readOnly) {
+        error = "The selected field is read-only.";
+        return false;
+    }
     try {
         size_t used = 0;
-        if (field.type == EditorFieldType::Float) { const float parsed=std::stof(value,&used); if(used!=value.size()||!std::isfinite(parsed))throw std::invalid_argument("float"); *static_cast<float*>(field.value)=parsed; }
-        else if (field.type == EditorFieldType::Integer) { const int parsed=std::stoi(value,&used); if(used!=value.size())throw std::invalid_argument("int"); *static_cast<int*>(field.value)=parsed; }
-        else if (field.type == EditorFieldType::Boolean) { if(value=="true"||value=="1")*static_cast<bool*>(field.value)=true; else if(value=="false"||value=="0")*static_cast<bool*>(field.value)=false; else throw std::invalid_argument("bool"); }
-        else *static_cast<std::string*>(field.value)=value;
-    } catch (...) { error = "The value does not match the component field type."; return false; }
+        if (field.type == EditorFieldType::Float) {
+            const float parsed = std::stof(value, &used);
+            if (used != value.size() || !std::isfinite(parsed)) throw std::invalid_argument("float");
+            *static_cast<float*>(field.value) = parsed;
+        } else if (field.type == EditorFieldType::Integer) {
+            const int parsed = std::stoi(value, &used);
+            if (used != value.size()) throw std::invalid_argument("int");
+            *static_cast<int*>(field.value) = parsed;
+        } else if (field.type == EditorFieldType::Boolean) {
+            if (value == "true" || value == "1")
+                *static_cast<bool*>(field.value) = true;
+            else if (value == "false" || value == "0")
+                *static_cast<bool*>(field.value) = false;
+            else
+                throw std::invalid_argument("bool");
+        } else
+            *static_cast<std::string*>(field.value) = value;
+    } catch (...) {
+        error = "The value does not match the component field type.";
+        return false;
+    }
     return true;
 }
-}
+} // namespace
 
 std::vector<std::pair<std::string, std::string>> ComponentEditorValues(Entity& entity, std::size_t componentIndex) {
     EnsureComponentInstances(entity);
@@ -454,40 +667,72 @@ std::vector<std::pair<std::string, std::string>> ComponentEditorValues(Entity& e
     auto fields = entity.runtimeComponents[componentIndex]->EditorFields();
     auto& saved = entity.componentProperties[component];
     for (auto& field : fields) {
-        if (auto found=saved.find(field.name); found!=saved.end() && !entity.runtimeComponentStarted[componentIndex]) { std::string ignored; AssignField(field,found->second,ignored); }
-        auto value=FieldText(field); saved[field.name]=value; result.emplace_back(field.name,std::move(value));
+        if (auto found = saved.find(field.name); found != saved.end() && !entity.runtimeComponentStarted[componentIndex]) {
+            std::string ignored;
+            AssignField(field, found->second, ignored);
+        }
+        auto value = FieldText(field);
+        saved[field.name] = value;
+        result.emplace_back(field.name, std::move(value));
     }
     return result;
 }
 
-bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex, const std::string& name, const std::string& value, std::string& error) {
-    error.clear(); EnsureComponentInstances(entity);
-    if (componentIndex >= entity.runtimeComponents.size() || !entity.runtimeComponents[componentIndex]) { error="The component class is not registered."; return false; }
-    auto fields=entity.runtimeComponents[componentIndex]->EditorFields();
-    for(auto& field:fields) if(field.name==name) {
-        if(!AssignField(field,value,error))return false;
-        entity.componentProperties[entity.runtimeComponentNames[componentIndex]][name]=FieldText(field); return true;
+bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex, const std::string& name, const std::string& value,
+                             std::string& error) {
+    error.clear();
+    EnsureComponentInstances(entity);
+    if (componentIndex >= entity.runtimeComponents.size() || !entity.runtimeComponents[componentIndex]) {
+        error = "The component class is not registered.";
+        return false;
     }
-    error="The component field no longer exists."; return false;
+    auto fields = entity.runtimeComponents[componentIndex]->EditorFields();
+    for (auto& field : fields)
+        if (field.name == name) {
+            if (!AssignField(field, value, error)) return false;
+            entity.componentProperties[entity.runtimeComponentNames[componentIndex]][name] = FieldText(field);
+            return true;
+        }
+    error = "The component field no longer exists.";
+    return false;
 }
 
 Camera ActiveGameCamera(Scene& scene) {
-    for (size_t i=0;i<scene.entities.size();++i) {
-        const auto& entity=scene.entities[i];
-        const auto found=std::find(entity.components.begin(),entity.components.end(),"Camera");
-        if(found==entity.components.end())continue;
-        const auto props=entity.componentProperties.find("Camera");
-        if(props!=entity.componentProperties.end()) { auto active=props->second.find("Active"); if(active!=props->second.end()&&(active->second=="false"||active->second=="0"))continue; }
-        const auto world=WorldDraw(scene,static_cast<int>(i)); Camera result;
-        result.yaw=world.rotation.y; result.pitch=world.rotation.x; result.distance=10.0f;
-        const float cp=std::cos(result.pitch); DirectX::XMFLOAT3 forward{std::sin(result.yaw)*cp,std::sin(result.pitch),std::cos(result.yaw)*cp};
-        result.target={world.position.x+forward.x*result.distance,world.position.y+forward.y*result.distance,world.position.z+forward.z*result.distance};
-        if(props!=entity.componentProperties.end()) { auto ortho=props->second.find("Orthographic"); result.orthographic=ortho!=props->second.end()&&(ortho->second=="true"||ortho->second=="1"); }
-        if(props!=entity.componentProperties.end()) {
-            auto number=[&](const char* name,float fallback){auto found=props->second.find(name);if(found==props->second.end())return fallback;try{return std::stof(found->second);}catch(...){return fallback;}};
-            result.fieldOfView=std::clamp(number("Field of View",60.0f),1.0f,179.0f);
-            result.nearClip=std::max(number("Near Clip",0.1f),0.001f);
-            result.farClip=std::max(number("Far Clip",1000.0f),result.nearClip+0.001f);
+    for (size_t i = 0; i < scene.entities.size(); ++i) {
+        const auto& entity = scene.entities[i];
+        const auto found = std::find(entity.components.begin(), entity.components.end(), "Camera");
+        if (found == entity.components.end()) continue;
+        const auto props = entity.componentProperties.find("Camera");
+        if (props != entity.componentProperties.end()) {
+            auto active = props->second.find("Active");
+            if (active != props->second.end() && (active->second == "false" || active->second == "0")) continue;
+        }
+        const auto world = WorldDraw(scene, static_cast<int>(i));
+        Camera result;
+        result.yaw = world.rotation.y;
+        result.pitch = world.rotation.x;
+        result.distance = 10.0f;
+        const float cp = std::cos(result.pitch);
+        DirectX::XMFLOAT3 forward{std::sin(result.yaw) * cp, std::sin(result.pitch), std::cos(result.yaw) * cp};
+        result.target = {world.position.x + forward.x * result.distance, world.position.y + forward.y * result.distance,
+                         world.position.z + forward.z * result.distance};
+        if (props != entity.componentProperties.end()) {
+            auto ortho = props->second.find("Orthographic");
+            result.orthographic = ortho != props->second.end() && (ortho->second == "true" || ortho->second == "1");
+        }
+        if (props != entity.componentProperties.end()) {
+            auto number = [&](const char* name, float fallback) {
+                auto found = props->second.find(name);
+                if (found == props->second.end()) return fallback;
+                try {
+                    return std::stof(found->second);
+                } catch (...) {
+                    return fallback;
+                }
+            };
+            result.fieldOfView = std::clamp(number("Field of View", 60.0f), 1.0f, 179.0f);
+            result.nearClip = std::max(number("Near Clip", 0.1f), 0.001f);
+            result.farClip = std::max(number("Far Clip", 1000.0f), result.nearClip + 0.001f);
         }
         return result;
     }
@@ -500,19 +745,32 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
     std::vector<unsigned char> state(scene.entities.size(), 0);
     std::function<void(int)> resolve = [&](int index) {
         if (index < 0 || static_cast<size_t>(index) >= scene.entities.size() || state[index] == 2) return;
-        if (state[index] == 1) { result[index] = scene.entities[index].draw; state[index] = 2; return; }
+        if (state[index] == 1) {
+            result[index] = scene.entities[index].draw;
+            state[index] = 2;
+            return;
+        }
         state[index] = 1;
         const auto& entity = scene.entities[index];
         auto world = entity.draw;
-        if (entity.renderer == Entity::RendererKind::None) world.visible = false;
-        else if (entity.renderer == Entity::RendererKind::Polygon) world = PolygonRenderer{}.BuildDrawItem(entity);
-        else if (entity.renderer == Entity::RendererKind::Model) world = ModelRenderer(scene.projectRoot / std::filesystem::u8path(entity.modelAsset),entity.animationTime,entity.animationIndex).BuildDrawItem(entity);
-        else world = Image{}.BuildDrawItem(entity);
-        if(!entity.materialAsset.empty()) {
-            Material material; std::string ignored;
-            if(LoadMaterial(scene.projectRoot/std::filesystem::u8path(entity.materialAsset),material,ignored)) {
-                world.color.x*=material.baseColor.x; world.color.y*=material.baseColor.y;
-                world.color.z*=material.baseColor.z; world.color.w*=material.baseColor.w;
+        if (entity.renderer == Entity::RendererKind::None)
+            world.visible = false;
+        else if (entity.renderer == Entity::RendererKind::Polygon)
+            world = PolygonRenderer{}.BuildDrawItem(entity);
+        else if (entity.renderer == Entity::RendererKind::Model)
+            world = ModelRenderer(scene.projectRoot / std::filesystem::u8path(entity.modelAsset), entity.animationTime,
+                                  entity.animationIndex)
+                        .BuildDrawItem(entity);
+        else
+            world = Image{}.BuildDrawItem(entity);
+        if (!entity.materialAsset.empty()) {
+            Material material;
+            std::string ignored;
+            if (LoadMaterial(scene.projectRoot / std::filesystem::u8path(entity.materialAsset), material, ignored)) {
+                world.color.x *= material.baseColor.x;
+                world.color.y *= material.baseColor.y;
+                world.color.z *= material.baseColor.z;
+                world.color.w *= material.baseColor.w;
             }
         }
         if (entity.parent >= 0 && static_cast<size_t>(entity.parent) < scene.entities.size()) {
@@ -520,17 +778,19 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
             const auto& parent = result[entity.parent];
             XMVECTOR position = XMVectorSet(world.position.x * parent.scale.x, world.position.y * parent.scale.y,
                                             world.position.z * parent.scale.z, 1.0f);
-            position = XMVector3TransformCoord(position,
-                XMMatrixRotationRollPitchYaw(parent.rotation.x, parent.rotation.y, parent.rotation.z));
+            position = XMVector3TransformCoord(
+                position, XMMatrixRotationRollPitchYaw(parent.rotation.x, parent.rotation.y, parent.rotation.z));
             position = XMVectorAdd(position, XMLoadFloat3(&parent.position));
             XMStoreFloat3(&world.position, position);
             world.rotation = {world.rotation.x + parent.rotation.x, world.rotation.y + parent.rotation.y,
                               world.rotation.z + parent.rotation.z};
             world.scale = {world.scale.x * parent.scale.x, world.scale.y * parent.scale.y, world.scale.z * parent.scale.z};
         }
-        result[index] = world; state[index] = 2;
+        result[index] = world;
+        state[index] = 2;
     };
-    for (int i = 0; i < static_cast<int>(scene.entities.size()); ++i) resolve(i);
+    for (int i = 0; i < static_cast<int>(scene.entities.size()); ++i)
+        resolve(i);
     return result;
 }
 
@@ -546,17 +806,19 @@ DrawItem LocalDrawFromWorld(const Scene& scene, int index, const DrawItem& world
     if (parentIndex < 0 || static_cast<size_t>(parentIndex) >= scene.entities.size()) return world;
     const auto parent = WorldDraw(scene, parentIndex);
     DrawItem local = world;
-    local.rotation = {world.rotation.x-parent.rotation.x, world.rotation.y-parent.rotation.y, world.rotation.z-parent.rotation.z};
-    local.scale = {std::abs(parent.scale.x)>1e-6f?world.scale.x/parent.scale.x:world.scale.x,
-                   std::abs(parent.scale.y)>1e-6f?world.scale.y/parent.scale.y:world.scale.y,
-                   std::abs(parent.scale.z)>1e-6f?world.scale.z/parent.scale.z:world.scale.z};
+    local.rotation = {world.rotation.x - parent.rotation.x, world.rotation.y - parent.rotation.y,
+                      world.rotation.z - parent.rotation.z};
+    local.scale = {std::abs(parent.scale.x) > 1e-6f ? world.scale.x / parent.scale.x : world.scale.x,
+                   std::abs(parent.scale.y) > 1e-6f ? world.scale.y / parent.scale.y : world.scale.y,
+                   std::abs(parent.scale.z) > 1e-6f ? world.scale.z / parent.scale.z : world.scale.z};
     auto relative = XMVectorSubtract(XMLoadFloat3(&world.position), XMLoadFloat3(&parent.position));
     relative = XMVector3TransformCoord(relative,
-        XMMatrixRotationRollPitchYaw(-parent.rotation.x, -parent.rotation.y, -parent.rotation.z));
-    XMFLOAT3 value{}; XMStoreFloat3(&value, relative);
-    local.position = {std::abs(parent.scale.x)>1e-6f?value.x/parent.scale.x:value.x,
-                      std::abs(parent.scale.y)>1e-6f?value.y/parent.scale.y:value.y,
-                      std::abs(parent.scale.z)>1e-6f?value.z/parent.scale.z:value.z};
+                                       XMMatrixRotationRollPitchYaw(-parent.rotation.x, -parent.rotation.y, -parent.rotation.z));
+    XMFLOAT3 value{};
+    XMStoreFloat3(&value, relative);
+    local.position = {std::abs(parent.scale.x) > 1e-6f ? value.x / parent.scale.x : value.x,
+                      std::abs(parent.scale.y) > 1e-6f ? value.y / parent.scale.y : value.y,
+                      std::abs(parent.scale.z) > 1e-6f ? value.z / parent.scale.z : value.z};
     return local;
 }
 
@@ -564,35 +826,137 @@ bool SetEntityParent(Scene& scene, int child, int parent, std::string& error) {
     error.clear();
     if (child < 0 || static_cast<size_t>(child) >= scene.entities.size() || parent < -1 ||
         parent >= static_cast<int>(scene.entities.size()) || child == parent) {
-        error = "Invalid parent selection."; return false;
+        error = "Invalid parent selection.";
+        return false;
     }
     for (int p = parent, steps = 0; p >= 0 && steps <= static_cast<int>(scene.entities.size()); ++steps) {
-        if (p == child) { error = "An object cannot be parented to one of its descendants."; return false; }
+        if (p == child) {
+            error = "An object cannot be parented to one of its descendants.";
+            return false;
+        }
         p = scene.entities[p].parent;
     }
     const auto world = WorldDraw(scene, child);
     const int old = scene.entities[child].parent;
     scene.entities[child].parent = parent;
     scene.entities[child].draw = LocalDrawFromWorld(scene, child, world);
-    if (!ValidParents(scene)) { scene.entities[child].parent = old; error = "The parent relationship would be cyclic."; return false; }
+    if (!ValidParents(scene)) {
+        scene.entities[child].parent = old;
+        error = "The parent relationship would be cyclic.";
+        return false;
+    }
     return true;
 }
 
-bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::path& dest,
-                const Scene& scene, std::string& error) {
+bool LoadProjectSettings(const std::filesystem::path& path, ProjectSettings& settings, std::string& error) {
+    error.clear();
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        error = "Project settings were not found: " + PathText(path);
+        return false;
+    }
+    std::string sMagic;
+    unsigned uVersion = 0;
+    if (!(file >> sMagic >> uVersion) || sMagic != "DXSETTINGS" || uVersion != 1) {
+        error = "Invalid project settings header (expected DXSETTINGS 1).";
+        return false;
+    }
+    ProjectSettings loaded;
+    std::string sKey, sValue;
+    while (file >> sKey >> std::quoted(sValue)) {
+        if (sKey == "GraphicsApi" && !ParseGraphicsApi(sValue, loaded.graphicsApi)) {
+            error = "Unknown GraphicsApi in project settings: " + sValue;
+            return false;
+        }
+        // Unknown keys are ignored so newer settings files stay readable.
+    }
+    settings = loaded;
+    return true;
+}
+
+bool SaveProjectSettings(const std::filesystem::path& path, const ProjectSettings& settings, std::string& error) {
+    error.clear();
+    auto temp = path;
+    temp += L".tmp";
+    {
+        std::ofstream file(temp, std::ios::binary | std::ios::trunc);
+        if (!file) {
+            error = "Cannot write project settings: " + PathText(temp);
+            return false;
+        }
+        file << "DXSETTINGS 1\n";
+        file << "GraphicsApi " << std::quoted(GraphicsApiToken(settings.graphicsApi)) << '\n';
+        file.close();
+        if (!file) {
+            error = "Failed to write project settings: " + PathText(temp);
+            return false;
+        }
+    }
+    if (!MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        error = "Cannot replace project settings (Windows error " + std::to_string(GetLastError()) + ").";
+        std::error_code ignored;
+        std::filesystem::remove(temp, ignored);
+        return false;
+    }
+    return true;
+}
+
+namespace {
+// Optional extras of an export: Direct3D 9 shader bytecode and the project
+// settings (selected graphics API). Failure here never breaks the export,
+// because the player falls back to the built-in SM3 shader and to Direct3D 12.
+void ExportOptionalFiles(const std::filesystem::path& projectDir, const std::filesystem::path& dest) {
+    using Microsoft::WRL::ComPtr;
+    const auto shader = projectDir / "Default.hlsl";
+    ComPtr<ID3DBlob> pVertex, pPixel, pDiagnostics;
+    const bool bCompiled =
+        SUCCEEDED(D3DCompileFromFile(shader.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VSMain", "vs_3_0",
+                                     D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY, 0, &pVertex, &pDiagnostics)) &&
+        SUCCEEDED(D3DCompileFromFile(shader.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PSMain", "ps_3_0",
+                                     D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY, 0, &pPixel, &pDiagnostics));
+    if (bCompiled) {
+        for (const auto& [name, pBlob] :
+             {std::pair{L"Default9.vs.cso", pVertex.Get()}, std::pair{L"Default9.ps.cso", pPixel.Get()}}) {
+            std::ofstream out(dest / name, std::ios::binary | std::ios::trunc);
+            out.write(static_cast<const char*>(pBlob->GetBufferPointer()), static_cast<std::streamsize>(pBlob->GetBufferSize()));
+        }
+    } else {
+        Debug::LogWarning(
+            "Export: Default.hlsl does not compile for Shader Model 3; Direct3D 9 players use the built-in shader.");
+    }
+    std::error_code ec;
+    const auto settings = projectDir / PROJECT_SETTINGS_FILE_NAME;
+    if (std::filesystem::is_regular_file(settings, ec)) {
+        std::filesystem::copy_file(settings, dest / PROJECT_SETTINGS_FILE_NAME, std::filesystem::copy_options::overwrite_existing,
+                                   ec);
+        if (ec) Debug::LogWarning("Export: could not copy project settings: " + ec.message());
+    }
+}
+} // namespace
+
+bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::path& dest, const Scene& scene, std::string& error) {
     return ExportGame(baseDir, baseDir / L"project", dest, scene, error);
 }
 
-bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::path& projectDir,
-                const std::filesystem::path& dest, const Scene& scene, std::string& error) {
+bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::path& projectDir, const std::filesystem::path& dest,
+                const Scene& scene, std::string& error) {
     error.clear();
     std::error_code ec;
     const auto root = std::filesystem::weakly_canonical(baseDir, ec);
-    if (ec) { error = "Cannot resolve application directory: " + ec.message(); return false; }
+    if (ec) {
+        error = "Cannot resolve application directory: " + ec.message();
+        return false;
+    }
     const auto target = std::filesystem::weakly_canonical(dest, ec);
-    if (ec) { error = "Cannot resolve export directory: " + ec.message(); return false; }
+    if (ec) {
+        error = "Cannot resolve export directory: " + ec.message();
+        return false;
+    }
     const auto project = std::filesystem::weakly_canonical(projectDir, ec);
-    if (ec) { error = "Cannot resolve project directory: " + ec.message(); return false; }
+    if (ec) {
+        error = "Cannot resolve project directory: " + ec.message();
+        return false;
+    }
     auto inside = [](const std::filesystem::path& parent, const std::filesystem::path& child) {
         auto a = parent.begin(), b = child.begin();
         for (; a != parent.end(); ++a, ++b) {
@@ -607,15 +971,26 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
     const auto game = baseDir / "Game.exe";
     const auto shader = projectDir / "Default.hlsl";
     if (!std::filesystem::is_regular_file(game, ec) || ec) {
-        error = "Game.exe was not found next to the editor. Build the Game target first."; return false;
+        error = "Game.exe was not found next to the editor. Build the Game target first.";
+        return false;
     }
     if (!std::filesystem::is_regular_file(shader, ec) || ec) {
-        error = "Project shader was not found: " + PathText(shader); return false;
+        error = "Project shader was not found: " + PathText(shader);
+        return false;
     }
-    if (scene.entities.size() > 10000) { error = "Too many entities (maximum 10000)."; return false; }
-    if (!ValidParents(scene)) { error = "Invalid or cyclic entity parent relationship."; return false; }
+    if (scene.entities.size() > 10000) {
+        error = "Too many entities (maximum 10000).";
+        return false;
+    }
+    if (!ValidParents(scene)) {
+        error = "Invalid or cyclic entity parent relationship.";
+        return false;
+    }
     for (const auto& entity : scene.entities) {
-        if (!Valid(entity)) { error = "Invalid entity name or non-finite transform/color."; return false; }
+        if (!Valid(entity)) {
+            error = "Invalid entity name or non-finite transform/color.";
+            return false;
+        }
     }
     // Compile before creating or overwriting any export files. Includes are
     // resolved now, so no HLSL sources are required by the player.
@@ -623,25 +998,33 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
     ComPtr<ID3DBlob> vs, ps, diagnostics;
     auto compile = [&](const char* entry, const char* profile, ComPtr<ID3DBlob>& blob) {
         diagnostics.Reset();
-        HRESULT hr = D3DCompileFromFile(shader.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
-                                        entry, profile, D3DCOMPILE_ENABLE_STRICTNESS, 0, &blob, &diagnostics);
+        HRESULT hr = D3DCompileFromFile(shader.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, entry, profile,
+                                        D3DCOMPILE_ENABLE_STRICTNESS, 0, &blob, &diagnostics);
         if (FAILED(hr)) {
-            error = diagnostics ? std::string(static_cast<const char*>(diagnostics->GetBufferPointer()), diagnostics->GetBufferSize())
-                                : "Failed to compile project shader (HRESULT " + std::to_string(static_cast<unsigned long>(hr)) + ").";
+            error = diagnostics
+                        ? std::string(static_cast<const char*>(diagnostics->GetBufferPointer()), diagnostics->GetBufferSize())
+                        : "Failed to compile project shader (HRESULT " + std::to_string(static_cast<unsigned long>(hr)) + ").";
             return false;
         }
         return true;
     };
     if (!compile("VSMain", "vs_5_0", vs) || !compile("PSMain", "ps_5_0", ps)) return false;
     std::filesystem::create_directories(dest, ec);
-    if (ec) { error = "Cannot create export directory: " + ec.message(); return false; }
-    const std::array<const wchar_t*, 4> names = { L"Game.exe", L"scene.dxs", L"Default.vs.cso", L"Default.ps.cso" };
+    if (ec) {
+        error = "Cannot create export directory: " + ec.message();
+        return false;
+    }
+    const std::array<const wchar_t*, 4> names = {L"Game.exe", L"scene.dxs", L"Default.vs.cso", L"Default.ps.cso"};
     for (const auto* name : names) {
         const auto output = dest / name;
         if (std::filesystem::exists(output, ec) && !std::filesystem::is_regular_file(output, ec)) {
-            error = "The export output is not a regular file: " + PathText(output); return false;
+            error = "The export output is not a regular file: " + PathText(output);
+            return false;
         }
-        if (ec) { error = "Cannot inspect export output: " + ec.message(); return false; }
+        if (ec) {
+            error = "Cannot inspect export output: " + ec.message();
+            return false;
+        }
     }
     // Stage all four files separately before replacing any existing output.
     // A unique directory also avoids clobbering unrelated .tmp files.
@@ -649,10 +1032,16 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
     for (unsigned attempt = 0; attempt < 100; ++attempt) {
         stage = dest / (L".dxstudio-stage-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(attempt));
         if (std::filesystem::create_directory(stage, ec)) break;
-        if (ec) { error = "Cannot create export staging directory: " + ec.message(); return false; }
+        if (ec) {
+            error = "Cannot create export staging directory: " + ec.message();
+            return false;
+        }
         stage.clear();
     }
-    if (stage.empty()) { error = "Cannot reserve a unique export staging directory."; return false; }
+    if (stage.empty()) {
+        error = "Cannot reserve a unique export staging directory.";
+        return false;
+    }
     auto cleanup = [&]() {
         std::error_code ignored;
         for (size_t i = 0; i < names.size(); ++i) {
@@ -664,51 +1053,89 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
     };
     auto writeBlob = [&](const std::filesystem::path& name, ID3DBlob* blob) {
         std::ofstream out(name, std::ios::binary | std::ios::trunc);
-        if (!out) { error = "Cannot write shader data: " + PathText(name); return false; }
+        if (!out) {
+            error = "Cannot write shader data: " + PathText(name);
+            return false;
+        }
         out.write(static_cast<const char*>(blob->GetBufferPointer()), static_cast<std::streamsize>(blob->GetBufferSize()));
         out.close();
-        if (!out) { error = "Failed to write shader data: " + PathText(name); return false; }
+        if (!out) {
+            error = "Failed to write shader data: " + PathText(name);
+            return false;
+        }
         return true;
     };
     std::filesystem::copy_file(game, stage / L"Game.exe", ec);
-    if (ec) { error = "Cannot copy Game.exe: " + ec.message(); cleanup(); return false; }
+    if (ec) {
+        error = "Cannot copy Game.exe: " + ec.message();
+        cleanup();
+        return false;
+    }
     if (!writeBlob(stage / L"Default.vs.cso", vs.Get()) || !writeBlob(stage / L"Default.ps.cso", ps.Get()) ||
-        !SaveScene(stage / L"scene.dxs", scene, error)) { cleanup(); return false; }
+        !SaveScene(stage / L"scene.dxs", scene, error)) {
+        cleanup();
+        return false;
+    }
 
     std::array<bool, 4> hadOriginal{};
     for (size_t i = 0; i < names.size(); ++i) {
         hadOriginal[i] = std::filesystem::exists(dest / names[i], ec);
-        if (ec) { error = "Cannot inspect existing export: " + ec.message(); cleanup(); return false; }
+        if (ec) {
+            error = "Cannot inspect existing export: " + ec.message();
+            cleanup();
+            return false;
+        }
         if (hadOriginal[i]) {
             std::filesystem::copy_file(dest / names[i], stage / (L"backup-" + std::to_wstring(i)), ec);
-            if (ec) { error = "Cannot back up existing export: " + ec.message(); cleanup(); return false; }
+            if (ec) {
+                error = "Cannot back up existing export: " + ec.message();
+                cleanup();
+                return false;
+            }
         }
     }
     for (size_t i = 0; i < names.size(); ++i) {
-        if (!MoveFileExW((stage / names[i]).c_str(), (dest / names[i]).c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-            error = "Cannot replace export file (Windows error " + std::to_string(GetLastError()) + "): " + PathText(dest / names[i]);
+        if (!MoveFileExW((stage / names[i]).c_str(), (dest / names[i]).c_str(),
+                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            error =
+                "Cannot replace export file (Windows error " + std::to_string(GetLastError()) + "): " + PathText(dest / names[i]);
             bool rollbackFailed = false;
             for (size_t j = 0; j < i; ++j) {
-                if (hadOriginal[j]) std::filesystem::copy_file(stage / (L"backup-" + std::to_wstring(j)), dest / names[j], std::filesystem::copy_options::overwrite_existing, ec);
-                else std::filesystem::remove(dest / names[j], ec);
-                if (ec) { rollbackFailed = true; ec.clear(); }
+                if (hadOriginal[j])
+                    std::filesystem::copy_file(stage / (L"backup-" + std::to_wstring(j)), dest / names[j],
+                                               std::filesystem::copy_options::overwrite_existing, ec);
+                else
+                    std::filesystem::remove(dest / names[j], ec);
+                if (ec) {
+                    rollbackFailed = true;
+                    ec.clear();
+                }
             }
             if (rollbackFailed) {
                 error += " Rollback failed; backups were retained in " + PathText(stage);
                 return false;
             }
-            cleanup(); return false;
+            cleanup();
+            return false;
         }
     }
     const auto projectAssets = projectDir / L"Assets";
     if (std::filesystem::is_directory(projectAssets, ec)) {
         ec.clear();
         std::filesystem::create_directories(dest / L"Assets", ec);
-        if (!ec) std::filesystem::copy(projectAssets, dest / L"Assets",
-            std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
-        if (ec) { error = "The game was exported, but project Assets could not be copied: " + ec.message(); cleanup(); return false; }
+        if (!ec)
+            std::filesystem::copy(projectAssets, dest / L"Assets",
+                                  std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
+                                  ec);
+        if (ec) {
+            error = "The game was exported, but project Assets could not be copied: " + ec.message();
+            cleanup();
+            return false;
+        }
     }
     cleanup();
+    ExportOptionalFiles(projectDir, dest);
+    Debug::Log("Exported game to " + PathText(dest));
     return true;
 }
 } // namespace dxs

@@ -1,37 +1,29 @@
-#include "Renderer.h"
+// Renderer front-end: camera math, picking, gizmo interaction and the editor
+// overlay draw order. All GPU work goes through graphics::IGraphicsDevice, so
+// the same code drives Direct3D 12, 11 and 9 (see Graphics/GraphicsDevice.h).
 
-#include <d3d12.h>
-#include <d3dcompiler.h>
-#include "OverlayVS.h"
-#include "OverlayPS.h"
-#include <dxgi1_4.h>
-#include <wrl/client.h>
+#include "Renderer.h"
+#include "Graphics/GraphicsDevice.h"
+
 #include <algorithm>
 #include <climits>
-#include <cstdio>
-#include <cstring>
 #include <cmath>
-#include <filesystem>
 #include <limits>
 
-using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
 namespace dxs {
 namespace {
-constexpr unsigned BufferCount = 2;
-constexpr size_t MaxVertexCount = 1u << 20;
-constexpr DXGI_FORMAT ColorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+using graphics::ObjectConstants;
+using graphics::PipelineKind;
+using graphics::Vertex;
 
-std::string Failure(const char* action, HRESULT hr) {
-    char buffer[128];
-    std::snprintf(buffer, sizeof(buffer), "%s (HRESULT 0x%08lX)", action, static_cast<unsigned long>(hr));
-    return buffer;
-}
+constexpr std::size_t MAX_VERTEX_COUNT = 1u << 20;
+constexpr float CLEAR_COLOR[4] = {0.16f, 0.31f, 0.50f, 1.0f}; // procedural sky backdrop
 
-struct Vertex { float x, y, z; };
+// ---- Static geometry layout --------------------------------------------------
 // Cube: six independently specified faces, followed by a quad in the XY plane.
-constexpr Vertex Vertices[] = {
+constexpr Vertex BASE_VERTICES[] = {
     {-0.5f,-0.5f,-0.5f},{-0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f},
     {-0.5f,-0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f},{ 0.5f,-0.5f,-0.5f},
     { 0.5f,-0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f},{-0.5f, 0.5f, 0.5f},
@@ -48,35 +40,42 @@ constexpr Vertex Vertices[] = {
     {-0.5f,-0.5f,0},{ 0.5f, 0.5f,0},{0.5f,-0.5f,0},
 };
 
-constexpr UINT GridStart = 42;
-constexpr UINT GridCount = 84; // 21 lines in each direction, two endpoints each
-constexpr UINT AxisXStart = GridStart + GridCount;
-constexpr UINT AxisZStart = AxisXStart + 2;
-constexpr UINT CubeLinesStart = AxisZStart + 2;
-constexpr UINT QuadLinesStart = CubeLinesStart + 24;
-constexpr UINT GizmoArrowStart = QuadLinesStart + 8;
-constexpr UINT GizmoScaleStart = GizmoArrowStart + 6;
-constexpr UINT GizmoRingStart = GizmoScaleStart + 10;
-constexpr UINT GizmoRingSegments = 64;
-constexpr UINT GizmoPlaneStart = GizmoRingStart + GizmoRingSegments * 2;
-constexpr UINT GizmoCenterStart = GizmoPlaneStart + 8;
-constexpr UINT MarqueeStart = GizmoCenterStart + 8;
+constexpr UINT CUBE_START = 0;
+constexpr UINT QUAD_START = 36;
+constexpr UINT GRID_START = 42;
+constexpr UINT GRID_COUNT = 84; // 21 lines in each direction, two endpoints each
+constexpr UINT AXIS_X_START = GRID_START + GRID_COUNT;
+constexpr UINT AXIS_Z_START = AXIS_X_START + 2;
+constexpr UINT CUBE_LINES_START = AXIS_Z_START + 2;
+constexpr UINT QUAD_LINES_START = CUBE_LINES_START + 24;
+constexpr UINT GIZMO_ARROW_START = QUAD_LINES_START + 8;
+constexpr UINT GIZMO_SCALE_START = GIZMO_ARROW_START + 6;
+constexpr UINT GIZMO_RING_START = GIZMO_SCALE_START + 10;
+constexpr UINT GIZMO_RING_SEGMENTS = 64;
+constexpr UINT GIZMO_PLANE_START = GIZMO_RING_START + GIZMO_RING_SEGMENTS * 2;
+constexpr UINT GIZMO_CENTER_START = GIZMO_PLANE_START + 8;
+constexpr UINT MARQUEE_START = GIZMO_CENTER_START + 8;
+// Scene-view orientation gizmo letters (Unity/UE corner axis widget).
+constexpr UINT LETTER_X_START = MARQUEE_START + 8;
+constexpr UINT LETTER_Y_START = LETTER_X_START + 4;
+constexpr UINT LETTER_Z_START = LETTER_Y_START + 6;
+constexpr UINT LETTER_X_COUNT = 4, LETTER_Y_COUNT = 6, LETTER_Z_COUNT = 6;
 
 std::vector<Vertex> BuildVertices() {
-    std::vector<Vertex> v(std::begin(Vertices), std::end(Vertices));
-    for (int i = -10; i <= 10; ++i) {
-        const float n = static_cast<float>(i);
+    std::vector<Vertex> v(std::begin(BASE_VERTICES), std::end(BASE_VERTICES));
+    for (int nLine = -10; nLine <= 10; ++nLine) {
+        const float n = static_cast<float>(nLine);
         v.push_back({n, 0, -10}); v.push_back({n, 0, 10});
         v.push_back({-10, 0, n}); v.push_back({10, 0, n});
     }
     v.push_back({-10, 0, 0}); v.push_back({10, 0, 0});
     v.push_back({0, 0, -10}); v.push_back({0, 0, 10});
-    constexpr Vertex corners[] = {
+    constexpr Vertex CORNERS[] = {
         {-0.5f,-0.5f,-0.5f},{0.5f,-0.5f,-0.5f},{0.5f,0.5f,-0.5f},{-0.5f,0.5f,-0.5f},
         {-0.5f,-0.5f,0.5f},{0.5f,-0.5f,0.5f},{0.5f,0.5f,0.5f},{-0.5f,0.5f,0.5f}
     };
-    constexpr int edges[][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
-    for (auto& edge : edges) { v.push_back(corners[edge[0]]); v.push_back(corners[edge[1]]); }
+    constexpr int EDGES[][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
+    for (const auto& edge : EDGES) { v.push_back(CORNERS[edge[0]]); v.push_back(CORNERS[edge[1]]); }
     v.push_back({-0.5f,-0.5f,0}); v.push_back({0.5f,-0.5f,0});
     v.push_back({0.5f,-0.5f,0}); v.push_back({0.5f,0.5f,0});
     v.push_back({0.5f,0.5f,0}); v.push_back({-0.5f,0.5f,0});
@@ -90,354 +89,220 @@ std::vector<Vertex> BuildVertices() {
     v.push_back({1.03f,-0.06f,0}); v.push_back({1.03f,0.06f,0});
     v.push_back({1.03f,0.06f,0}); v.push_back({0.91f,0.06f,0});
     v.push_back({0.91f,0.06f,0}); v.push_back({0.91f,-0.06f,0});
-    for (UINT i = 0; i < GizmoRingSegments; ++i) {
-        const float a = XM_2PI * i / GizmoRingSegments;
-        const float b = XM_2PI * (i + 1) / GizmoRingSegments;
-        v.push_back({std::cos(a), std::sin(a), 0});
-        v.push_back({std::cos(b), std::sin(b), 0});
+    for (UINT uSegment = 0; uSegment < GIZMO_RING_SEGMENTS; ++uSegment) {
+        const float fA = XM_2PI * uSegment / GIZMO_RING_SEGMENTS;
+        const float fB = XM_2PI * (uSegment + 1) / GIZMO_RING_SEGMENTS;
+        v.push_back({std::cos(fA), std::sin(fA), 0});
+        v.push_back({std::cos(fB), std::sin(fB), 0});
     }
-    auto square = [&](float lo, float hi) {
-        v.push_back({lo,lo,0}); v.push_back({hi,lo,0});
-        v.push_back({hi,lo,0}); v.push_back({hi,hi,0});
-        v.push_back({hi,hi,0}); v.push_back({lo,hi,0});
-        v.push_back({lo,hi,0}); v.push_back({lo,lo,0});
+    auto square = [&](float fLo, float fHi) {
+        v.push_back({fLo,fLo,0}); v.push_back({fHi,fLo,0});
+        v.push_back({fHi,fLo,0}); v.push_back({fHi,fHi,0});
+        v.push_back({fHi,fHi,0}); v.push_back({fLo,fHi,0});
+        v.push_back({fLo,fHi,0}); v.push_back({fLo,fLo,0});
     };
     square(0.23f, 0.45f); // plane movement handle
     square(-0.08f, 0.08f); // uniform-scale handle
     square(0, 1); // screen-space rectangle
+    // Letters drawn in a [-1, 1] box.
+    v.push_back({-1,-1,0}); v.push_back({1,1,0}); v.push_back({-1,1,0}); v.push_back({1,-1,0});            // X
+    v.push_back({-1,1,0}); v.push_back({0,0,0}); v.push_back({1,1,0}); v.push_back({0,0,0});
+    v.push_back({0,0,0}); v.push_back({0,-1,0});                                                          // Y
+    v.push_back({-1,1,0}); v.push_back({1,1,0}); v.push_back({1,1,0}); v.push_back({-1,-1,0});
+    v.push_back({-1,-1,0}); v.push_back({1,-1,0});                                                        // Z
     return v;
 }
 
+// ---- Camera and projection math ------------------------------------------------
 XMMATRIX World(const DrawItem& item) {
     return XMMatrixScaling(item.scale.x, item.scale.y, item.scale.z) *
         XMMatrixRotationRollPitchYaw(item.rotation.x, item.rotation.y, item.rotation.z) *
         XMMatrixTranslation(item.position.x, item.position.y, item.position.z);
 }
 
-XMMATRIX ViewProjection(const Camera& camera, float aspect) {
+XMMATRIX View(const Camera& camera) {
     const XMVECTOR target = XMLoadFloat3(&camera.target);
-    const float cp = std::cos(camera.pitch);
-    const XMVECTOR offset = XMVectorSet(std::sin(camera.yaw) * cp * camera.distance,
-        std::sin(camera.pitch) * camera.distance, -std::cos(camera.yaw) * cp * camera.distance, 0);
-    const float height = camera.distance * (10.0f / 6.32455532f);
-    const auto projection = camera.orthographic
-        ? XMMatrixOrthographicLH(height * aspect, height, camera.nearClip, camera.farClip)
-        : XMMatrixPerspectiveFovLH(XMConvertToRadians(camera.fieldOfView), aspect, camera.nearClip, camera.farClip);
-    return XMMatrixLookAtLH(XMVectorAdd(target, offset), target, XMVectorSet(0, 1, 0, 0)) *
-        projection;
+    const float fCosPitch = std::cos(camera.pitch);
+    const XMVECTOR offset = XMVectorSet(std::sin(camera.yaw) * fCosPitch * camera.distance,
+        std::sin(camera.pitch) * camera.distance, -std::cos(camera.yaw) * fCosPitch * camera.distance, 0);
+    return XMMatrixLookAtLH(XMVectorAdd(target, offset), target, XMVectorSet(0, 1, 0, 0));
 }
 
-XMMATRIX AxisRotation(int axis) {
-    return axis == 0 ? XMMatrixIdentity() : axis == 1 ? XMMatrixRotationZ(XM_PIDIV2) : XMMatrixRotationY(-XM_PIDIV2);
+XMMATRIX ViewProjection(const Camera& camera, float fAspect) {
+    const float fHeight = camera.distance * (10.0f / 6.32455532f);
+    const auto projection = camera.orthographic
+        ? XMMatrixOrthographicLH(fHeight * fAspect, fHeight, camera.nearClip, camera.farClip)
+        : XMMatrixPerspectiveFovLH(XMConvertToRadians(camera.fieldOfView), fAspect, camera.nearClip, camera.farClip);
+    return View(camera) * projection;
 }
-XMMATRIX RingRotation(int axis) {
-    return axis == 0 ? XMMatrixRotationY(XM_PIDIV2) : axis == 1 ? XMMatrixRotationX(-XM_PIDIV2) : XMMatrixIdentity();
+
+XMMATRIX AxisRotation(int nAxis) {
+    return nAxis == 0 ? XMMatrixIdentity() : nAxis == 1 ? XMMatrixRotationZ(XM_PIDIV2) : XMMatrixRotationY(-XM_PIDIV2);
 }
-XMMATRIX GizmoAxisRotation(const DrawItem& item, int axis, GizmoMode mode) {
+XMMATRIX RingRotation(int nAxis) {
+    return nAxis == 0 ? XMMatrixRotationY(XM_PIDIV2) : nAxis == 1 ? XMMatrixRotationX(-XM_PIDIV2) : XMMatrixIdentity();
+}
+XMMATRIX GizmoAxisRotation(const DrawItem& item, int nAxis, GizmoMode mode) {
     // Scaling changes the object's local axes, while position is in world space.
-    const auto basis = AxisRotation(axis);
+    const auto basis = AxisRotation(nAxis);
     return mode == GizmoMode::Scale ? basis * XMMatrixRotationRollPitchYaw(item.rotation.x, item.rotation.y, item.rotation.z) : basis;
 }
-bool GizmoLength(const Camera& camera, const DrawItem& item, unsigned width, unsigned height, float& length) {
-    if (!width || !height) return false;
-    const auto vp = ViewProjection(camera, static_cast<float>(width) / height);
+bool GizmoLength(const Camera& camera, const DrawItem& item, unsigned uWidth, unsigned uHeight, float& fLength) {
+    if (!uWidth || !uHeight) return false;
+    const auto vp = ViewProjection(camera, static_cast<float>(uWidth) / uHeight);
     const auto clip = XMVector4Transform(XMVectorSet(item.position.x, item.position.y, item.position.z, 1), vp);
-    const float w = XMVectorGetW(clip), z = XMVectorGetZ(clip);
-    if (!std::isfinite(w) || w <= 0 || z < 0 || z > w) return false;
-    const float worldHeight = camera.orthographic ? camera.distance * (10.0f / 6.32455532f) : 2.0f * std::tan(XM_PIDIV4 / 2) * w;
-    length = worldHeight * 90.0f / height;
-    return std::isfinite(length) && length > 0;
+    const float fW = XMVectorGetW(clip), fZ = XMVectorGetZ(clip);
+    if (!std::isfinite(fW) || fW <= 0 || fZ < 0 || fZ > fW) return false;
+    const float fWorldHeight = camera.orthographic ? camera.distance * (10.0f / 6.32455532f) : 2.0f * std::tan(XM_PIDIV4 / 2) * fW;
+    fLength = fWorldHeight * 90.0f / uHeight;
+    return std::isfinite(fLength) && fLength > 0;
 }
-bool ScreenPoint(XMVECTOR point, FXMMATRIX mvp, unsigned width, unsigned height, XMFLOAT2& result) {
-    auto c = XMVector4Transform(point, mvp);
-    const float w = XMVectorGetW(c), z = XMVectorGetZ(c);
-    if (!std::isfinite(w) || w <= 0 || z < 0 || z > w) return false;
-    result = {(XMVectorGetX(c) / w + 1.0f) * 0.5f * width,
-              (1.0f - XMVectorGetY(c) / w) * 0.5f * height};
+bool ScreenPoint(XMVECTOR point, FXMMATRIX mvp, unsigned uWidth, unsigned uHeight, XMFLOAT2& result) {
+    const auto clip = XMVector4Transform(point, mvp);
+    const float fW = XMVectorGetW(clip), fZ = XMVectorGetZ(clip);
+    if (!std::isfinite(fW) || fW <= 0 || fZ < 0 || fZ > fW) return false;
+    result = {(XMVectorGetX(clip) / fW + 1.0f) * 0.5f * uWidth,
+              (1.0f - XMVectorGetY(clip) / fW) * 0.5f * uHeight};
     return std::isfinite(result.x) && std::isfinite(result.y);
 }
-float SegmentDistance(float x, float y, XMFLOAT2 a, XMFLOAT2 b) {
-    const float dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
-    if (len2 < 1e-5f) return std::numeric_limits<float>::infinity();
-    const float t = std::clamp(((x-a.x)*dx + (y-a.y)*dy) / len2, 0.0f, 1.0f);
-    const float px = x - (a.x + t*dx), py = y - (a.y + t*dy);
-    return std::sqrt(px*px + py*py);
+float SegmentDistance(float fX, float fY, XMFLOAT2 a, XMFLOAT2 b) {
+    const float fDx = b.x - a.x, fDy = b.y - a.y, fLength2 = fDx * fDx + fDy * fDy;
+    if (fLength2 < 1e-5f) return std::numeric_limits<float>::infinity();
+    const float fT = std::clamp(((fX - a.x) * fDx + (fY - a.y) * fDy) / fLength2, 0.0f, 1.0f);
+    const float fPx = fX - (a.x + fT * fDx), fPy = fY - (a.y + fT * fDy);
+    return std::sqrt(fPx * fPx + fPy * fPy);
 }
-bool PlaneHit(int x, int y, unsigned width, unsigned height, FXMMATRIX vp,
+bool PlaneHit(int nX, int nY, unsigned uWidth, unsigned uHeight, FXMMATRIX vp,
               XMVECTOR origin, XMVECTOR normal, XMVECTOR& hit) {
-    const float sx = 2.0f * x / width - 1.0f, sy = 1.0f - 2.0f * y / height;
-    XMVECTOR det;
-    const auto inv = XMMatrixInverse(&det, vp);
-    if (std::abs(XMVectorGetX(det)) < 1e-12f) return false;
-    const auto nearPoint = XMVector3TransformCoord(XMVectorSet(sx, sy, 0, 1), inv);
-    const auto farPoint = XMVector3TransformCoord(XMVectorSet(sx, sy, 1, 1), inv);
+    const float fSx = 2.0f * nX / uWidth - 1.0f, fSy = 1.0f - 2.0f * nY / uHeight;
+    XMVECTOR determinant;
+    const auto inverse = XMMatrixInverse(&determinant, vp);
+    if (std::abs(XMVectorGetX(determinant)) < 1e-12f) return false;
+    const auto nearPoint = XMVector3TransformCoord(XMVectorSet(fSx, fSy, 0, 1), inverse);
+    const auto farPoint = XMVector3TransformCoord(XMVectorSet(fSx, fSy, 1, 1), inverse);
     const auto ray = XMVectorSubtract(farPoint, nearPoint);
-    const float denom = XMVectorGetX(XMVector3Dot(ray, normal));
-    if (std::abs(denom) < 1e-7f) return false;
-    const float t = XMVectorGetX(XMVector3Dot(XMVectorSubtract(origin, nearPoint), normal)) / denom;
-    if (!std::isfinite(t)) return false;
-    hit = XMVectorSubtract(XMVectorAdd(nearPoint, XMVectorScale(ray, t)), origin);
+    const float fDenominator = XMVectorGetX(XMVector3Dot(ray, normal));
+    if (std::abs(fDenominator) < 1e-7f) return false;
+    const float fT = XMVectorGetX(XMVector3Dot(XMVectorSubtract(origin, nearPoint), normal)) / fDenominator;
+    if (!std::isfinite(fT)) return false;
+    hit = XMVectorSubtract(XMVectorAdd(nearPoint, XMVectorScale(ray, fT)), origin);
     return std::isfinite(XMVectorGetX(hit)) && std::isfinite(XMVectorGetY(hit)) && std::isfinite(XMVectorGetZ(hit));
 }
-
-bool PointInQuad(float x, float y, const XMFLOAT2 (&q)[4]) {
-    bool positive = false, negative = false;
-    for (int i = 0; i < 4; ++i) {
-        const auto& a = q[i]; const auto& b = q[(i + 1) % 4];
-        const float cross = (b.x-a.x)*(y-a.y) - (b.y-a.y)*(x-a.x);
-        positive |= cross > 0.001f; negative |= cross < -0.001f;
+bool PointInQuad(float fX, float fY, const XMFLOAT2 (&aQuad)[4]) {
+    bool bPositive = false, bNegative = false;
+    for (int nIndex = 0; nIndex < 4; ++nIndex) {
+        const auto& a = aQuad[nIndex];
+        const auto& b = aQuad[(nIndex + 1) % 4];
+        const float fCross = (b.x - a.x) * (fY - a.y) - (b.y - a.y) * (fX - a.x);
+        bPositive |= fCross > 0.001f;
+        bNegative |= fCross < -0.001f;
     }
-    return !(positive && negative);
+    return !(bPositive && bNegative);
 }
 
-D3D12_RESOURCE_BARRIER Transition(ID3D12Resource* resource, D3D12_RESOURCE_STATES from, D3D12_RESOURCE_STATES to) {
-    D3D12_RESOURCE_BARRIER b{};
-    b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    b.Transition.pResource = resource;
-    b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    b.Transition.StateBefore = from;
-    b.Transition.StateAfter = to;
-    return b;
-}
+ObjectConstants MakeConstants(FXMMATRIX mvp, const XMFLOAT4& color) {
+    ObjectConstants constants{};
+    XMStoreFloat4x4(&constants.mvp, mvp);
+    constants.color = color;
+    return constants;
 }
 
+constexpr XMFLOAT4 AXIS_COLORS[] = {{1, 0.24f, 0.22f, 1}, {0.28f, 0.9f, 0.28f, 1}, {0.28f, 0.52f, 1, 1}};
+constexpr XMFLOAT4 HOT_COLOR{1, 0.88f, 0.15f, 1};
+GraphicsApi g_defaultApi = GraphicsApi::DIRECT3D12;
+} // namespace
+
+// ---- Renderer state --------------------------------------------------------------
 struct Renderer::Impl {
-    HWND hwnd{};
-    unsigned width{}, height{}, rtvStride{};
-    UINT frameIndex{};
-    UINT64 fenceValue{};
-    HANDLE fenceEvent{};
+    std::unique_ptr<graphics::IGraphicsDevice> pDevice;
+    unsigned uWidth = 0, uHeight = 0;
+    UINT uBaseVertexCount = 0;
     Camera camera{};
-    std::vector<int> selection;
-    bool marquee = false;
-    int rectX0{}, rectY0{}, rectX1{}, rectY1{};
-    int gizmoHot = -1;
-    std::string resizeError;
-    ComPtr<IDXGIFactory4> factory;
-    ComPtr<ID3D12Device> device;
-    ComPtr<ID3D12CommandQueue> queue;
-    ComPtr<IDXGISwapChain3> swapchain;
-    ComPtr<ID3D12DescriptorHeap> rtvHeap, dsvHeap;
-    ComPtr<ID3D12Resource> targets[BufferCount], depth, vertexBuffer;
-    ComPtr<ID3D12CommandAllocator> allocator;
-    ComPtr<ID3D12GraphicsCommandList> commands;
-    ComPtr<ID3D12RootSignature> root;
-    ComPtr<ID3D12PipelineState> pipeline, gridPipeline, outlinePipeline;
-    ComPtr<ID3D12Fence> fence;
-    D3D12_VERTEX_BUFFER_VIEW vertexView{};
-    UINT baseVertexCount{};
-
-    bool Wait(std::string& error) {
-        if (!queue || !fence || !fenceEvent) return true;
-        const UINT64 value = ++fenceValue;
-        HRESULT hr = queue->Signal(fence.Get(), value);
-        if (FAILED(hr)) { error = Failure("Command queue signal failed", hr); return false; }
-        if (fence->GetCompletedValue() < value) {
-            hr = fence->SetEventOnCompletion(value, fenceEvent);
-            if (FAILED(hr)) { error = Failure("Fence event failed", hr); return false; }
-            if (WaitForSingleObject(fenceEvent, INFINITE) != WAIT_OBJECT_0) {
-                error = "Waiting for the GPU failed"; return false;
-            }
-        }
-        return true;
-    }
-
-    bool CreateTargets(std::string& error) {
-        D3D12_CPU_DESCRIPTOR_HANDLE handle = rtvHeap->GetCPUDescriptorHandleForHeapStart();
-        for (unsigned i = 0; i < BufferCount; ++i) {
-            HRESULT hr = swapchain->GetBuffer(i, IID_PPV_ARGS(&targets[i]));
-            if (FAILED(hr)) { error = Failure("Get swap-chain buffer failed", hr); return false; }
-            device->CreateRenderTargetView(targets[i].Get(), nullptr, handle);
-            handle.ptr += rtvStride;
-        }
-        D3D12_HEAP_PROPERTIES heap{};
-        heap.Type = D3D12_HEAP_TYPE_DEFAULT;
-        heap.CreationNodeMask = 1;
-        heap.VisibleNodeMask = 1;
-        D3D12_RESOURCE_DESC desc{};
-        desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        desc.Width = width;
-        desc.Height = height;
-        desc.DepthOrArraySize = 1;
-        desc.MipLevels = 1;
-        desc.Format = DXGI_FORMAT_D32_FLOAT;
-        desc.SampleDesc.Count = 1;
-        desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-        desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-        D3D12_CLEAR_VALUE clear{};
-        clear.Format = DXGI_FORMAT_D32_FLOAT;
-        clear.DepthStencil.Depth = 1.0f;
-        HRESULT hr = device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
-            D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear, IID_PPV_ARGS(&depth));
-        if (FAILED(hr)) { error = Failure("Create depth buffer failed", hr); return false; }
-        D3D12_DEPTH_STENCIL_VIEW_DESC dsv{};
-        dsv.Format = DXGI_FORMAT_D32_FLOAT;
-        dsv.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-        device->CreateDepthStencilView(depth.Get(), &dsv, dsvHeap->GetCPUDescriptorHandleForHeapStart());
-        return true;
-    }
+    std::vector<int> vSelection;
+    bool bMarquee = false;
+    int nRectX0 = 0, nRectY0 = 0, nRectX1 = 0, nRectY1 = 0;
+    int nGizmoHot = -1;
+    bool bShowOrientation = true;
+    DrawMode drawMode = DrawMode::SHADED;
+    std::string sResizeError;
 };
 
 Renderer::Renderer() = default;
 Renderer::~Renderer() { Shutdown(); }
 
+void Renderer::SetDefaultApi(GraphicsApi api) { g_defaultApi = api; }
+GraphicsApi Renderer::DefaultApi() { return g_defaultApi; }
+
 bool Renderer::Initialize(HWND hwnd, unsigned width, unsigned height, const std::wstring& shaderPath, std::string& error) {
+    return Initialize(hwnd, width, height, shaderPath, g_defaultApi, error);
+}
+
+bool Renderer::Initialize(HWND hwnd, unsigned width, unsigned height, const std::wstring& shaderPath, GraphicsApi api,
+                          std::string& error) {
     Shutdown();
     error.clear();
-    if (!hwnd || !width || !height) { error = "Invalid viewport dimensions or window"; return false; }
-    p_ = std::make_unique<Impl>();
-    auto& p = *p_;
-    p.hwnd = hwnd; p.width = width; p.height = height;
-    HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&p.factory));
-    if (FAILED(hr)) { error = Failure("Create DXGI factory failed", hr); return false; }
-    hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&p.device));
-    if (FAILED(hr)) { error = Failure("Create Direct3D 12 device failed", hr); return false; }
-    D3D12_COMMAND_QUEUE_DESC q{};
-    q.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-    hr = p.device->CreateCommandQueue(&q, IID_PPV_ARGS(&p.queue));
-    if (FAILED(hr)) { error = Failure("Create command queue failed", hr); return false; }
-    DXGI_SWAP_CHAIN_DESC1 sc{};
-    sc.Width = width; sc.Height = height; sc.Format = ColorFormat;
-    sc.SampleDesc.Count = 1; sc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    sc.BufferCount = BufferCount; sc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-    ComPtr<IDXGISwapChain1> baseSwapchain;
-    hr = p.factory->CreateSwapChainForHwnd(p.queue.Get(), hwnd, &sc, nullptr, nullptr, &baseSwapchain);
-    if (FAILED(hr)) { error = Failure("Create swap chain failed", hr); return false; }
-    hr = baseSwapchain.As(&p.swapchain);
-    if (FAILED(hr)) { error = Failure("Query swap chain failed", hr); return false; }
-    p.factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
-    p.frameIndex = p.swapchain->GetCurrentBackBufferIndex();
-    D3D12_DESCRIPTOR_HEAP_DESC heap{};
-    heap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; heap.NumDescriptors = BufferCount;
-    hr = p.device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&p.rtvHeap));
-    if (FAILED(hr)) { error = Failure("Create RTV heap failed", hr); return false; }
-    p.rtvStride = p.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    heap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV; heap.NumDescriptors = 1;
-    hr = p.device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&p.dsvHeap));
-    if (FAILED(hr)) { error = Failure("Create DSV heap failed", hr); return false; }
-    if (!p.CreateTargets(error)) return false;
-    hr = p.device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&p.allocator));
-    if (FAILED(hr)) { error = Failure("Create command allocator failed", hr); return false; }
-
-    D3D12_ROOT_PARAMETER parameter{};
-    parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-    parameter.Constants.ShaderRegister = 0; parameter.Constants.Num32BitValues = 20;
-    parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-    D3D12_ROOT_SIGNATURE_DESC rootDesc{};
-    rootDesc.NumParameters = 1; rootDesc.pParameters = &parameter;
-    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-    ComPtr<ID3DBlob> signature, diagnostics;
-    hr = D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &diagnostics);
-    if (FAILED(hr)) { error = diagnostics ? std::string(static_cast<const char*>(diagnostics->GetBufferPointer()), diagnostics->GetBufferSize()) : Failure("Serialize root signature failed", hr); return false; }
-    hr = p.device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&p.root));
-    if (FAILED(hr)) { error = Failure("Create root signature failed", hr); return false; }
-    ComPtr<ID3DBlob> vs, ps;
-    UINT compileFlags = D3DCOMPILE_ENABLE_STRICTNESS;
-#if defined(_DEBUG)
-    compileFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
-    auto compile = [&](const char* entry, const char* target, ComPtr<ID3DBlob>& output) {
-        diagnostics.Reset();
-        HRESULT result = D3DCompileFromFile(shaderPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            entry, target, compileFlags, 0, &output, &diagnostics);
-        if (FAILED(result)) error = diagnostics ? std::string(static_cast<const char*>(diagnostics->GetBufferPointer()), diagnostics->GetBufferSize()) : Failure("Compile shader failed", result);
-        return SUCCEEDED(result);
-    };
-    const std::filesystem::path shaderFile(shaderPath);
-    if (shaderFile.extension() == L".cso") {
-        auto vertexFile = shaderFile, pixelFile = shaderFile;
-        vertexFile.replace_extension(L".vs.cso");
-        pixelFile.replace_extension(L".ps.cso");
-        hr = D3DReadFileToBlob(vertexFile.c_str(), &vs);
-        if (FAILED(hr)) { error = Failure("Read compiled vertex shader failed", hr); return false; }
-        hr = D3DReadFileToBlob(pixelFile.c_str(), &ps);
-        if (FAILED(hr)) { error = Failure("Read compiled pixel shader failed", hr); return false; }
-    } else if (!compile("VSMain", "vs_5_0", vs) || !compile("PSMain", "ps_5_0", ps)) return false;
-    D3D12_INPUT_ELEMENT_DESC input[] = {{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC state{};
-    state.pRootSignature = p.root.Get();
-    state.VS = {vs->GetBufferPointer(), vs->GetBufferSize()};
-    state.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
-    state.InputLayout = {input, 1};
-    state.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-    state.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-    state.RasterizerState.DepthClipEnable = TRUE;
-    state.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-    state.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
-    state.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
-    state.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-    state.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-    state.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-    state.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-    state.BlendState.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
-    state.DepthStencilState.DepthEnable = TRUE;
-    state.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-    state.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-    state.DepthStencilState.StencilEnable = FALSE;
-    state.DepthStencilState.StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK;
-    state.DepthStencilState.StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK;
-    state.DepthStencilState.FrontFace = {D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_COMPARISON_FUNC_ALWAYS};
-    state.DepthStencilState.BackFace = state.DepthStencilState.FrontFace;
-    state.SampleMask = UINT_MAX;
-    state.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    state.NumRenderTargets = 1; state.RTVFormats[0] = ColorFormat;
-    state.DSVFormat = DXGI_FORMAT_D32_FLOAT; state.SampleDesc.Count = 1;
-    hr = p.device->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&p.pipeline));
-    if (FAILED(hr)) { error = Failure("Create graphics pipeline failed", hr); return false; }
-    // Editor guides use baked shaders, so a project shader cannot hide or
-    // distort the grid and selection outline. Game exports need no HLSL file.
-    state.VS = {g_overlayVS, sizeof(g_overlayVS)};
-    state.PS = {g_overlayPS, sizeof(g_overlayPS)};
-    state.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
-    state.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-    hr = p.device->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&p.gridPipeline));
-    if (FAILED(hr)) { error = Failure("Create grid pipeline failed", hr); return false; }
-    state.DepthStencilState.DepthEnable = FALSE;
-    hr = p.device->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&p.outlinePipeline));
-    if (FAILED(hr)) { error = Failure("Create outline pipeline failed", hr); return false; }
-    hr = p.device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, p.allocator.Get(), p.pipeline.Get(), IID_PPV_ARGS(&p.commands));
-    if (FAILED(hr)) { error = Failure("Create command list failed", hr); return false; }
-    hr = p.commands->Close();
-    if (FAILED(hr)) { error = Failure("Close command list failed", hr); return false; }
-
-    D3D12_HEAP_PROPERTIES upload{}; upload.Type = D3D12_HEAP_TYPE_UPLOAD;
-    upload.CreationNodeMask = 1; upload.VisibleNodeMask = 1;
-    const auto vertices = BuildVertices();
-    const auto verticesBytes = MaxVertexCount * sizeof(Vertex);
-    p.baseVertexCount = static_cast<UINT>(vertices.size());
-    D3D12_RESOURCE_DESC buffer{};
-    buffer.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; buffer.Width = verticesBytes;
-    buffer.Height = 1; buffer.DepthOrArraySize = 1; buffer.MipLevels = 1;
-    buffer.SampleDesc.Count = 1; buffer.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-    hr = p.device->CreateCommittedResource(&upload, D3D12_HEAP_FLAG_NONE, &buffer,
-        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&p.vertexBuffer));
-    if (FAILED(hr)) { error = Failure("Create vertex buffer failed", hr); return false; }
-    void* data{}; D3D12_RANGE readRange{0, 0};
-    hr = p.vertexBuffer->Map(0, &readRange, &data);
-    if (FAILED(hr)) { error = Failure("Map vertex buffer failed", hr); return false; }
-    std::memcpy(data, vertices.data(), vertices.size() * sizeof(Vertex));
-    p.vertexBuffer->Unmap(0, nullptr);
-    p.vertexView.BufferLocation = p.vertexBuffer->GetGPUVirtualAddress();
-    p.vertexView.SizeInBytes = static_cast<UINT>(verticesBytes); p.vertexView.StrideInBytes = sizeof(Vertex);
-    hr = p.device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&p.fence));
-    if (FAILED(hr)) { error = Failure("Create fence failed", hr); return false; }
-    p.fenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    if (!p.fenceEvent) { error = "Create fence event failed"; return false; }
+    if (!hwnd || !width || !height) {
+        error = "Invalid viewport dimensions or window";
+        return false;
+    }
+    auto pImpl = std::make_unique<Impl>();
+    pImpl->uWidth = width;
+    pImpl->uHeight = height;
+    pImpl->pDevice = graphics::CreateGraphicsDevice(api);
+    if (!pImpl->pDevice) {
+        error = std::string(GraphicsApiDisplayName(api)) + " backend is not available in this build";
+        return false;
+    }
+    const auto vVertices = BuildVertices();
+    pImpl->uBaseVertexCount = static_cast<UINT>(vVertices.size());
+    graphics::DeviceCreateInfo info;
+    info.hWnd = hwnd;
+    info.uWidth = width;
+    info.uHeight = height;
+    info.sShaderPath = shaderPath;
+    info.pStaticVertices = vVertices.data();
+    info.nStaticVertexCount = vVertices.size();
+    info.nMaxVertexCount = MAX_VERTEX_COUNT;
+    if (!pImpl->pDevice->Initialize(info, error)) {
+        error = std::string(GraphicsApiDisplayName(api)) + ": " + error;
+        pImpl->pDevice->Shutdown();
+        return false;
+    }
+    p_ = std::move(pImpl);
     return true;
 }
 
+bool Renderer::InitializeWithFallback(HWND hwnd, unsigned width, unsigned height, const std::wstring& shaderPath,
+                                      GraphicsApi preferred, std::string& error, std::string* pReport) {
+    std::string sReport;
+    std::vector<GraphicsApi> vOrder{preferred};
+    for (const auto api : ALL_GRAPHICS_APIS) {
+        if (api != preferred) vOrder.push_back(api);
+    }
+    for (const auto api : vOrder) {
+        std::string sAttemptError;
+        if (Initialize(hwnd, width, height, shaderPath, api, sAttemptError)) {
+            if (pReport) *pReport = sReport;
+            error.clear();
+            return true;
+        }
+        sReport += sAttemptError + "\n";
+        if (error.empty()) error = sAttemptError; // keep the preferred API's reason
+    }
+    if (pReport) *pReport = sReport;
+    return false;
+}
+
+bool Renderer::IsInitialized() const { return static_cast<bool>(p_); }
+GraphicsApi Renderer::Api() const { return p_ ? p_->pDevice->Api() : g_defaultApi; }
+
 void Renderer::Resize(unsigned width, unsigned height) {
-    if (!p_ || !p_->swapchain || !width || !height || (p_->width == width && p_->height == height)) return;
-    auto& p = *p_;
-    p.resizeError.clear();
-    if (!p.Wait(p.resizeError)) return;
-    for (auto& target : p.targets) target.Reset();
-    p.depth.Reset();
-    HRESULT hr = p.swapchain->ResizeBuffers(BufferCount, width, height, ColorFormat, 0);
-    if (FAILED(hr)) { p.resizeError = Failure("Resize swap chain failed", hr); return; }
-    p.width = width; p.height = height;
-    p.frameIndex = p.swapchain->GetCurrentBackBufferIndex();
-    p.CreateTargets(p.resizeError);
+    if (!p_ || !width || !height || (p_->uWidth == width && p_->uHeight == height)) return;
+    p_->sResizeError.clear();
+    if (p_->pDevice->Resize(width, height, p_->sResizeError)) {
+        p_->uWidth = width;
+        p_->uHeight = height;
+    }
 }
 
 void Renderer::SetCamera(const Camera& camera) {
@@ -449,143 +314,165 @@ void Renderer::SetCamera(const Camera& camera) {
     p_->camera.pitch = std::clamp(camera.pitch, -1.54f, 1.54f);
 }
 
+void Renderer::SetDrawMode(DrawMode mode) {
+    if (p_) p_->drawMode = mode;
+}
+DrawMode Renderer::GetDrawMode() const { return p_ ? p_->drawMode : DrawMode::SHADED; }
+
+void Renderer::SetShowOrientationGizmo(bool bShow) {
+    if (p_) p_->bShowOrientation = bShow;
+}
+
+// ---- Picking ---------------------------------------------------------------------
 int Renderer::Pick(int x, int y, const std::vector<DrawItem>& items) const {
-    if (!p_ || !p_->width || !p_->height || x < 0 || y < 0 ||
-        x >= static_cast<int>(p_->width) || y >= static_cast<int>(p_->height)) return -1;
-    const float sx = (2.0f * (x + 0.5f) / p_->width) - 1.0f;
-    const float sy = 1.0f - (2.0f * (y + 0.5f) / p_->height);
-    const float aspect = static_cast<float>(p_->width) / p_->height;
-    float bestDepth = std::numeric_limits<float>::infinity();
-    int best = -1;
-    for (size_t i = 0; i < items.size(); ++i) {
-        const auto& item = items[i];
+    if (!p_ || !p_->uWidth || !p_->uHeight || x < 0 || y < 0 ||
+        x >= static_cast<int>(p_->uWidth) || y >= static_cast<int>(p_->uHeight)) return -1;
+    const float fSx = (2.0f * (x + 0.5f) / p_->uWidth) - 1.0f;
+    const float fSy = 1.0f - (2.0f * (y + 0.5f) / p_->uHeight);
+    const float fAspect = static_cast<float>(p_->uWidth) / p_->uHeight;
+    float fBestDepth = std::numeric_limits<float>::infinity();
+    int nBest = -1;
+    for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
+        const auto& item = items[nIndex];
         if (!item.visible) continue;
-        const XMMATRIX mvp = World(item) * ViewProjection(p_->camera, aspect);
-        XMVECTOR det;
-        const XMMATRIX inverse = XMMatrixInverse(&det, mvp);
-        if (!std::isfinite(XMVectorGetX(det)) || std::abs(XMVectorGetX(det)) < 1e-12f) continue;
+        const XMMATRIX mvp = World(item) * ViewProjection(p_->camera, fAspect);
+        XMVECTOR determinant;
+        const XMMATRIX inverse = XMMatrixInverse(&determinant, mvp);
+        if (!std::isfinite(XMVectorGetX(determinant)) || std::abs(XMVectorGetX(determinant)) < 1e-12f) continue;
         XMFLOAT3 origin, end;
-        XMStoreFloat3(&origin, XMVector3TransformCoord(XMVectorSet(sx, sy, 0, 1), inverse));
-        XMStoreFloat3(&end, XMVector3TransformCoord(XMVectorSet(sx, sy, 1, 1), inverse));
-        const float o[] = {origin.x, origin.y, origin.z};
-        const float d[] = {end.x-origin.x, end.y-origin.y, end.z-origin.z};
-        float tmin = 0.0f, tmax = 1.0f;
-        bool hit = true;
-        for (int axis = 0; axis < 3; ++axis) {
-            const float lo = item.is2D && axis == 2 ? 0.0f : -0.5f;
-            const float hi = item.is2D && axis == 2 ? 0.0f : 0.5f;
-            if (std::abs(d[axis]) < 1e-8f) {
-                if (o[axis] < lo || o[axis] > hi) { hit = false; break; }
+        XMStoreFloat3(&origin, XMVector3TransformCoord(XMVectorSet(fSx, fSy, 0, 1), inverse));
+        XMStoreFloat3(&end, XMVector3TransformCoord(XMVectorSet(fSx, fSy, 1, 1), inverse));
+        const float aOrigin[] = {origin.x, origin.y, origin.z};
+        const float aDirection[] = {end.x - origin.x, end.y - origin.y, end.z - origin.z};
+        // Slab test against the unit cube (or the z = 0 slab of a quad).
+        float fMin = 0.0f, fMax = 1.0f;
+        bool bHit = true;
+        for (int nAxis = 0; nAxis < 3; ++nAxis) {
+            const float fLo = item.is2D && nAxis == 2 ? 0.0f : -0.5f;
+            const float fHi = item.is2D && nAxis == 2 ? 0.0f : 0.5f;
+            if (std::abs(aDirection[nAxis]) < 1e-8f) {
+                if (aOrigin[nAxis] < fLo || aOrigin[nAxis] > fHi) { bHit = false; break; }
             } else {
-                float a = (lo-o[axis])/d[axis], b = (hi-o[axis])/d[axis];
-                if (a > b) std::swap(a, b);
-                tmin = std::max(tmin, a); tmax = std::min(tmax, b);
-                if (tmin > tmax) { hit = false; break; }
+                float fA = (fLo - aOrigin[nAxis]) / aDirection[nAxis], fB = (fHi - aOrigin[nAxis]) / aDirection[nAxis];
+                if (fA > fB) std::swap(fA, fB);
+                fMin = std::max(fMin, fA);
+                fMax = std::min(fMax, fB);
+                if (fMin > fMax) { bHit = false; break; }
             }
         }
-        if (!hit) continue;
-        XMVECTOR local = XMVectorSet(o[0]+d[0]*tmin, o[1]+d[1]*tmin, o[2]+d[2]*tmin, 1);
-        XMVECTOR clip = XMVector4Transform(local, mvp);
-        const float w = XMVectorGetW(clip);
-        if (w <= 0) continue;
-        const float depth = XMVectorGetZ(clip) / w;
-        if (depth >= 0 && depth <= 1 && depth < bestDepth) { bestDepth = depth; best = static_cast<int>(i); }
+        if (!bHit) continue;
+        const XMVECTOR local = XMVectorSet(aOrigin[0] + aDirection[0] * fMin, aOrigin[1] + aDirection[1] * fMin,
+                                           aOrigin[2] + aDirection[2] * fMin, 1);
+        const XMVECTOR clip = XMVector4Transform(local, mvp);
+        const float fW = XMVectorGetW(clip);
+        if (fW <= 0) continue;
+        const float fDepth = XMVectorGetZ(clip) / fW;
+        if (fDepth >= 0 && fDepth <= 1 && fDepth < fBestDepth) {
+            fBestDepth = fDepth;
+            nBest = static_cast<int>(nIndex);
+        }
     }
-    return best;
+    return nBest;
 }
 
 std::vector<int> Renderer::PickRect(int x0, int y0, int x1, int y1, const std::vector<DrawItem>& items) const {
-    std::vector<int> result;
-    if (!p_ || !p_->width || !p_->height) return result;
-    const float left = static_cast<float>(std::clamp(std::min(x0, x1), 0, static_cast<int>(p_->width)));
-    const float right = static_cast<float>(std::clamp(std::max(x0, x1), 0, static_cast<int>(p_->width)));
-    const float top = static_cast<float>(std::clamp(std::min(y0, y1), 0, static_cast<int>(p_->height)));
-    const float bottom = static_cast<float>(std::clamp(std::max(y0, y1), 0, static_cast<int>(p_->height)));
-    const float aspect = static_cast<float>(p_->width) / p_->height;
-    for (size_t i = 0; i < items.size(); ++i) {
-        const auto& item = items[i];
+    std::vector<int> vResult;
+    if (!p_ || !p_->uWidth || !p_->uHeight) return vResult;
+    const int nWidth = static_cast<int>(p_->uWidth), nHeight = static_cast<int>(p_->uHeight);
+    const float fLeft = static_cast<float>(std::clamp(std::min(x0, x1), 0, nWidth));
+    const float fRight = static_cast<float>(std::clamp(std::max(x0, x1), 0, nWidth));
+    const float fTop = static_cast<float>(std::clamp(std::min(y0, y1), 0, nHeight));
+    const float fBottom = static_cast<float>(std::clamp(std::max(y0, y1), 0, nHeight));
+    const float fAspect = static_cast<float>(p_->uWidth) / p_->uHeight;
+    for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
+        const auto& item = items[nIndex];
         if (!item.visible) continue;
-        const auto mvp = World(item) * ViewProjection(p_->camera, aspect);
-        float minX = std::numeric_limits<float>::infinity(), minY = minX;
-        float maxX = -minX, maxY = -minX;
-        bool projected = false;
-        for (int z = 0; z < (item.is2D ? 1 : 2); ++z)
-            for (int y = 0; y < 2; ++y)
-                for (int x = 0; x < 2; ++x) {
+        const auto mvp = World(item) * ViewProjection(p_->camera, fAspect);
+        float fMinX = std::numeric_limits<float>::infinity(), fMinY = fMinX;
+        float fMaxX = -fMinX, fMaxY = -fMinX;
+        bool bProjected = false;
+        for (int nZ = 0; nZ < (item.is2D ? 1 : 2); ++nZ)
+            for (int nY = 0; nY < 2; ++nY)
+                for (int nX = 0; nX < 2; ++nX) {
                     XMFLOAT2 point;
-                    if (!ScreenPoint(XMVectorSet(x ? 0.5f : -0.5f, y ? 0.5f : -0.5f,
-                                                  item.is2D ? 0.0f : (z ? 0.5f : -0.5f), 1),
-                                     mvp, p_->width, p_->height, point)) continue;
-                    projected = true;
-                    minX = std::min(minX, point.x); maxX = std::max(maxX, point.x);
-                    minY = std::min(minY, point.y); maxY = std::max(maxY, point.y);
+                    if (!ScreenPoint(XMVectorSet(nX ? 0.5f : -0.5f, nY ? 0.5f : -0.5f,
+                                                 item.is2D ? 0.0f : (nZ ? 0.5f : -0.5f), 1),
+                                     mvp, p_->uWidth, p_->uHeight, point)) continue;
+                    bProjected = true;
+                    fMinX = std::min(fMinX, point.x); fMaxX = std::max(fMaxX, point.x);
+                    fMinY = std::min(fMinY, point.y); fMaxY = std::max(fMaxY, point.y);
                 }
-        if (projected && maxX >= left && minX <= right && maxY >= top && minY <= bottom)
-            result.push_back(static_cast<int>(i));
+        if (bProjected && fMaxX >= fLeft && fMinX <= fRight && fMaxY >= fTop && fMinY <= fBottom)
+            vResult.push_back(static_cast<int>(nIndex));
     }
-    return result;
+    return vResult;
 }
 
-void Renderer::SetSelection(const std::vector<int>& indices) { if (p_) p_->selection = indices; }
+void Renderer::SetSelection(const std::vector<int>& indices) { if (p_) p_->vSelection = indices; }
 void Renderer::SetMarquee(bool visible, int x0, int y0, int x1, int y1) {
     if (!p_) return;
-    p_->marquee = visible; p_->rectX0 = x0; p_->rectY0 = y0; p_->rectX1 = x1; p_->rectY1 = y1;
+    p_->bMarquee = visible;
+    p_->nRectX0 = x0; p_->nRectY0 = y0; p_->nRectX1 = x1; p_->nRectY1 = y1;
 }
-void Renderer::SetGizmoHot(int handle) { if (p_) p_->gizmoHot = handle; }
+void Renderer::SetGizmoHot(int handle) { if (p_) p_->nGizmoHot = handle; }
 
+// ---- Gizmo interaction -----------------------------------------------------------
 int Renderer::HitGizmo(int x, int y, const DrawItem& item, GizmoMode mode) const {
-    if (!p_ || x < 0 || y < 0 || x >= static_cast<int>(p_->width) || y >= static_cast<int>(p_->height)) return -1;
-    float length;
-    if (!GizmoLength(p_->camera, item, p_->width, p_->height, length)) return -1;
-    const auto vp = ViewProjection(p_->camera, static_cast<float>(p_->width) / p_->height);
-    const auto base = XMMatrixScaling(length, length, length) * XMMatrixTranslation(item.position.x, item.position.y, item.position.z) * vp;
+    if (!p_ || x < 0 || y < 0 || x >= static_cast<int>(p_->uWidth) || y >= static_cast<int>(p_->uHeight)) return -1;
+    const unsigned uWidth = p_->uWidth, uHeight = p_->uHeight;
+    float fLength;
+    if (!GizmoLength(p_->camera, item, uWidth, uHeight, fLength)) return -1;
+    const auto vp = ViewProjection(p_->camera, static_cast<float>(uWidth) / uHeight);
+    const auto base = XMMatrixScaling(fLength, fLength, fLength) * XMMatrixTranslation(item.position.x, item.position.y, item.position.z) * vp;
     // Center box uniformly scales all dimensions. Plane handles take priority
     // over shafts, while the remaining shafts remain easy to pick.
     if (mode == GizmoMode::Scale) {
-        XMFLOAT2 c;
-        if (ScreenPoint(XMVectorSet(0,0,0,1), base, p_->width, p_->height, c) &&
-            std::hypot(c.x-x, c.y-y) <= 9.0f) return 6;
+        XMFLOAT2 center;
+        if (ScreenPoint(XMVectorSet(0, 0, 0, 1), base, uWidth, uHeight, center) &&
+            std::hypot(center.x - x, center.y - y) <= 9.0f) return 6;
     }
     if (mode == GizmoMode::Translate) {
-        for (int normal = 0; normal < 3; ++normal) {
-            const auto mvp = RingRotation(normal) * base;
-            XMFLOAT2 q[4]{};
-            const XMVECTOR pts[] = {XMVectorSet(.23f,.23f,0,1), XMVectorSet(.45f,.23f,0,1),
-                                    XMVectorSet(.45f,.45f,0,1), XMVectorSet(.23f,.45f,0,1)};
-            bool valid = true;
-            for (int n = 0; n < 4; ++n) valid &= ScreenPoint(pts[n],mvp,p_->width,p_->height,q[n]);
-            const float area = std::abs((q[1].x-q[0].x)*(q[3].y-q[0].y) - (q[1].y-q[0].y)*(q[3].x-q[0].x));
-            if (valid && area > 20.0f && PointInQuad(static_cast<float>(x),static_cast<float>(y),q)) return 3 + normal;
+        for (int nNormal = 0; nNormal < 3; ++nNormal) {
+            const auto mvp = RingRotation(nNormal) * base;
+            XMFLOAT2 aQuad[4]{};
+            const XMVECTOR aPoints[] = {XMVectorSet(.23f,.23f,0,1), XMVectorSet(.45f,.23f,0,1),
+                                        XMVectorSet(.45f,.45f,0,1), XMVectorSet(.23f,.45f,0,1)};
+            bool bValid = true;
+            for (int nCorner = 0; nCorner < 4; ++nCorner) bValid &= ScreenPoint(aPoints[nCorner], mvp, uWidth, uHeight, aQuad[nCorner]);
+            const float fArea = std::abs((aQuad[1].x - aQuad[0].x) * (aQuad[3].y - aQuad[0].y) -
+                                         (aQuad[1].y - aQuad[0].y) * (aQuad[3].x - aQuad[0].x));
+            if (bValid && fArea > 20.0f && PointInQuad(static_cast<float>(x), static_cast<float>(y), aQuad)) return 3 + nNormal;
         }
     }
-    float best = 9.0f;
-    int selected = -1;
-    for (int axis = 0; axis < 3; ++axis) {
-        const auto mvp = (mode == GizmoMode::Rotate ? RingRotation(axis) : GizmoAxisRotation(item, axis, mode)) * base;
+    float fBest = 9.0f;
+    int nSelected = -1;
+    for (int nAxis = 0; nAxis < 3; ++nAxis) {
+        const auto mvp = (mode == GizmoMode::Rotate ? RingRotation(nAxis) : GizmoAxisRotation(item, nAxis, mode)) * base;
         if (mode == GizmoMode::Rotate) {
-            XMFLOAT2 c, u, v;
-            if (!ScreenPoint(XMVectorSet(0,0,0,1),mvp,p_->width,p_->height,c) ||
-                !ScreenPoint(XMVectorSet(1,0,0,1),mvp,p_->width,p_->height,u) ||
-                !ScreenPoint(XMVectorSet(0,1,0,1),mvp,p_->width,p_->height,v)) continue;
-            if (std::abs((u.x-c.x)*(v.y-c.y) - (u.y-c.y)*(v.x-c.x)) < 64.0f) continue;
-            for (UINT i = 0; i < GizmoRingSegments; ++i) {
-                const float a = XM_2PI * i / GizmoRingSegments, b = XM_2PI * (i+1) / GizmoRingSegments;
-                XMFLOAT2 pa, pb;
-                if (!ScreenPoint(XMVectorSet(std::cos(a),std::sin(a),0,1),mvp,p_->width,p_->height,pa) ||
-                    !ScreenPoint(XMVectorSet(std::cos(b),std::sin(b),0,1),mvp,p_->width,p_->height,pb)) continue;
-                const float dist = SegmentDistance(static_cast<float>(x),static_cast<float>(y),pa,pb);
-                if (dist < best) { best = dist; selected = axis; }
+            XMFLOAT2 center, u, v;
+            if (!ScreenPoint(XMVectorSet(0,0,0,1), mvp, uWidth, uHeight, center) ||
+                !ScreenPoint(XMVectorSet(1,0,0,1), mvp, uWidth, uHeight, u) ||
+                !ScreenPoint(XMVectorSet(0,1,0,1), mvp, uWidth, uHeight, v)) continue;
+            // Skip rings seen edge-on: they cannot be dragged meaningfully.
+            if (std::abs((u.x - center.x) * (v.y - center.y) - (u.y - center.y) * (v.x - center.x)) < 64.0f) continue;
+            for (UINT uSegment = 0; uSegment < GIZMO_RING_SEGMENTS; ++uSegment) {
+                const float fA = XM_2PI * uSegment / GIZMO_RING_SEGMENTS, fB = XM_2PI * (uSegment + 1) / GIZMO_RING_SEGMENTS;
+                XMFLOAT2 pointA, pointB;
+                if (!ScreenPoint(XMVectorSet(std::cos(fA), std::sin(fA), 0, 1), mvp, uWidth, uHeight, pointA) ||
+                    !ScreenPoint(XMVectorSet(std::cos(fB), std::sin(fB), 0, 1), mvp, uWidth, uHeight, pointB)) continue;
+                const float fDistance = SegmentDistance(static_cast<float>(x), static_cast<float>(y), pointA, pointB);
+                if (fDistance < fBest) { fBest = fDistance; nSelected = nAxis; }
             }
         } else {
-            XMFLOAT2 a, b;
-            if (!ScreenPoint(XMVectorSet(0.20f,0,0,1),mvp,p_->width,p_->height,a) ||
-                !ScreenPoint(XMVectorSet(1,0,0,1),mvp,p_->width,p_->height,b)) continue;
-            if (std::hypot(b.x-a.x, b.y-a.y) < 8.0f) continue;
-            const float dist = SegmentDistance(static_cast<float>(x),static_cast<float>(y),a,b);
-            if (dist < best) { best = dist; selected = axis; }
+            XMFLOAT2 pointA, pointB;
+            if (!ScreenPoint(XMVectorSet(0.20f,0,0,1), mvp, uWidth, uHeight, pointA) ||
+                !ScreenPoint(XMVectorSet(1,0,0,1), mvp, uWidth, uHeight, pointB)) continue;
+            if (std::hypot(pointB.x - pointA.x, pointB.y - pointA.y) < 8.0f) continue;
+            const float fDistance = SegmentDistance(static_cast<float>(x), static_cast<float>(y), pointA, pointB);
+            if (fDistance < fBest) { fBest = fDistance; nSelected = nAxis; }
         }
     }
-    return selected;
+    return nSelected;
 }
 
 bool Renderer::DragGizmo(const DrawItem& start, GizmoMode mode, int axis,
@@ -593,225 +480,229 @@ bool Renderer::DragGizmo(const DrawItem& start, GizmoMode mode, int axis,
     if (!p_ || axis < 0 || axis > 6) return false;
     if (axis >= 3 && axis <= 5 && mode != GizmoMode::Translate) return false;
     if (axis == 6 && mode != GizmoMode::Scale) return false;
-    float length;
-    if (!GizmoLength(p_->camera, start, p_->width, p_->height, length)) return false;
-    const auto vp = ViewProjection(p_->camera, static_cast<float>(p_->width) / p_->height);
+    const unsigned uWidth = p_->uWidth, uHeight = p_->uHeight;
+    float fLength;
+    if (!GizmoLength(p_->camera, start, uWidth, uHeight, fLength)) return false;
+    const auto vp = ViewProjection(p_->camera, static_cast<float>(uWidth) / uHeight);
     out = start;
+    auto axisNormal = [](int nAxis) {
+        return nAxis == 0 ? XMVectorSet(1, 0, 0, 0) : nAxis == 1 ? XMVectorSet(0, 1, 0, 0) : XMVectorSet(0, 0, 1, 0);
+    };
+    const auto center = XMVectorSet(start.position.x, start.position.y, start.position.z, 1);
     if (axis >= 3 && axis <= 5) {
-        const int normalAxis = axis - 3;
-        const auto center = XMVectorSet(start.position.x,start.position.y,start.position.z,1);
-        const auto normal = normalAxis == 0 ? XMVectorSet(1,0,0,0) : normalAxis == 1 ? XMVectorSet(0,1,0,0) : XMVectorSet(0,0,1,0);
-        XMVECTOR a, b;
-        if (!PlaneHit(startX,startY,p_->width,p_->height,vp,center,normal,a) ||
-            !PlaneHit(x,y,p_->width,p_->height,vp,center,normal,b)) return false;
+        // Plane handle: move along the plane whose normal is axis - 3.
+        const auto normal = axisNormal(axis - 3);
+        XMVECTOR hitA, hitB;
+        if (!PlaneHit(startX, startY, uWidth, uHeight, vp, center, normal, hitA) ||
+            !PlaneHit(x, y, uWidth, uHeight, vp, center, normal, hitB)) return false;
         XMFLOAT3 delta{};
-        XMStoreFloat3(&delta, XMVectorSubtract(b,a));
+        XMStoreFloat3(&delta, XMVectorSubtract(hitB, hitA));
         out.position.x += delta.x; out.position.y += delta.y; out.position.z += delta.z;
         return true;
     }
     if (axis == 6) {
-        const float factor = std::max(0.01f, 1.0f + (static_cast<float>(x-startX) - static_cast<float>(y-startY))/90.0f);
-        if (!std::isfinite(factor)) return false;
-        out.scale.x *= factor; out.scale.y *= factor;
-        out.scale.z *= factor;
+        const float fFactor = std::max(0.01f, 1.0f + (static_cast<float>(x - startX) - static_cast<float>(y - startY)) / 90.0f);
+        if (!std::isfinite(fFactor)) return false;
+        out.scale.x *= fFactor; out.scale.y *= fFactor; out.scale.z *= fFactor;
         return true;
     }
-    float delta = 0;
+    float fDelta = 0;
     if (mode == GizmoMode::Rotate) {
-        const auto center = XMVectorSet(start.position.x,start.position.y,start.position.z,1);
-        const auto normal = axis == 0 ? XMVectorSet(1,0,0,0) : axis == 1 ? XMVectorSet(0,1,0,0) : XMVectorSet(0,0,1,0);
-        XMVECTOR a, b;
-        if (!PlaneHit(startX,startY,p_->width,p_->height,vp,center,normal,a) ||
-            !PlaneHit(x,y,p_->width,p_->height,vp,center,normal,b)) return false;
-        if (XMVectorGetX(XMVector3LengthSq(a)) < 1e-10f || XMVectorGetX(XMVector3LengthSq(b)) < 1e-10f) return false;
-        a = XMVector3Normalize(a); b = XMVector3Normalize(b);
-        delta = std::atan2(XMVectorGetX(XMVector3Dot(normal,XMVector3Cross(a,b))), XMVectorGetX(XMVector3Dot(a,b)));
+        const auto normal = axisNormal(axis);
+        XMVECTOR hitA, hitB;
+        if (!PlaneHit(startX, startY, uWidth, uHeight, vp, center, normal, hitA) ||
+            !PlaneHit(x, y, uWidth, uHeight, vp, center, normal, hitB)) return false;
+        if (XMVectorGetX(XMVector3LengthSq(hitA)) < 1e-10f || XMVectorGetX(XMVector3LengthSq(hitB)) < 1e-10f) return false;
+        hitA = XMVector3Normalize(hitA);
+        hitB = XMVector3Normalize(hitB);
+        fDelta = std::atan2(XMVectorGetX(XMVector3Dot(normal, XMVector3Cross(hitA, hitB))), XMVectorGetX(XMVector3Dot(hitA, hitB)));
     } else {
-        const auto mvp = GizmoAxisRotation(start,axis,mode) * XMMatrixScaling(length,length,length) * XMMatrixTranslation(start.position.x,start.position.y,start.position.z) * vp;
-        XMFLOAT2 a,b;
-        if (!ScreenPoint(XMVectorSet(0,0,0,1),mvp,p_->width,p_->height,a) || !ScreenPoint(XMVectorSet(1,0,0,1),mvp,p_->width,p_->height,b)) return false;
-        const float vx=b.x-a.x, vy=b.y-a.y, denominator=vx*vx+vy*vy;
-        if (denominator < 64.0f) return false;
-        const float ratio = ((x-startX)*vx+(y-startY)*vy)/denominator;
-        delta = mode == GizmoMode::Translate ? ratio * length : ratio;
+        // Project the mouse delta onto the on-screen direction of the axis.
+        const auto mvp = GizmoAxisRotation(start, axis, mode) * XMMatrixScaling(fLength, fLength, fLength) *
+                         XMMatrixTranslation(start.position.x, start.position.y, start.position.z) * vp;
+        XMFLOAT2 pointA, pointB;
+        if (!ScreenPoint(XMVectorSet(0,0,0,1), mvp, uWidth, uHeight, pointA) ||
+            !ScreenPoint(XMVectorSet(1,0,0,1), mvp, uWidth, uHeight, pointB)) return false;
+        const float fVx = pointB.x - pointA.x, fVy = pointB.y - pointA.y, fDenominator = fVx * fVx + fVy * fVy;
+        if (fDenominator < 64.0f) return false;
+        const float fRatio = ((x - startX) * fVx + (y - startY) * fVy) / fDenominator;
+        fDelta = mode == GizmoMode::Translate ? fRatio * fLength : fRatio;
     }
-    if (!std::isfinite(delta)) return false;
-    float* target = mode == GizmoMode::Translate ? (axis == 0 ? &out.position.x : axis == 1 ? &out.position.y : &out.position.z)
-                  : mode == GizmoMode::Rotate ? (axis == 0 ? &out.rotation.x : axis == 1 ? &out.rotation.y : &out.rotation.z)
-                  : (axis == 0 ? &out.scale.x : axis == 1 ? &out.scale.y : &out.scale.z);
-    *target += delta;
-    if (mode == GizmoMode::Scale && std::abs(*target) < 0.01f) *target = *target < 0 ? -0.01f : 0.01f;
+    if (!std::isfinite(fDelta)) return false;
+    XMFLOAT3& target = mode == GizmoMode::Translate ? out.position : mode == GizmoMode::Rotate ? out.rotation : out.scale;
+    float* pComponent = axis == 0 ? &target.x : axis == 1 ? &target.y : &target.z;
+    *pComponent += fDelta;
+    if (mode == GizmoMode::Scale && std::abs(*pComponent) < 0.01f) *pComponent = *pComponent < 0 ? -0.01f : 0.01f;
     return true;
 }
 
+// ---- Frame rendering -------------------------------------------------------------
 bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, int selected, bool showGrid, GizmoMode mode, bool showGizmo) {
     error.clear();
-    if (!p_ || !p_->pipeline || !p_->fenceEvent) { error = "Renderer is not initialized"; return false; }
+    if (!p_ || !p_->pDevice) { error = "Renderer is not initialized"; return false; }
     auto& p = *p_;
-    if (!p.resizeError.empty()) { error = p.resizeError; return false; }
-    std::vector<UINT> modelStarts(items.size(), 0), modelCounts(items.size(), 0);
-    size_t cursor = p.baseVertexCount;
-    for (size_t i=0;i<items.size();++i) if (items[i].visible && items[i].vertices) {
-        if (cursor + items[i].vertices->size() > MaxVertexCount) { error="Model vertex limit exceeded (1,048,576 vertices per frame)."; return false; }
-        modelStarts[i]=static_cast<UINT>(cursor); modelCounts[i]=static_cast<UINT>(items[i].vertices->size()); cursor+=items[i].vertices->size();
+    auto& device = *p.pDevice;
+    if (!p.sResizeError.empty()) { error = p.sResizeError; return false; }
+
+    // 1. Append model vertices behind the static geometry.
+    std::vector<UINT> vModelStarts(items.size(), 0), vModelCounts(items.size(), 0);
+    size_t nCursor = p.uBaseVertexCount;
+    for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
+        if (!items[nIndex].visible || !items[nIndex].vertices) continue;
+        if (nCursor + items[nIndex].vertices->size() > MAX_VERTEX_COUNT) {
+            error = "Model vertex limit exceeded (1,048,576 vertices per frame).";
+            return false;
+        }
+        vModelStarts[nIndex] = static_cast<UINT>(nCursor);
+        vModelCounts[nIndex] = static_cast<UINT>(items[nIndex].vertices->size());
+        nCursor += items[nIndex].vertices->size();
     }
-    if (cursor > p.baseVertexCount) {
-        void* mapped{}; D3D12_RANGE noRead{0,0};
-        HRESULT mapResult=p.vertexBuffer->Map(0,&noRead,&mapped);
-        if(FAILED(mapResult)){error=Failure("Map model vertex buffer failed",mapResult);return false;}
-        for(size_t i=0;i<items.size();++i) if(modelCounts[i]) std::memcpy(static_cast<Vertex*>(mapped)+modelStarts[i],items[i].vertices->data(),modelCounts[i]*sizeof(Vertex));
-        p.vertexBuffer->Unmap(0,nullptr);
+    for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
+        if (!vModelCounts[nIndex]) continue;
+        const auto& vModel = *items[nIndex].vertices;
+        static_assert(sizeof(XMFLOAT3) == sizeof(Vertex));
+        if (!device.UploadVertices(vModelStarts[nIndex], reinterpret_cast<const Vertex*>(vModel.data()), vModel.size(), error)) return false;
     }
-    HRESULT hr = p.allocator->Reset();
-    if (FAILED(hr)) { error = Failure("Reset command allocator failed", hr); return false; }
-    hr = p.commands->Reset(p.allocator.Get(), p.pipeline.Get());
-    if (FAILED(hr)) { error = Failure("Reset command list failed", hr); return false; }
-    auto barrier = Transition(p.targets[p.frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-    p.commands->ResourceBarrier(1, &barrier);
-    D3D12_CPU_DESCRIPTOR_HANDLE rtv = p.rtvHeap->GetCPUDescriptorHandleForHeapStart();
-    rtv.ptr += p.frameIndex * p.rtvStride;
-    const auto dsv = p.dsvHeap->GetCPUDescriptorHandleForHeapStart();
-    // Default procedural sky environment. It stays independent from project
-    // shaders, so a scene always has a readable sky backdrop.
-    const float clear[] = {0.16f, 0.31f, 0.50f, 1.0f};
-    p.commands->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
-    p.commands->ClearRenderTargetView(rtv, clear, 0, nullptr);
-    p.commands->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-    D3D12_VIEWPORT viewport{0, 0, static_cast<float>(p.width), static_cast<float>(p.height), 0, 1};
-    D3D12_RECT rect{0, 0, static_cast<LONG>(p.width), static_cast<LONG>(p.height)};
-    p.commands->RSSetViewports(1, &viewport); p.commands->RSSetScissorRects(1, &rect);
-    p.commands->SetGraphicsRootSignature(p.root.Get());
-    p.commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    p.commands->IASetVertexBuffers(0, 1, &p.vertexView);
-    const float aspect = static_cast<float>(p.width) / static_cast<float>(p.height);
-    const XMMATRIX vp = ViewProjection(p.camera, aspect);
-    for (size_t itemIndex=0; itemIndex<items.size(); ++itemIndex) {
-        const auto& item=items[itemIndex];
-        if (!item.visible) continue;
-        XMMATRIX mvp = World(item) * vp;
-        struct Constants { XMFLOAT4X4 mvp; XMFLOAT4 color; } constants{};
-        XMStoreFloat4x4(&constants.mvp, mvp); constants.color = item.color;
-        p.commands->SetGraphicsRoot32BitConstants(0, 20, &constants, 0);
-        if (modelCounts[itemIndex]) {
-            p.commands->DrawInstanced(modelCounts[itemIndex],1,modelStarts[itemIndex],0);
-        } else if (item.is2D) {
-            p.commands->DrawInstanced(6, 1, 36, 0);
-        } else {
-            // Distinguish the cube's faces even with the minimal default shader.
-            constexpr float shades[] = {0.75f, 0.9f, 0.62f, 0.82f, 1.0f, 0.55f};
-            for (UINT face = 0; face < 6; ++face) {
-                XMFLOAT4 tint{item.color.x * shades[face], item.color.y * shades[face],
-                    item.color.z * shades[face], item.color.w};
-                p.commands->SetGraphicsRoot32BitConstants(0, 4, &tint, 16);
-                p.commands->DrawInstanced(6, 1, face * 6, 0);
+
+    // 2. Scene objects with the project shader (shaded and/or wireframe pass).
+    if (!device.BeginFrame(CLEAR_COLOR, error)) return false;
+    const float fAspect = static_cast<float>(p.uWidth) / static_cast<float>(p.uHeight);
+    const XMMATRIX vp = ViewProjection(p.camera, fAspect);
+    const DrawMode drawMode = showGrid ? p.drawMode : DrawMode::SHADED;
+    auto drawObjects = [&](bool bWireframe, const XMFLOAT4* pOverride) {
+        device.SetPipeline(bWireframe ? PipelineKind::SCENE_WIREFRAME : PipelineKind::SCENE);
+        for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
+            const auto& item = items[nIndex];
+            if (!item.visible) continue;
+            const XMMATRIX mvp = World(item) * vp;
+            const XMFLOAT4 color = pOverride ? *pOverride : item.color;
+            if (vModelCounts[nIndex]) {
+                device.Draw(MakeConstants(mvp, color), vModelCounts[nIndex], vModelStarts[nIndex]);
+            } else if (item.is2D) {
+                device.Draw(MakeConstants(mvp, color), 6, QUAD_START);
+            } else {
+                // Distinguish the cube's faces even with the minimal default shader.
+                constexpr float SHADES[] = {0.75f, 0.9f, 0.62f, 0.82f, 1.0f, 0.55f};
+                for (UINT uFace = 0; uFace < 6; ++uFace) {
+                    const float fShade = pOverride ? 1.0f : SHADES[uFace];
+                    const XMFLOAT4 tint{color.x * fShade, color.y * fShade, color.z * fShade, color.w};
+                    device.Draw(MakeConstants(mvp, tint), 6, CUBE_START + uFace * 6);
+                }
             }
         }
-    }
-    struct Constants { XMFLOAT4X4 mvp; XMFLOAT4 color; } lineConstants{};
-    if (showGrid) {
-        const bool grid2D = selected >= 0 && static_cast<size_t>(selected) < items.size() && items[selected].is2D;
-        XMMATRIX gridMvp = grid2D ? XMMatrixRotationX(XM_PIDIV2) * vp : vp;
-        XMStoreFloat4x4(&lineConstants.mvp, gridMvp);
-        lineConstants.color = {0.27f, 0.30f, 0.34f, 1.0f};
-        p.commands->SetPipelineState(p.gridPipeline.Get());
-        p.commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
-        p.commands->SetGraphicsRoot32BitConstants(0, 20, &lineConstants, 0);
-        p.commands->DrawInstanced(GridCount, 1, GridStart, 0);
-        lineConstants.color = {0.65f, 0.20f, 0.20f, 1};
-        p.commands->SetGraphicsRoot32BitConstants(0, 4, &lineConstants.color, 16);
-        p.commands->DrawInstanced(2, 1, AxisXStart, 0);
-        lineConstants.color = {0.20f, 0.52f, 0.27f, 1};
-        p.commands->SetGraphicsRoot32BitConstants(0, 4, &lineConstants.color, 16);
-        p.commands->DrawInstanced(2, 1, AxisZStart, 0);
-    }
-    auto outline = [&](int index) {
-        if (index < 0 || static_cast<size_t>(index) >= items.size()) return;
-        const auto& item = items[index];
-        if (!item.visible) return;
-        XMStoreFloat4x4(&lineConstants.mvp, XMMatrixScaling(1.025f, 1.025f, 1.025f) * World(item) * vp);
-        lineConstants.color = index == selected ? XMFLOAT4{1.0f,0.63f,0.08f,1.0f} : XMFLOAT4{1.0f,0.76f,0.25f,1.0f};
-        p.commands->SetPipelineState(p.outlinePipeline.Get());
-        p.commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
-        p.commands->SetGraphicsRoot32BitConstants(0, 20, &lineConstants, 0);
-        p.commands->DrawInstanced(item.is2D ? 8 : 24, 1, item.is2D ? QuadLinesStart : CubeLinesStart, 0);
     };
-    if (showGrid || showGizmo) for (int index : p.selection) if (index != selected) outline(index);
+    if (drawMode != DrawMode::WIREFRAME) drawObjects(false, nullptr);
+    if (drawMode == DrawMode::WIREFRAME) drawObjects(true, nullptr);
+    if (drawMode == DrawMode::SHADED_WIREFRAME) {
+        constexpr XMFLOAT4 WIRE_COLOR{0.08f, 0.08f, 0.08f, 1.0f};
+        drawObjects(true, &WIRE_COLOR);
+    }
+
+    // 3. Editor grid and world axes.
+    if (showGrid) {
+        const bool bGrid2D = selected >= 0 && static_cast<size_t>(selected) < items.size() && items[selected].is2D;
+        const XMMATRIX gridMvp = bGrid2D ? XMMatrixRotationX(XM_PIDIV2) * vp : vp;
+        device.SetPipeline(PipelineKind::GRID);
+        device.Draw(MakeConstants(gridMvp, {0.27f, 0.30f, 0.34f, 1.0f}), GRID_COUNT, GRID_START);
+        device.Draw(MakeConstants(gridMvp, {0.65f, 0.20f, 0.20f, 1}), 2, AXIS_X_START);
+        device.Draw(MakeConstants(gridMvp, {0.20f, 0.52f, 0.27f, 1}), 2, AXIS_Z_START);
+    }
+
+    // 4. Selection outlines (active object last, in the brighter orange).
+    device.SetPipeline(PipelineKind::OVERLAY);
+    auto outline = [&](int nIndex) {
+        if (nIndex < 0 || static_cast<size_t>(nIndex) >= items.size()) return;
+        const auto& item = items[nIndex];
+        if (!item.visible) return;
+        const auto color = nIndex == selected ? XMFLOAT4{1.0f, 0.63f, 0.08f, 1.0f} : XMFLOAT4{1.0f, 0.76f, 0.25f, 1.0f};
+        device.Draw(MakeConstants(XMMatrixScaling(1.025f, 1.025f, 1.025f) * World(item) * vp, color),
+                    item.is2D ? 8 : 24, item.is2D ? QUAD_LINES_START : CUBE_LINES_START);
+    };
+    if (showGrid || showGizmo) {
+        for (int nIndex : p.vSelection) if (nIndex != selected) outline(nIndex);
+    }
     outline(selected);
+
+    // 5. Transform gizmo of the active selection.
     if (showGizmo && selected >= 0 && static_cast<size_t>(selected) < items.size()) {
         const auto& item = items[selected];
-        float length;
-        if (GizmoLength(p.camera, item, p.width, p.height, length)) {
-            const auto base = XMMatrixScaling(length,length,length) * XMMatrixTranslation(item.position.x,item.position.y,item.position.z) * vp;
-            constexpr XMFLOAT4 colors[] = {{1,0.24f,0.22f,1},{0.28f,0.9f,0.28f,1},{0.28f,0.52f,1,1}};
-            p.commands->SetPipelineState(p.outlinePipeline.Get());
-            p.commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
-            for (int axis=0; axis<3; ++axis) {
-                const auto gizmoMvp = (mode == GizmoMode::Rotate ? RingRotation(axis) : GizmoAxisRotation(item,axis,mode)) * base;
-                lineConstants.color = axis == p.gizmoHot ? XMFLOAT4{1,0.88f,0.15f,1} : colors[axis];
-                // DX12 line lists are one pixel wide. Offset the same geometry
-                // in clip space for a readable three-pixel cross-section.
-                constexpr float offsets[][2] = {{0,0},{-1,0},{1,0},{0,-1},{0,1}};
-                for (const auto& offset : offsets) {
-                    const auto shifted = gizmoMvp * XMMatrixTranslation(2.0f * offset[0] / p.width, 2.0f * offset[1] / p.height, 0);
-                    XMStoreFloat4x4(&lineConstants.mvp, shifted);
-                    p.commands->SetGraphicsRoot32BitConstants(0,20,&lineConstants,0);
-                    if (mode == GizmoMode::Rotate) p.commands->DrawInstanced(GizmoRingSegments*2,1,GizmoRingStart,0);
-                    else if (mode == GizmoMode::Scale) p.commands->DrawInstanced(10,1,GizmoScaleStart,0);
-                    else p.commands->DrawInstanced(6,1,GizmoArrowStart,0);
+        float fLength;
+        if (GizmoLength(p.camera, item, p.uWidth, p.uHeight, fLength)) {
+            const auto base = XMMatrixScaling(fLength, fLength, fLength) * XMMatrixTranslation(item.position.x, item.position.y, item.position.z) * vp;
+            for (int nAxis = 0; nAxis < 3; ++nAxis) {
+                const auto gizmoMvp = (mode == GizmoMode::Rotate ? RingRotation(nAxis) : GizmoAxisRotation(item, nAxis, mode)) * base;
+                const auto color = nAxis == p.nGizmoHot ? HOT_COLOR : AXIS_COLORS[nAxis];
+                // Line lists are one pixel wide. Offset the same geometry in
+                // clip space for a readable three-pixel cross-section.
+                constexpr float OFFSETS[][2] = {{0,0},{-1,0},{1,0},{0,-1},{0,1}};
+                for (const auto& offset : OFFSETS) {
+                    const auto shifted = gizmoMvp * XMMatrixTranslation(2.0f * offset[0] / p.uWidth, 2.0f * offset[1] / p.uHeight, 0);
+                    if (mode == GizmoMode::Rotate) device.Draw(MakeConstants(shifted, color), GIZMO_RING_SEGMENTS * 2, GIZMO_RING_START);
+                    else if (mode == GizmoMode::Scale) device.Draw(MakeConstants(shifted, color), 10, GIZMO_SCALE_START);
+                    else device.Draw(MakeConstants(shifted, color), 6, GIZMO_ARROW_START);
                 }
             }
             if (mode == GizmoMode::Translate) {
-                for (int normal = 0; normal < 3; ++normal) {
-                    const auto mvp = RingRotation(normal) * base;
-                    lineConstants.color = p.gizmoHot == 3 + normal ? XMFLOAT4{1,0.88f,0.15f,1} : colors[normal];
-                    XMStoreFloat4x4(&lineConstants.mvp, mvp);
-                    p.commands->SetGraphicsRoot32BitConstants(0,20,&lineConstants,0);
-                    p.commands->DrawInstanced(8,1,GizmoPlaneStart,0);
+                for (int nNormal = 0; nNormal < 3; ++nNormal) {
+                    const auto color = p.nGizmoHot == 3 + nNormal ? HOT_COLOR : AXIS_COLORS[nNormal];
+                    device.Draw(MakeConstants(RingRotation(nNormal) * base, color), 8, GIZMO_PLANE_START);
                 }
             }
             if (mode == GizmoMode::Scale) {
                 XMFLOAT2 center;
-                if (ScreenPoint(XMVectorSet(0,0,0,1),base,p.width,p.height,center)) {
-                    const auto mvp = XMMatrixScaling(180.0f/p.width,180.0f/p.height,1) *
-                        XMMatrixTranslation(2*center.x/p.width-1,1-2*center.y/p.height,0);
-                    lineConstants.color = p.gizmoHot == 6 ? XMFLOAT4{1,0.88f,0.15f,1} : XMFLOAT4{0.92f,0.92f,0.92f,1};
-                    XMStoreFloat4x4(&lineConstants.mvp, mvp);
-                    p.commands->SetGraphicsRoot32BitConstants(0,20,&lineConstants,0);
-                    p.commands->DrawInstanced(8,1,GizmoCenterStart,0);
+                if (ScreenPoint(XMVectorSet(0, 0, 0, 1), base, p.uWidth, p.uHeight, center)) {
+                    const auto mvp = XMMatrixScaling(180.0f / p.uWidth, 180.0f / p.uHeight, 1) *
+                                     XMMatrixTranslation(2 * center.x / p.uWidth - 1, 1 - 2 * center.y / p.uHeight, 0);
+                    const auto color = p.nGizmoHot == 6 ? HOT_COLOR : XMFLOAT4{0.92f, 0.92f, 0.92f, 1};
+                    device.Draw(MakeConstants(mvp, color), 8, GIZMO_CENTER_START);
                 }
             }
         }
     }
-    if (p.marquee && (showGrid || showGizmo) && p.width && p.height) {
-        const float left = 2.0f * p.rectX0 / p.width - 1.0f;
-        const float top = 1.0f - 2.0f * p.rectY0 / p.height;
-        const float dx = 2.0f * (p.rectX1-p.rectX0) / p.width;
-        const float dy = -2.0f * (p.rectY1-p.rectY0) / p.height;
-        XMStoreFloat4x4(&lineConstants.mvp, XMMatrixScaling(dx,dy,1) * XMMatrixTranslation(left,top,0));
-        lineConstants.color = {0.45f,0.75f,1.0f,1.0f};
-        p.commands->SetPipelineState(p.outlinePipeline.Get());
-        p.commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
-        p.commands->SetGraphicsRoot32BitConstants(0,20,&lineConstants,0);
-        p.commands->DrawInstanced(8,1,MarqueeStart,0);
+
+    // 6. Marquee selection rectangle.
+    if (p.bMarquee && (showGrid || showGizmo) && p.uWidth && p.uHeight) {
+        const float fLeft = 2.0f * p.nRectX0 / p.uWidth - 1.0f;
+        const float fTop = 1.0f - 2.0f * p.nRectY0 / p.uHeight;
+        const float fDx = 2.0f * (p.nRectX1 - p.nRectX0) / p.uWidth;
+        const float fDy = -2.0f * (p.nRectY1 - p.nRectY0) / p.uHeight;
+        device.Draw(MakeConstants(XMMatrixScaling(fDx, fDy, 1) * XMMatrixTranslation(fLeft, fTop, 0), {0.45f, 0.75f, 1.0f, 1.0f}),
+                    8, MARQUEE_START);
     }
-    barrier = Transition(p.targets[p.frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-    p.commands->ResourceBarrier(1, &barrier);
-    hr = p.commands->Close();
-    if (FAILED(hr)) { error = Failure("Close command list failed", hr); return false; }
-    ID3D12CommandList* lists[] = {p.commands.Get()};
-    p.queue->ExecuteCommandLists(1, lists);
-    hr = p.swapchain->Present(1, 0);
-    if (FAILED(hr)) { error = Failure("Present failed", hr); return false; }
-    if (!p.Wait(error)) return false;
-    p.frameIndex = p.swapchain->GetCurrentBackBufferIndex();
-    return true;
+
+    // 7. Orientation gizmo in the top-right corner (editor views only).
+    if (showGrid && p.bShowOrientation && p.uWidth > 120 && p.uHeight > 120) {
+        const float fPixelX = 2.0f / p.uWidth, fPixelY = 2.0f / p.uHeight;
+        const float fCenterX = 1.0f - 52.0f * fPixelX, fCenterY = 1.0f - 52.0f * fPixelY;
+        const XMMATRIX view = View(p.camera);
+        constexpr UINT LETTER_STARTS[] = {LETTER_X_START, LETTER_Y_START, LETTER_Z_START};
+        constexpr UINT LETTER_COUNTS[] = {LETTER_X_COUNT, LETTER_Y_COUNT, LETTER_Z_COUNT};
+        for (int nAxis = 0; nAxis < 3; ++nAxis) {
+            XMFLOAT3 direction{};
+            XMStoreFloat3(&direction, XMVector3TransformNormal(XMVectorSet(nAxis == 0, nAxis == 1, nAxis == 2, 0), view));
+            const float fDx = direction.x * 30.0f * fPixelX, fDy = direction.y * 30.0f * fPixelY;
+            // Axes pointing away from the viewer are dimmed, as in Unity.
+            const float fShade = direction.z > 0.0f ? 0.55f : 1.0f;
+            const XMFLOAT4 color{AXIS_COLORS[nAxis].x * fShade, AXIS_COLORS[nAxis].y * fShade, AXIS_COLORS[nAxis].z * fShade, 1};
+            // Maps the unit +X shaft (0,0,0)-(1,0,0) onto the projected axis.
+            const XMMATRIX shaft(fDx, fDy, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, fCenterX, fCenterY, 0, 1);
+            for (const float fOffset : {-1.0f, 0.0f, 1.0f}) {
+                const auto thick = shaft * XMMatrixTranslation(fOffset * fPixelX * (std::abs(fDy) > std::abs(fDx) ? 1.0f : 0.0f),
+                                                               fOffset * fPixelY * (std::abs(fDy) > std::abs(fDx) ? 0.0f : 1.0f), 0);
+                device.Draw(MakeConstants(thick, color), 2, GIZMO_ARROW_START);
+            }
+            const auto letter = XMMatrixScaling(4.0f * fPixelX, 5.0f * fPixelY, 1) *
+                                XMMatrixTranslation(fCenterX + fDx * 1.35f, fCenterY + fDy * 1.35f, 0);
+            device.Draw(MakeConstants(letter, color), LETTER_COUNTS[nAxis], LETTER_STARTS[nAxis]);
+        }
+    }
+
+    return device.EndFrame(error);
 }
 
 void Renderer::Shutdown() {
     if (!p_) return;
-    std::string ignored;
-    p_->Wait(ignored);
-    if (p_->fenceEvent) CloseHandle(p_->fenceEvent);
+    if (p_->pDevice) p_->pDevice->Shutdown();
     p_.reset();
 }
-}
+} // namespace dxs

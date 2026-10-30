@@ -17,7 +17,9 @@ for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\
 if not defined DXS_VSROOT (echo Visual Studio C++ tools not found.& exit /b 1)
 call "%DXS_VSROOT%\VC\Auxiliary\Build\vcvars64.bat"
 if errorlevel 1 exit /b 1
-cl /nologo /std:c++20 /EHsc /Od /Zi /MTd /utf-8 /D_DEBUG /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /Isrc /Febuild-debug\DxStudio-Debug.exe /Fdbuild-debug\DxStudio-Debug.pdb /Fobuild-debug\ src\EditorMain.cpp src\Editor.cpp src\ProjectPanel.cpp "%DXS_PROJECT%\Scripts\*.cpp" src\Engine.cpp src\Renderer.cpp third_party\ufbx\ufbx.c /link /DEBUG /SUBSYSTEM:WINDOWS d3d12.lib dxgi.lib d3dcompiler.lib user32.lib gdi32.lib comctl32.lib comdlg32.lib ole32.lib shell32.lib uuid.lib
+call "%~dp0build-sources.cmd"
+set "DXS_DEBUG_FLAGS=%DXS_CL_FLAGS:/MT=/MTd% /Od /Zi /D_DEBUG"
+cl %DXS_DEBUG_FLAGS% /Febuild-debug\DxStudio-Debug.exe /Fdbuild-debug\DxStudio-Debug.pdb /Fobuild-debug\ %DXS_EDITOR_SOURCES% "%DXS_PROJECT%\Scripts\*.cpp" %DXS_ENGINE_SOURCES% %DXS_RENDER_SOURCES% /link /DEBUG /SUBSYSTEM:WINDOWS /MANIFEST:EMBED %DXS_RENDER_LIBS% %DXS_WINDOW_LIBS% %DXS_EDITOR_LIBS%
 if errorlevel 1 exit /b 1
-cl /nologo /std:c++20 /EHsc /Od /Zi /MTd /utf-8 /D_DEBUG /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /Isrc /Febuild-debug\Game-Debug.exe /Fdbuild-debug\Game-Debug.pdb /Fobuild-debug\ src\GameMain.cpp "%DXS_PROJECT%\Scripts\*.cpp" src\Engine.cpp src\Renderer.cpp third_party\ufbx\ufbx.c /link /DEBUG /SUBSYSTEM:WINDOWS d3d12.lib dxgi.lib d3dcompiler.lib user32.lib gdi32.lib
+cl %DXS_DEBUG_FLAGS% /Febuild-debug\Game-Debug.exe /Fdbuild-debug\Game-Debug.pdb /Fobuild-debug\ src\GameMain.cpp "%DXS_PROJECT%\Scripts\*.cpp" %DXS_ENGINE_SOURCES% %DXS_RENDER_SOURCES% /link /DEBUG /SUBSYSTEM:WINDOWS %DXS_RENDER_LIBS% %DXS_WINDOW_LIBS%
 exit /b %ERRORLEVEL%

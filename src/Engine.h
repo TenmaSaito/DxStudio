@@ -1,6 +1,12 @@
 #pragma once
 
 #include "Renderer.h"
+#include "Core/Coroutine.h"
+#include "Core/Delegate.h"
+#include "Core/EngineCallbacks.h"
+#include "Core/Log.h"
+#include "Core/Time.h"
+#include "Graphics/GraphicsApi.h"
 #include <filesystem>
 #include <concepts>
 #include <memory>
@@ -74,14 +80,29 @@ template<class T> constexpr EditorField EditField(std::string name, T& value, bo
 
 // User behavior is defined as a class, matching the component model used by
 // scene-based editors. One instance is kept for each attachment while running.
+//
+// Frame order (same as Unity):  Start (once) -> Update -> coroutines -> LateUpdate
 class Component {
 public:
     virtual ~Component() = default;
     virtual void Start(Entity&) {}
     virtual void Update(Entity&, float deltaSeconds) = 0;
+    // Runs after every Update and coroutine of the frame (camera follow, etc.).
+    virtual void LateUpdate(Entity&, float /*deltaSeconds*/) {}
     // Return fields that should be editable in Inspector. A private member may
     // deliberately be exposed by returning EditField() from this member function.
     virtual std::vector<EditorField> EditorFields() { return {}; }
+
+    // ---- Coroutines (see Core/Coroutine.h) -------------------------------
+    // Runs `coroutine` until its first co_yield now, then once per frame.
+    CoroutineHandle StartCoroutine(Coroutine coroutine) { return m_coroutines.Start(std::move(coroutine)); }
+    bool StopCoroutine(CoroutineHandle handle) { return m_coroutines.Stop(handle); }
+    void StopAllCoroutines() { m_coroutines.StopAll(); }
+    [[nodiscard]] bool IsCoroutineRunning(CoroutineHandle handle) const { return m_coroutines.IsRunning(handle); }
+    CoroutineRunner& Coroutines() noexcept { return m_coroutines; }
+
+private:
+    CoroutineRunner m_coroutines;
 };
 
 class CameraComponent final : public Component {
@@ -159,6 +180,9 @@ using ComponentUpdate = void (*)(Entity&, float);
 bool RegisterComponent(const std::string& name, ComponentUpdate update);
 bool RegisterComponentClass(const std::string& name, ComponentFactory factory);
 bool IsComponentRegistered(const std::string& name);
+// Appends a registered component (or "Camera"). Fails on duplicates and when
+// the entity already has MaxComponentsPerEntity attachments.
+bool AttachComponent(Entity& entity, const std::string& name, std::string& error);
 bool DetachComponent(Entity& entity, std::size_t componentIndex);
 // Alphabetically sorted registry snapshot for the editor's component picker.
 std::vector<std::string> RegisteredComponentNames();
@@ -167,6 +191,16 @@ std::vector<std::pair<std::string, std::string>> ComponentEditorValues(Entity& e
 bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex,
                              const std::string& field, const std::string& value, std::string& error);
 Camera ActiveGameCamera(Scene& scene);
+
+// ---- Project settings ----------------------------------------------------
+// Stored as <project>/ProjectSettings.dxsettings and copied next to exported
+// games. Missing files fall back to the defaults below.
+inline constexpr const wchar_t* PROJECT_SETTINGS_FILE_NAME = L"ProjectSettings.dxsettings";
+struct ProjectSettings {
+    GraphicsApi graphicsApi = GraphicsApi::DIRECT3D12;
+};
+bool LoadProjectSettings(const std::filesystem::path& path, ProjectSettings& settings, std::string& error);
+bool SaveProjectSettings(const std::filesystem::path& path, const ProjectSettings& settings, std::string& error);
 
 // Implemented by the project. Register each custom component here.
 void RegisterProjectComponents();

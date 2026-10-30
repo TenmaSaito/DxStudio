@@ -1,4 +1,4 @@
-# DxStudio — DirectX 12 ゲームエンジンの試作
+# DxStudio — DirectX 12 / 11 / 9 ゲームエンジンの試作
 
 Windows 向けの小さな 2D / 3D ゲーム制作環境です。DirectX 12 と DirectXMath（`XM*`）を使用し、シーン編集、外部 HLSL、自作 C++ コンポーネント、実行ファイルとデータの書き出しを試せます。
 
@@ -18,6 +18,84 @@ Windows 向けの小さな 2D / 3D ゲーム制作環境です。DirectX 12 と 
 - `File > New project...` で親フォルダーとプロジェクト名を指定すると、その名前の専用フォルダーを自動作成します。`Scripts`、`Assets/Models`、`Assets/Materials`、`Assets/Textures`、`Assets/Animations`、シーン、シェーダー、`.dxproject`、Visual Studioソリューションはすべてその中へ格納され、Main Cameraも作成されます。
 - Hierarchy の項目を別の項目へドラッグすると親子関係を設定できます。空白へドロップするとルートへ戻ります。親変更時は見た目のワールド座標を維持し、循環する親子関係は拒否します。
 - `Export` で出力先フォルダーを選びます。画面上のシーンと最後にビルドしたゲームから `Game.exe`、`scene.dxs`、`Default.vs.cso`、`Default.ps.cso` の 4 ファイルを出力します。まとめて配布してください。同名の出力ファイルがある場合は上書きを確認します。ゲームは Esc で終了します。
+
+## 新機能（グラフィックスAPI切替・Unity/UE風UI・デリゲート・コルーチン）
+
+### DirectX 12 / 11 / 9 の切り替え
+
+- エディター: ツールバー右の `DX12 ▾` バッジ、または `Edit > Project Settings > Graphics API` で DirectX 12 / 11 / 9 を選びます。Scene ビューはその場で作り直され、選択はプロジェクトの `ProjectSettings.dxsettings` に保存されます。
+- 書き出したゲームも同じ設定を使います（`ProjectSettings.dxsettings` が `Game.exe` の隣にコピーされます）。起動引数 `Game.exe -dx11` / `-dx9` / `-dx12` で上書きできます。
+- 選んだAPIが使えない環境では 12 → 11 → 9 の順に自動でフォールバックし、Console に理由を出します。
+- DirectX 9 では `Default.hlsl` を Shader Model 3（`vs_3_0` / `ps_3_0`）としてコンパイルします。SM3 で通らないシェーダーの場合は組み込みの単色シェーダーで描画し、警告を出します。書き出し時には `Default9.vs.cso` / `Default9.ps.cso` も生成されます。
+- 構成: `Renderer`（ピック・ギズモ・描画順などAPIに依存しない処理）→ `graphics::IGraphicsDevice`（`src/Graphics/GraphicsDevice.h`）→ `DeviceD3D12.cpp` / `DeviceD3D11.cpp` / `DeviceD3D9.cpp`。
+
+### Unity / Unreal Engine 風エディターUI
+
+要素ごとの Unity / UE との対応表とスクリーンショットは [docs/UI_REFERENCE.md](docs/UI_REFERENCE.md) にあります。
+
+Unity 2022 の Dark スキン配色（パネル `#383838`、タブ帯 `#282828`、ツールバー `#191919`、選択 `#2C5D87`）を基準に、UE5 の要素（アクティブツールの青、X/Y/Z 入力欄の色付きバー）を組み合わせています。
+
+- ダークテーマのメニューバー（File / Edit / Assets / GameObject / Component / Build / Window / Help、Alt+頭文字で開く）、ダークタイトルバー、ダークのポップアップメニューとスクロールバー。
+- メインツールバー: 左に Save / Load、中央に Play / Pause / Step、右に Shader / Export / Android / グラフィックスAPI / Layout。ホバー表示とツールチップ付き。
+- Pause（`Ctrl+Shift+P`）と Step（`Ctrl+Alt+P`、1/60秒だけ進める）を追加しました。
+- ドックのタブ見出し（アイコン＋タイトル、フォーカス時は青いライン）。下部は `Project | Console` のタブ切り替えです。
+- Hierarchy: シーン名の行、折りたたみ可能なツリー（▼/▶ をクリック）、種類ごとのアイコン（Cube / Quad / Camera / Model / 空オブジェクト）、スクリプト付きの印。非アクティブなオブジェクトは灰色で表示します。
+- Inspector: Unity のコンポーネント見出し（折りたたみ・アイコン・⋮）、Tag / Layer の欄、X/Y/Z の色付きバー、プロパティ行の形式で表示するコンポーネント値、青い `Add Component` / `Apply changes` ボタン。
+- Scene ビュー: アイコンのツール切り替え（Move / Rotate / Scale）、右上に X/Y/Z の向きを示すギズモ。`Scene | Game` タブで Game ビュー（最初の有効な Camera から見た、グリッドやギズモのない表示）に切り替えられます。Unity と同様に Play 中は自動で Game ビューになり、Stop で Scene に戻ります。
+- Hierarchy の行はマウスを乗せると強調表示され、親子付けのドラッグ中はドロップ先が青枠で示されます。
+- Scene ツールバーの `Shaded ▾` で Shaded / Wireframe / Shaded Wireframe を切り替えられます（DX12 / 11 / 9 のすべてで動作）。Game ビューの `Free Aspect ▾` で 16:9 / 16:10 / 4:3 / 1:1 に固定できます。
+- Inspector の X / Y / Z / R / G / B / A のラベルを左右にドラッグすると値が変わります（Unity と同じ。Shift で10倍、Alt で0.1倍）。
+- パネルのタブ見出しをドラッグして引き出すとフローティングになります。エディターの上では、ドロップ先の領域（左・中央・右・下）が青くプレビュー表示され、離すとその領域に入って元のパネルと入れ替わります（Ctrl を押しながら離すとフローティングのまま）。配置は Layout ▾ > Save Layout で保存できます。
+- Console（`Ctrl+Shift+C`）: `dxs::Debug::Log / LogWarning / LogError` の出力を、レベル別アイコン・件数・フィルター・Collapse・Clear・コピー付きで表示します。
+- ステータスバー: 最後のメッセージと、使用中のAPI・FPS・Play状態。
+- 実装: `src/EditorTheme.h/.cpp`（配色・アンチエイリアス付きベクターアイコン・ボタン描画）と `src/ConsolePanel.cpp`。
+
+### デリゲートとコールバックインターフェース（`src/Core/Delegate.h`, `src/Core/EngineCallbacks.h`）
+
+```cpp
+dxs::MulticastDelegate<int> onScore;                 // UE の Multicast Delegate / C# の event に相当
+auto handle = onScore.AddLambda([](int nScore) { /* ... */ });
+onScore.AddRaw(&player, &CPlayer::OnScore);          // メンバー関数
+onScore.Broadcast(10);
+onScore.Remove(handle);
+dxs::ScopedDelegateHandle scoped(onScore, onScore += [](int) {}); // スコープを抜けると自動で解除
+
+// エンジンイベントは2通りで受け取れます
+auto h = dxs::EngineEvents::Get().onSceneLoaded.AddLambda([](dxs::Scene& scene) { /* ... */ });
+
+class CMyTool final : public dxs::IPlayModeCallbacks, public dxs::ISceneCallbacks {
+    void OnEnterPlayMode(dxs::Scene&) override { /* ... */ }
+    void OnSceneSaved(const dxs::Scene&) override { /* ... */ }
+};
+CMyTool tool;
+dxs::CallbackRegistration registration = dxs::RegisterCallbacks(tool); // 実装したインターフェースを全て購読
+```
+
+インターフェース: `ISceneCallbacks`（読込・保存）、`IFrameCallbacks`（Update の前後）、`IComponentCallbacks`（Start・アタッチ・デタッチ）、`IPlayModeCallbacks`（Play・Stop・Pause）、`ISelectionCallbacks`、`IGraphicsCallbacks`（API変更）。Broadcast 中に登録や解除をしても安全です。
+
+### コルーチン（`src/Core/Coroutine.h`、C++20 `<coroutine>`）
+
+Unity C# のコルーチンと同じ感覚で書けます。`StartCoroutine` は最初の `co_yield` までその場で実行し、その後は毎フレーム `Update` の後に再開します（Unity と同じ順序）。
+
+| Unity C# | DxStudio C++ |
+| --- | --- |
+| `IEnumerator Foo()` | `dxs::Coroutine Foo()` |
+| `yield return null;` | `co_yield nullptr;`（または `co_yield dxs::NextFrame;`） |
+| `yield return new WaitForSeconds(1);` | `co_yield dxs::WaitForSeconds(1.0f);` |
+| `WaitForSecondsRealtime` | `dxs::WaitForSecondsRealtime` |
+| `WaitUntil` / `WaitWhile` | `dxs::WaitUntil([&]{ ... })` / `dxs::WaitWhile(...)` |
+| `yield return StartCoroutine(Sub());` | `co_yield Sub();`（Sub の完了を待つ） |
+| `yield break;` | `co_return;` |
+| `StartCoroutine` / `StopCoroutine` / `StopAllCoroutines` | `Component` の同名メンバー関数 |
+| `Time.deltaTime` / `Time.timeScale` | `dxs::Time::DeltaTime()` / `dxs::Time::SetTimeScale()` |
+
+サンプルとして `project/Scripts/PulseController.cpp` を追加しました（拡大→待機→縮小→点滅を繰り返します）。コルーチン内で例外が起きると、そのコルーチンだけを止めて Console にエラーを出します。`Component` には `LateUpdate` も追加しました。
+
+### 可読性と命名規則
+
+- 約2,900行あった `Editor.cpp` を役割ごとに分割しました: `EditorWindow.h`（エディターの状態）、`Editor.cpp`（メインウィンドウと起動）、`EditorPanels.cpp`（Viewport・Hierarchy・ドックパネルのウィンドウプロシージャ）、`EditorChrome.cpp`（テーマ・メニュー・行の描画）、`EditorLayout.cpp`（ドッキング配置）、`EditorActions.cpp`（コマンド・Play Mode・グラフィックスAPI・プロジェクト）、`EditorInspector.cpp`（選択・Hierarchy・Inspector）。コマンドIDは `EditorCommands.h`、ファイルダイアログや文字列変換は `EditorUtility.h/.cpp` にあります。`.clang-format` を追加し、1行に複数の文を詰め込んでいたコードを整形しています。
+- 新しく書いたコードは cpp_TKG の命名規則に従っています（メンバー `m_` 接頭辞、型接頭辞 `n` / `f` / `b` / `p` / `v` / `s` / `d` / `a`、`constexpr` 定数と列挙子は UPPER_CASE、関数は PascalCase）。命名規則にある「既存の違反を一括修正しない」方針に従い、ユーザーのスクリプトが使っている公開API（`entity.draw.position` など）の名前は変えていません。
+- ビルドに使うソースの一覧は `build-sources.cmd` にまとめ、`build-direct.cmd` / `build-debug.cmd` / `test.cmd` から共通で使います。
 
 ## Project ウィンドウ
 
@@ -70,4 +148,4 @@ Windows向けは DirectX 12 の x64 実行ファイル、Android向けは OpenGL
 
 ## テスト
 
-`test.cmd` はシーンの保存・読込とコンポーネント、DirectX 12 の描画・選択・カメラ・リサイズ・書き出しを検証します。生成物は `build-direct` に入ります。CMake を使う場合は `CMakeLists.txt` も利用できます。
+`test.cmd` はシーンの保存・読込とコンポーネント、デリゲート・コールバック・コルーチン、DirectX 12 / 11 / 9 の描画・選択・カメラ・リサイズ・書き出しを検証します。生成物は `build-direct` に入ります。CMake を使う場合は `CMakeLists.txt` も利用できます。

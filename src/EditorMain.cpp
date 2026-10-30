@@ -3,6 +3,9 @@
 #include <filesystem>
 #include <vector>
 
+// Common Controls 6: themed (dark-capable) scrollbars, combo boxes and tooltips.
+#pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     // Prevent Windows from bitmap-scaling the editor. Native ClearType text and
     // the DirectX viewport remain sharp on high-DPI monitors.

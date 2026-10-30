@@ -5,6 +5,7 @@
 #endif
 #include <Windows.h>
 #include <DirectXMath.h>
+#include "Graphics/GraphicsApi.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -43,15 +44,40 @@ struct Camera {
 // translation planes, 6=uniform scale.
 enum class GizmoMode { Translate, Rotate, Scale };
 
+// Scene view draw mode (Unity: Shaded / Wireframe / Shaded Wireframe).
+enum class DrawMode : unsigned char { SHADED, WIREFRAME, SHADED_WIREFRAME };
+
+// API-agnostic renderer front-end. The GPU backend (Direct3D 12 / 11 / 9) is
+// chosen at Initialize time; every other member behaves identically on all
+// backends (picking and gizmo math run on the CPU).
 class Renderer {
 public:
     Renderer();
     ~Renderer();
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
+
+    // Backend used by the overload without an explicit GraphicsApi.
+    static void SetDefaultApi(GraphicsApi api);
+    static GraphicsApi DefaultApi();
+
     bool Initialize(HWND hwnd, unsigned width, unsigned height, const std::wstring& shaderPath, std::string& error);
+    bool Initialize(HWND hwnd, unsigned width, unsigned height, const std::wstring& shaderPath, GraphicsApi api,
+                    std::string& error);
+    // Tries `preferred` first, then the remaining APIs (12 -> 11 -> 9).
+    // `pReport` receives the failure reason of every API that was skipped.
+    bool InitializeWithFallback(HWND hwnd, unsigned width, unsigned height, const std::wstring& shaderPath,
+                                GraphicsApi preferred, std::string& error, std::string* pReport = nullptr);
+    [[nodiscard]] bool IsInitialized() const;
+    [[nodiscard]] GraphicsApi Api() const;
+
     void Resize(unsigned width, unsigned height);
     void SetCamera(const Camera& camera);
+    // Corner X/Y/Z axis widget drawn in editor views (showGrid == true).
+    void SetShowOrientationGizmo(bool bShow);
+    // Applies to editor frames (showGrid == true); game frames are always shaded.
+    void SetDrawMode(DrawMode mode);
+    [[nodiscard]] DrawMode GetDrawMode() const;
     // Client coordinates relative to the viewport. Returns -1 for a miss.
     int Pick(int x, int y, const std::vector<DrawItem>& items) const;
     // Select objects whose projected bounds intersect the rectangle.

@@ -7,7 +7,9 @@
 
 int main() {
     namespace fs = std::filesystem;
-    const auto fixture = fs::current_path() / L"build-direct" /
+    // The fixture lives in the system temp folder: deep checkouts would exceed
+    // MAX_PATH, and substituted drives (subst) change canonical paths.
+    const auto fixture = fs::temp_directory_path() /
         (L"project-import-test-" + std::to_wstring(GetCurrentProcessId()));
     std::error_code ec;
     if (!fs::create_directory(fixture, ec)) { std::cerr << "Cannot create isolated fixture\n"; return 1; }
