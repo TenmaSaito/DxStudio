@@ -2,6 +2,8 @@
 
 #include "EditorWindow.h"
 
+#include <fstream>
+
 namespace dxs::editor {
 
 bool Editor::ShellCommand(int id) {
@@ -475,7 +477,24 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     if (exitCode != 0) {
-        Error(window, "The build failed. Open the build log in the corresponding build folder.");
+        // Show the end of the script's log (e.g. build-android\build.log) instead of only pointing at it.
+        std::string message = "The build failed.";
+        const auto log = base / std::filesystem::path(scriptName).stem() / L"build.log";
+        std::ifstream file(log, std::ios::binary);
+        std::vector<std::string> vLines;
+        for (std::string line; std::getline(file, line);) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty()) continue;
+            vLines.push_back(std::move(line));
+            if (vLines.size() > 12) vLines.erase(vLines.begin());
+        }
+        if (!vLines.empty()) {
+            message += "\n\n";
+            for (const auto& line : vLines) message += line + "\n";
+            message += "\nFull log: " + Utf8(log.wstring());
+            Debug::LogError(message);
+        }
+        Error(window, message);
         SetStatus(L"Build failed.");
         return false;
     }

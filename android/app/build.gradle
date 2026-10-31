@@ -3,7 +3,8 @@ apply plugin: "com.android.application"
 android {
     namespace "com.dxstudio.player"
     compileSdk 35
-    ndkVersion "28.2.13676358"
+    // build-android.cmd passes the newest installed NDK when 28.2 is missing.
+    ndkVersion project.findProperty("dxsNdkVersion") ?: "28.2.13676358"
 
     defaultConfig {
         applicationId "com.dxstudio.player"

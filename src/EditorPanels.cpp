@@ -420,6 +420,11 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(e));
     }
     if (!e) return DefWindowProcW(hwnd, message, wp, lp);
+    // Keys in the view are camera / tool shortcuts. Without this the dialog
+    // manager (IsDialogMessage in RunEditor) treats every fly key (WASDQE) and
+    // Alt+key as an unmatched mnemonic and beeps on each auto-repeat.
+    if (message == WM_GETDLGCODE) return DLGC_WANTALLKEYS | DLGC_WANTCHARS;
+    if (message == WM_CHAR || message == WM_SYSCHAR) return 0;
     if (e->bGameView) {
         switch (message) {
         case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN: SetFocus(hwnd); return 0;
