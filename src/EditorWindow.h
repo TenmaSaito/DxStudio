@@ -113,6 +113,11 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     bool IsOverTitlebarMenu(HWND header) const;
     void ShowTitlebarMenu(HWND header);
     void ShowAddComponentMenu();
+    void ShowMeshPicker();
+    // Creates a MeshRenderer object using a built-in primitive mesh.
+    void AddPrimitive(PrimitiveShape shape);
+    void AppendPrimitiveMenus(HMENU menu);
+    void EnsureProjectPrimitives();
     // Unity applies Inspector edits when a field loses focus (no Apply button).
     bool bQuietApply = false;
     void ReportApplyError(const std::string& message);
@@ -192,6 +197,7 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     EditorPanel panels[4]{};
     HWND projectionButtons[2]{}, rowLabels[3]{}, inspectorHint{};
     HWND materialLabel{}, materialEdit{}, textureLabel{}, textureEdit{};
+    HWND meshLabel{}, meshEdit{}, meshPick{}; // Mesh Renderer / Model Renderer asset field
     HWND inspectorEnabled{}, inspectorIcon{}, inspectorTagLabel{}, inspectorTagValue{};
     HWND inspectorLayerLabel{}, inspectorLayerValue{};
     bool aSectionOpen[3]{true, true, true};

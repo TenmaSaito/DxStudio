@@ -128,12 +128,16 @@ public:
     void SetPipeline(PipelineKind kind) override {
         if (m_bSkipFrame) return;
         m_kind = kind;
-        const bool bScene = kind == PipelineKind::SCENE || kind == PipelineKind::SCENE_WIREFRAME;
+        const bool bScene = kind == PipelineKind::SCENE || kind == PipelineKind::SCENE_WIREFRAME || kind == PipelineKind::SCENE_TRANSPARENT;
+        const bool bTransparent = kind == PipelineKind::SCENE_TRANSPARENT;
+        m_pDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, bTransparent ? TRUE : FALSE);
+        m_pDevice->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+        m_pDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
         m_pDevice->SetRenderState(D3DRS_FILLMODE, kind == PipelineKind::SCENE_WIREFRAME ? D3DFILL_WIREFRAME : D3DFILL_SOLID);
         m_pDevice->SetVertexShader(bScene ? m_pSceneVertexShader.Get() : m_pOverlayVertexShader.Get());
         m_pDevice->SetPixelShader(bScene ? m_pScenePixelShader.Get() : m_pOverlayPixelShader.Get());
         m_pDevice->SetRenderState(D3DRS_ZENABLE, kind == PipelineKind::OVERLAY ? D3DZB_FALSE : D3DZB_TRUE);
-        m_pDevice->SetRenderState(D3DRS_ZWRITEENABLE, bScene ? TRUE : FALSE);
+        m_pDevice->SetRenderState(D3DRS_ZWRITEENABLE, bScene && !bTransparent ? TRUE : FALSE);
     }
 
     void Draw(const ObjectConstants& constants, unsigned uVertexCount, unsigned uFirstVertex) override {
@@ -142,7 +146,7 @@ public:
         m_pDevice->SetVertexShaderConstantF(4, &constants.color.x, 1);
         m_pDevice->SetPixelShaderConstantF(0, &constants.color.x, 1);
         m_pDevice->SetPixelShaderConstantF(4, &constants.color.x, 1);
-        const bool bTriangles = m_kind == PipelineKind::SCENE || m_kind == PipelineKind::SCENE_WIREFRAME;
+        const bool bTriangles = m_kind == PipelineKind::SCENE || m_kind == PipelineKind::SCENE_WIREFRAME || m_kind == PipelineKind::SCENE_TRANSPARENT;
         const UINT uPrimitives = bTriangles ? uVertexCount / 3 : uVertexCount / 2;
         if (uPrimitives) m_pDevice->DrawPrimitive(bTriangles ? D3DPT_TRIANGLELIST : D3DPT_LINELIST, uFirstVertex, uPrimitives);
     }

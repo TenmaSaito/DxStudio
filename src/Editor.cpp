@@ -92,7 +92,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         e->materialEdit = e->Make(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP);
         e->textureLabel = e->Make(L"STATIC", L"Texture", SS_LEFT);
         e->textureEdit = e->Make(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP);
-        for (auto control : {e->materialLabel, e->materialEdit, e->textureLabel, e->textureEdit})
+        e->meshLabel = e->Make(L"STATIC", L"Mesh", SS_LEFT);
+        e->meshEdit = e->Make(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP);
+        e->meshPick = e->Make(L"BUTTON", L"\x25CE", BS_OWNERDRAW | WS_TABSTOP, ID_MESH_PICK);
+        for (auto control : {e->materialLabel, e->materialEdit, e->textureLabel, e->textureEdit, e->meshLabel, e->meshEdit, e->meshPick})
             SetParent(control, e->panels[2].window);
         const wchar_t* rowNames[] = {L"Position", L"Rotation °", L"Scale"};
         const wchar_t* sections[] = {L"Transform", L"Rendering / Color", L"Components"};
@@ -121,7 +124,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         for (auto control : {e->componentList, e->componentChoice, e->componentAdd, e->componentRemove, e->componentFields,
                              e->componentValue, e->componentValueApply})
             SetParent(control, e->panels[2].window);
-        for (const wchar_t* builtin : {L"PolygonRenderer", L"ModelRenderer", L"Image"})
+        for (const wchar_t* builtin : {L"MeshRenderer", L"PolygonRenderer", L"ModelRenderer", L"Image"})
             SendMessageW(e->componentChoice, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(builtin));
         for (const auto& name : RegisteredComponentNames()) {
             auto wide = Wide(name);
@@ -132,6 +135,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         e->statusRight = e->Make(L"STATIC", L"", SS_RIGHT | SS_NOPREFIX);
         e->ApplyTheme();
         e->LoadSettings();
+        e->EnsureProjectPrimitives();
         e->projectPanel = CreateProjectPanel(e->panels[3].window, e->instance, e->projectRoot, e->base);
         e->consolePanel = CreateConsolePanel(e->panels[3].window, e->instance);
         e->callbackRegistration = RegisterCallbacks(*e);

@@ -89,7 +89,7 @@ RECT Editor::BoxInset(HWND control) const {
     for (HWND edit : edits)
         if (edit == control) return {4, 1, 4, 1};
     if (IsComponentFieldEdit(control)) return {4, 1, 4, 1};
-    if (control == materialEdit || control == textureEdit || control == componentValue) return {4, 1, 4, 1};
+    if (control == materialEdit || control == textureEdit || control == meshEdit || control == componentValue) return {4, 1, 4, 1};
     if (control == componentList || control == componentFields) return {1, 1, 1, 1};
     return {};
 }
@@ -117,7 +117,7 @@ void Editor::PaintInputBoxes(HDC dc, HWND panel) {
     paintBox(hierarchySearch);
     for (HWND edit : edits)
         paintBox(edit);
-    for (HWND control : {materialEdit, textureEdit, componentValue, componentList, componentFields})
+    for (HWND control : {materialEdit, textureEdit, meshEdit, componentValue, componentList, componentFields})
         paintBox(control);
     for (const auto& view : vComponentViews) {
         paintBox(view.hScriptValue);
@@ -132,6 +132,7 @@ theme::Icon Editor::EntityIcon(const Entity& entity) const {
     switch (entity.renderer) {
     case Entity::RendererKind::None: return theme::Icon::GAME_OBJECT;
     case Entity::RendererKind::Model: return theme::Icon::MODEL;
+    case Entity::RendererKind::Mesh: return entity.draw.bIs2D ? theme::Icon::QUAD : theme::Icon::CUBE;
     case Entity::RendererKind::Image: return theme::Icon::IMAGE;
     default: return entity.draw.bIs2D ? theme::Icon::QUAD : theme::Icon::CUBE;
     }
@@ -335,9 +336,8 @@ void Editor::CreateMainMenu() {
     AppendMenuW(edit, MF_POPUP, reinterpret_cast<UINT_PTR>(settings), L"Project Settings");
     AppendMenuW(assets, MF_STRING, ID_RELOAD_SHADER, L"Reimport / Reload shader");
     AppendMenuW(assets, MF_STRING, ID_CHOOSE_SCRIPT_EDITOR, L"Open selected script editor...");
-    AppendMenuW(objects, MF_STRING, ID_ADD_CUBE, L"3D Object / Cube");
-    AppendMenuW(objects, MF_STRING, ID_ADD_SPRITE, L"2D Object / World quad");
     AppendMenuW(objects, MF_STRING, ID_ADD_EMPTY, L"Create Empty");
+    AppendPrimitiveMenus(objects);
     AppendMenuW(objects, MF_STRING, ID_ADD_MODEL, L"Place X / FBX model...");
     AppendMenuW(objects, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(objects, MF_STRING, ID_FRAME_SELECTION, L"Frame selection\tF");

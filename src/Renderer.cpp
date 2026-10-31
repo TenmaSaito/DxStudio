@@ -569,16 +569,52 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
     const float fAspect = static_cast<float>(p.uWidth) / static_cast<float>(p.uHeight);
     const XMMATRIX vp = ViewProjection(p.camera, fAspect);
     const DrawMode drawMode = showGrid ? p.drawMode : DrawMode::SHADED;
-    auto drawObjects = [&](bool bWireframe, const XMFLOAT4* pOverride) {
-        device.SetPipeline(bWireframe ? PipelineKind::SCENE_WIREFRAME : PipelineKind::SCENE);
-        for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
-            const auto& item = items[nIndex];
-            if (!item.bVisible) continue;
-            const XMMATRIX mvp = World(item) * vp;
-            const XMFLOAT4 color = pOverride ? *pOverride : item.color;
-            if (vModelCounts[nIndex]) {
+    // Opaque objects first, then alpha < 1 objects sorted far-to-near so they
+    // blend over what is behind them (Unity's Transparent queue).
+    std::vector<size_t> vOpaque, vTransparent;
+    for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
+        if (!items[nIndex].bVisible) continue;
+        (items[nIndex].color.w < 0.999f ? vTransparent : vOpaque).push_back(nIndex);
+    }
+    {
+        const float fCosPitch = std::cos(p.camera.fPitch);
+        const XMFLOAT3 eye{p.camera.target.x + std::sin(p.camera.fYaw) * fCosPitch * p.camera.fDistance,
+                           p.camera.target.y + std::sin(p.camera.fPitch) * p.camera.fDistance,
+                           p.camera.target.z - std::cos(p.camera.fYaw) * fCosPitch * p.camera.fDistance};
+        auto distance2 = [&](size_t nIndex) {
+            const auto& position = items[nIndex].position;
+            const float dx = position.x - eye.x, dy = position.y - eye.y, dz = position.z - eye.z;
+            return dx * dx + dy * dy + dz * dz;
+        };
+        std::sort(vTransparent.begin(), vTransparent.end(), [&](size_t a, size_t b) { return distance2(a) > distance2(b); });
+    }
+    auto drawItem = [&](size_t nIndex, const XMFLOAT4* pOverride) {
+        const auto& item = items[nIndex];
+        const XMMATRIX mvp = World(item) * vp;
+        const XMFLOAT4 color = pOverride ? *pOverride : item.color;
+        if (vModelCounts[nIndex]) {
+            // Shade runs give meshes a faceted 3D look (darkest run first).
+            const auto* pRuns = item.pShadeRuns.get();
+            std::uint64_t nRunTotal = 0;
+            if (pRuns && !pOverride)
+                for (const auto nRun : *pRuns) nRunTotal += nRun;
+            if (pRuns && !pOverride && nRunTotal == vModelCounts[nIndex]) {
+                UINT uStart = vModelStarts[nIndex];
+                for (size_t nLevel = 0; nLevel < pRuns->size(); ++nLevel) {
+                    const UINT uCount = (*pRuns)[nLevel];
+                    if (uCount) {
+                        const float fShade = 0.45f + 0.55f * (static_cast<float>(nLevel) + 0.5f) / static_cast<float>(pRuns->size());
+                        device.Draw(MakeConstants(mvp, {color.x * fShade, color.y * fShade, color.z * fShade, color.w}), uCount, uStart);
+                    }
+                    uStart += uCount;
+                }
+            } else {
                 device.Draw(MakeConstants(mvp, color), vModelCounts[nIndex], vModelStarts[nIndex]);
-            } else if (item.bIs2D) {
+            }
+            return;
+        }
+        {
+            if (item.bIs2D) {
                 device.Draw(MakeConstants(mvp, color), 6, QUAD_START);
             } else {
                 // Distinguish the cube's faces even with the minimal default shader.
@@ -590,6 +626,12 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
                 }
             }
         }
+    };
+    auto drawObjects = [&](bool bWireframe, const XMFLOAT4* pOverride) {
+        device.SetPipeline(bWireframe ? PipelineKind::SCENE_WIREFRAME : PipelineKind::SCENE);
+        for (const size_t nIndex : vOpaque) drawItem(nIndex, pOverride);
+        if (!bWireframe && !vTransparent.empty()) device.SetPipeline(PipelineKind::SCENE_TRANSPARENT);
+        for (const size_t nIndex : vTransparent) drawItem(nIndex, pOverride);
     };
     if (drawMode != DrawMode::WIREFRAME) drawObjects(false, nullptr);
     if (drawMode == DrawMode::WIREFRAME) drawObjects(true, nullptr);

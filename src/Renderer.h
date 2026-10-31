@@ -6,6 +6,7 @@
 #include <Windows.h>
 #include <DirectXMath.h>
 #include "Graphics/GraphicsApi.h"
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -25,6 +26,10 @@ struct DrawItem {
     // Optional normalized triangle list used by ModelRenderer. Empty selects
     // the built-in cube/quad polygon geometry.
     std::shared_ptr<const std::vector<DirectX::XMFLOAT3>> pVertices;
+    // Optional: pVertices is sorted into consecutive runs of equal brightness
+    // (one count per run, darkest first). Gives meshes a faceted 3D look with
+    // the flat-colour default shader. Empty draws the mesh in one colour.
+    std::shared_ptr<const std::vector<std::uint32_t>> pShadeRuns;
 };
 
 // Shared scene camera. Target is in world units, angles in radians. Orthographic

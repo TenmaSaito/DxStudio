@@ -150,10 +150,11 @@ public:
     void SetPipeline(PipelineKind kind) override {
         ID3D12PipelineState* pState = kind == PipelineKind::SCENE           ? m_pScenePipeline.Get()
                                       : kind == PipelineKind::SCENE_WIREFRAME ? m_pWireframePipeline.Get()
+                                      : kind == PipelineKind::SCENE_TRANSPARENT ? m_pTransparentPipeline.Get()
                                       : kind == PipelineKind::GRID ? m_pGridPipeline.Get()
                                                                    : m_pOverlayPipeline.Get();
         m_pCommands->SetPipelineState(pState);
-        const bool bTriangles = kind == PipelineKind::SCENE || kind == PipelineKind::SCENE_WIREFRAME;
+        const bool bTriangles = kind == PipelineKind::SCENE || kind == PipelineKind::SCENE_WIREFRAME || kind == PipelineKind::SCENE_TRANSPARENT;
         m_pCommands->IASetPrimitiveTopology(bTriangles ? D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
                                                                         : D3D_PRIMITIVE_TOPOLOGY_LINELIST);
     }
@@ -189,6 +190,7 @@ public:
         m_pVertexBuffer.Reset();
         m_pScenePipeline.Reset();
         m_pWireframePipeline.Reset();
+        m_pTransparentPipeline.Reset();
         m_pGridPipeline.Reset();
         m_pOverlayPipeline.Reset();
         m_pRootSignature.Reset();
@@ -323,6 +325,21 @@ private:
         hr = m_pDevice->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&m_pWireframePipeline));
         if (FAILED(hr)) return Fail(error, "Create wireframe pipeline failed", hr);
         state.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+        // Transparent objects: classic alpha blending, depth tested but not written.
+        blend.BlendEnable = TRUE;
+        blend.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+        blend.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+        blend.SrcBlendAlpha = D3D12_BLEND_ONE;
+        blend.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+        depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+        hr = m_pDevice->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&m_pTransparentPipeline));
+        if (FAILED(hr)) return Fail(error, "Create transparent pipeline failed", hr);
+        blend.BlendEnable = FALSE;
+        blend.SrcBlend = D3D12_BLEND_ONE;
+        blend.DestBlend = D3D12_BLEND_ZERO;
+        blend.SrcBlendAlpha = D3D12_BLEND_ONE;
+        blend.DestBlendAlpha = D3D12_BLEND_ZERO;
+        depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 
         // Editor guides use baked shaders, so a project shader cannot hide or
         // distort the grid and selection outline. Game exports need no HLSL file.
@@ -382,6 +399,7 @@ private:
     ComPtr<ID3D12RootSignature> m_pRootSignature;
     ComPtr<ID3D12PipelineState> m_pScenePipeline;
     ComPtr<ID3D12PipelineState> m_pWireframePipeline;
+    ComPtr<ID3D12PipelineState> m_pTransparentPipeline;
     ComPtr<ID3D12PipelineState> m_pGridPipeline;
     ComPtr<ID3D12PipelineState> m_pOverlayPipeline;
     ComPtr<ID3D12Fence> m_pFence;

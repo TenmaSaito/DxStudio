@@ -58,7 +58,7 @@ bool LoadScene(AAssetManager* manager, Scene& scene) {
     if(!asset)return false;
     std::string text(static_cast<const char*>(AAsset_getBuffer(asset)),static_cast<size_t>(AAsset_getLength(asset)));AAsset_close(asset);
     std::istringstream in(text);std::string magic;unsigned version=0;size_t count=0;
-    if(!(in>>magic>>version>>count)||magic!="DXSCENE"||version<1||version>7||count>10000)return false;
+    if(!(in>>magic>>version>>count)||magic!="DXSCENE"||version<1||version>8||count>10000)return false;
     if(version>=4){int ortho=0;if(!(in>>magic>>ortho>>scene.camera.target.x>>scene.camera.target.y>>scene.camera.target.z>>scene.camera.yaw>>scene.camera.pitch>>scene.camera.distance)||magic!="CAMERA")return false;scene.camera.ortho=ortho!=0;}
     scene.entities.reserve(count);
     for(size_t i=0;i<count;++i){
@@ -67,7 +67,7 @@ bool LoadScene(AAssetManager* manager, Scene& scene) {
         else if(version>=3){size_t n=0;if(!(in>>n)||n>64)return false;for(size_t j=0;j<n;++j){std::string ignored;if(!(in>>std::quoted(ignored)))return false;}}
         if(version>=5&&!(in>>e.parent))return false;
         unsigned renderer=1;
-        if(version>=6){std::string asset;if(!(in>>renderer>>std::quoted(asset))||renderer>(version>=7?3u:2u))return false;e.visible=renderer==1||renderer==3;}
+        if(version>=6){std::string asset;if(!(in>>renderer>>std::quoted(asset))||renderer>(version>=8?4u:version>=7?3u:2u))return false;e.visible=renderer==1||renderer==3||renderer==4;} // 4 = MeshRenderer, drawn as its cube / quad stand-in
         if(version>=7){std::string material,texture;int play=0,animationIndex=0;float animationTime=0;size_t properties=0;
             if(!(in>>std::quoted(material)>>std::quoted(texture)>>play>>animationTime>>animationIndex>>properties)||properties>8192)return false;
             for(size_t p=0;p<properties;++p){std::string component,field,value;if(!(in>>std::quoted(component)>>std::quoted(field)>>std::quoted(value)))return false;}}

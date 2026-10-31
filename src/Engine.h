@@ -7,6 +7,7 @@
 #include "Core/Log.h"
 #include "Core/Time.h"
 #include "Graphics/GraphicsApi.h"
+#include "Primitives.h"
 #include <filesystem>
 #include <concepts>
 #include <memory>
@@ -53,6 +54,20 @@ private:
     int animationIndex_{};
 };
 
+// Unity MeshRenderer: draws the mesh asset (built-in primitive, X or FBX) set
+// in its Mesh field. Flat meshes in the XY plane are picked and outlined as 2D.
+class MeshRenderer final : public IRender {
+public:
+    explicit MeshRenderer(std::filesystem::path mesh = {}, float fAnimationTime = 0.0f, int nAnimationIndex = 0)
+        : m_mesh(std::move(mesh)), m_fAnimationTime(fAnimationTime), m_nAnimationIndex(nAnimationIndex) {}
+    [[nodiscard]] DrawItem BuildDrawItem(const Entity& entity) const override;
+    [[nodiscard]] const std::filesystem::path& Mesh() const noexcept { return m_mesh; }
+private:
+    std::filesystem::path m_mesh;
+    float m_fAnimationTime = 0.0f;
+    int m_nAnimationIndex = 0;
+};
+
 class Image final : public IRender {
 public:
     [[nodiscard]] DrawItem BuildDrawItem(const Entity& entity) const override;
@@ -60,7 +75,7 @@ public:
 
 template<class T> concept RenderComponent = std::derived_from<T, IRender>;
 template<class T> inline constexpr bool IsRenderComponent = RenderComponent<T>;
-static_assert(IsRenderComponent<PolygonRenderer> && IsRenderComponent<ModelRenderer> && IsRenderComponent<Image>);
+static_assert(IsRenderComponent<PolygonRenderer> && IsRenderComponent<ModelRenderer> && IsRenderComponent<MeshRenderer> && IsRenderComponent<Image>);
 
 enum class EditorFieldType : unsigned char { Float, Integer, Boolean, String };
 struct EditorField {
@@ -123,7 +138,7 @@ public:
 using ComponentFactory = std::unique_ptr<Component> (*)();
 
 struct Entity {
-    enum class RendererKind : unsigned char { None, Polygon, Model, Image };
+    enum class RendererKind : unsigned char { None, Polygon, Model, Image, Mesh };
     std::string sName;
     DrawItem draw;
     int nParent = -1;

@@ -38,6 +38,7 @@ struct Vertex {
 enum class PipelineKind : unsigned char {
     SCENE,           // triangles, project shader, depth test + write
     SCENE_WIREFRAME, // SCENE rasterized as wireframe (Scene view draw mode)
+    SCENE_TRANSPARENT, // SCENE with alpha blending, depth test, no depth write
     GRID,    // lines, built-in shader, depth test, no depth write
     OVERLAY, // lines, built-in shader, no depth test (outlines, gizmos, marquee)
 };

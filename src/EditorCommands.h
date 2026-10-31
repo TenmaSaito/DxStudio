@@ -20,6 +20,9 @@ constexpr int ID_DUPLICATE = 139;
 constexpr int ID_CREATE_MENU = 140;
 constexpr int ID_HIERARCHY_SEARCH = 141;
 constexpr int ID_INSPECTOR_ENABLED = 142;
+constexpr int ID_MESH_PICK = 143;               // Mesh field "o" button (primitive / X / FBX picker)
+constexpr int ID_ADD_PRIMITIVE_FIRST = 1100;    // GameObject > 3D / 2D Object, one id per PRIMITIVES entry
+constexpr int ID_ADD_PRIMITIVE_LAST = 1199;
 constexpr int ID_PANEL_SHOW = 400, ID_PANEL_FLOAT = 410, ID_PANEL_MINIMIZE = 420, ID_PANEL_HIDE = 430;
 constexpr int ID_SECTION_TOGGLE = 440, ID_RESET_LAYOUT = 450, ID_EXIT = 451;
 constexpr int ID_SAVE_LAYOUT = 452, ID_LOAD_LAYOUT = 453;

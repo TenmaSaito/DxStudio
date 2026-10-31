@@ -50,6 +50,14 @@ Unity 2022 の Dark スキン配色（パネル `#383838`、タブ帯 `#282828`�
 - ステータスバー: 最後のメッセージと、使用中のAPI・FPS・Play状態。
 - 実装: `src/EditorTheme.h/.cpp`（配色・アンチエイリアス付きベクターアイコン・ボタン描画）と `src/ConsolePanel.cpp`。
 
+### 基本図形と MeshRenderer（src/Primitives.h）
+
+- **GameObject > 3D Object**: Cube / Sphere / Capsule / Cylinder / Cone / Pyramid / Plane、**2D Object**: Square / Circle / Triangle（Hierarchy の右クリック・+ メニューにも同じ項目）。
+- 基本図形はエンジン初期搭載モデルとして project/Assets/Primitives/*.x（DirectX テキスト形式、単位ボックス内）に書き出されています。プロジェクトを開いた時に足りないファイルだけ再生成されるので、既存ファイルを編集すればその形が使われます。
+- 図形は MeshRenderer で描画されます。Inspector の **Mesh Renderer > Mesh** 欄の ◎ ボタンから基本図形を切り替えるか、**Browse X / FBX...** で任意の X / FBX モデルを設定できます（プロジェクト外のファイルは Assets/Models に取り込み）。パスを直接入力して Enter でも変更できます。
+- メッシュは面の向きで 8 段階に陰影が付き、立体感が出ます。2D 図形は XY 平面上にあり、選択・アウトラインも 2D として扱われます。
+- **透明度**: Color の A を 1 未満にするとアルファブレンドで半透明になります（Polygon / Mesh / Model 共通、DX12 / 11 / 9 対応）。不透明物体の後に、カメラから遠い順に描画します。
+
 ### デリゲートとコールバックインターフェース（`src/Core/Delegate.h`, `src/Core/EngineCallbacks.h`）
 
 ```cpp
@@ -124,9 +132,9 @@ Unity風ショートカットとして、`Ctrl+D` は選択オブジェクトを
 
 クラスの `EditorFields()` から `dxs::EditField("表示名", メンバー変数)` を返すと、Inspectorでfloat、int、bool、stringを編集できます。publicメンバーだけでなく、クラス内部から明示的に返したprivateメンバーもEditor公開値として扱えます。値はシーンへ保存され、Play中は実行中インスタンスの現在値が表示されます。`BoxController` がpublic/private両方の例です。
 
-スクリプト追加後はエディターとゲームを両方ビルドする必要があります。DLL の動的読み込みはありません。旧シーン形式 v1～v6 も読み込めますが、保存するとコンポーネント値・アセット参照対応の v7 形式になります。
+スクリプト追加後はエディターとゲームを両方ビルドする必要があります。DLL の動的読み込みはありません。旧シーン形式 v1～v7 も読み込めますが、保存すると MeshRenderer 対応の v8 形式になります。
 
-描画は `IRender` インターフェースで振る舞いを分離しています。組み込みの `PolygonRenderer`、`ModelRenderer`、2D向け `Image` は `IRender` を継承し、C++20 conceptと`static_assert`で継承関係をコンパイル時検査します。InspectorのComponentsからレンダラーを外したEntityは、Transform・親子関係・動作コンポーネントを維持したまま描画されません。
+描画は `IRender` インターフェースで振る舞いを分離しています。組み込みの `MeshRenderer`、`PolygonRenderer`、`ModelRenderer`、2D向け `Image` は `IRender` を継承し、C++20 conceptと`static_assert`で継承関係をコンパイル時検査します。InspectorのComponentsからレンダラーを外したEntityは、Transform・親子関係・動作コンポーネントを維持したまま描画されません。
 
 ## 外部シェーダー
 

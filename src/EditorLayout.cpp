@@ -368,13 +368,20 @@ void Editor::LayoutPanel(int index) {
         const bool validEntity = nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size();
         const auto rendererKind = validEntity && vSelectedIndices.size() == 1 ? scene.vEntities[nSelected].renderer : Entity::RendererKind::None;
         const bool hasRenderer = rendererKind != Entity::RendererKind::None;
-        SetWindowTextW(groupLabels[1], rendererKind == Entity::RendererKind::Model ? L"Model Renderer"
+        SetWindowTextW(groupLabels[1], rendererKind == Entity::RendererKind::Mesh    ? L"Mesh Renderer"
+                                       : rendererKind == Entity::RendererKind::Model ? L"Model Renderer"
                                        : rendererKind == Entity::RendererKind::Image ? L"Image"
                                                                                      : L"Polygon Renderer");
         theme::SetButtonExpanded(groupLabels[1], aSectionOpen[1]);
         place(groupLabels[1], 0, y, w, titlebar, hasRenderer);
         const bool showRenderer = hasRenderer && aSectionOpen[1];
         if (hasRenderer) y += titlebar + gap;
+        // Mesh (Unity: Mesh Filter > Mesh) with an object-picker button.
+        const bool showMesh = showRenderer && (rendererKind == Entity::RendererKind::Mesh || rendererKind == Entity::RendererKind::Model);
+        rowLabel(meshLabel, y, showMesh);
+        place(meshEdit, fieldX, y, std::max(S(20), fieldW - box - S(2)), box, showMesh);
+        place(meshPick, fieldX + fieldW - box, y, box, box, showMesh);
+        if (showMesh) y += line + gap;
         place(colorLabel, indent, y, labelWidth - S(4), line, showRenderer);
         multiField(11, 4, y, showRenderer);
         if (showRenderer) y += line + gap;

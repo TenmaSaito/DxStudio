@@ -82,6 +82,38 @@ bool ValidParents(const Scene& scene) {
 }
 
 using Mesh = std::vector<DirectX::XMFLOAT3>;
+using ShadeRuns = std::vector<std::uint32_t>;
+constexpr int SHADE_LEVELS = 8;
+
+// Sorts triangles into SHADE_LEVELS brightness runs using a fixed light in
+// mesh space, so the flat-colour shader still shows the 3D form.
+ShadeRuns SortByShade(Mesh& mesh) {
+    using namespace DirectX;
+    const XMVECTOR light = XMVector3Normalize(XMVectorSet(-0.35f, 0.85f, -0.4f, 0));
+    std::vector<std::vector<XMFLOAT3>> vBuckets(SHADE_LEVELS);
+    for (size_t nIndex = 0; nIndex + 2 < mesh.size(); nIndex += 3) {
+        const XMVECTOR a = XMLoadFloat3(&mesh[nIndex]), b = XMLoadFloat3(&mesh[nIndex + 1]), c = XMLoadFloat3(&mesh[nIndex + 2]);
+        XMVECTOR normal = XMVector3Cross(XMVectorSubtract(b, a), XMVectorSubtract(c, a));
+        const float fLength = XMVectorGetX(XMVector3Length(normal));
+        float fLight = 0.5f;
+        if (fLength > 1e-12f) fLight = (XMVectorGetX(XMVector3Dot(XMVectorScale(normal, 1.0f / fLength), light)) + 1.0f) * 0.5f;
+        const int nLevel = std::clamp(static_cast<int>(fLight * SHADE_LEVELS), 0, SHADE_LEVELS - 1);
+        vBuckets[nLevel].insert(vBuckets[nLevel].end(), {mesh[nIndex], mesh[nIndex + 1], mesh[nIndex + 2]});
+    }
+    ShadeRuns vRuns;
+    mesh.clear();
+    for (auto& bucket : vBuckets) {
+        vRuns.push_back(static_cast<std::uint32_t>(bucket.size()));
+        mesh.insert(mesh.end(), bucket.begin(), bucket.end());
+    }
+    return vRuns;
+}
+
+struct LoadedMesh {
+    std::shared_ptr<const Mesh> pVertices;
+    std::shared_ptr<const ShadeRuns> pShadeRuns;
+    bool bFlat = false; // all vertices on z = 0 (2D primitive)
+};
 struct NumberScanner {
     const char* p{};
     const char* end{};
@@ -124,13 +156,21 @@ void Normalize(Mesh& mesh) {
         v.z = (v.z - center.z) / extent;
     }
 }
-std::shared_ptr<const Mesh> LoadModelMesh(const std::filesystem::path& path, float animationTime = 0.0f, int animationIndex = 0) {
-    static std::unordered_map<std::wstring, std::weak_ptr<const Mesh>> cache;
+LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime = 0.0f, int animationIndex = 0) {
+    // Static meshes (.x) are cached per path and file time, so editing a
+    // file on disk is picked up; animated FBX is evaluated every frame.
+    struct CacheEntry {
+        std::filesystem::file_time_type time;
+        LoadedMesh mesh;
+    };
+    static std::unordered_map<std::wstring, CacheEntry> cache;
     const auto key = path.lexically_normal().wstring();
     const auto ext = path.extension().wstring();
+    std::error_code timeError;
+    const auto writeTime = std::filesystem::last_write_time(path, timeError);
     if (_wcsicmp(ext.c_str(), L".fbx") != 0)
-        if (auto found = cache.find(key); found != cache.end())
-            if (auto mesh = found->second.lock()) return mesh;
+        if (auto found = cache.find(key); found != cache.end() && !timeError && found->second.time == writeTime)
+            return found->second.mesh;
     std::ifstream input(path, std::ios::binary);
     if (!input) return {};
     std::string text((std::istreambuf_iterator<char>(input)), {});
@@ -207,8 +247,11 @@ std::shared_ptr<const Mesh> LoadModelMesh(const std::filesystem::path& path, flo
         return {};
     if (triangles.empty() || triangles.size() > 1000000) return {};
     Normalize(triangles);
-    auto result = std::make_shared<Mesh>(std::move(triangles));
-    if (_wcsicmp(ext.c_str(), L".fbx") != 0) cache[key] = result;
+    LoadedMesh result;
+    result.bFlat = std::all_of(triangles.begin(), triangles.end(), [](const DirectX::XMFLOAT3& v) { return std::abs(v.z) < 1e-5f; });
+    result.pShadeRuns = std::make_shared<ShadeRuns>(SortByShade(triangles));
+    result.pVertices = std::make_shared<Mesh>(std::move(triangles));
+    if (_wcsicmp(ext.c_str(), L".fbx") != 0 && !timeError) cache[key] = {writeTime, result};
     return result;
 }
 } // namespace
@@ -303,8 +346,8 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
     std::string magic;
     unsigned version = 0;
     size_t count = 0;
-    if (!(file >> magic >> version >> count) || magic != "DXSCENE" || (version < 1 || version > 7) || count > 10000) {
-        error = "Invalid scene header (expected DXSCENE 1-7 and an entity count up to 10000).";
+    if (!(file >> magic >> version >> count) || magic != "DXSCENE" || (version < 1 || version > 8) || count > 10000) {
+        error = "Invalid scene header (expected DXSCENE 1-8 and an entity count up to 10000).";
         return false;
     }
     Scene loaded;
@@ -342,7 +385,7 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
         if (headerValid && version >= 6) {
             unsigned renderer = 0;
             headerValid =
-                static_cast<bool>(file >> renderer >> std::quoted(e.sModelAsset)) && renderer <= (version >= 7 ? 3u : 2u);
+                static_cast<bool>(file >> renderer >> std::quoted(e.sModelAsset)) && renderer <= (version >= 8 ? 4u : version >= 7 ? 3u : 2u);
             e.renderer = static_cast<Entity::RendererKind>(renderer);
         }
         if (headerValid && version >= 7) {
@@ -407,7 +450,7 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
     }
     std::ostringstream out;
     out.imbue(std::locale::classic());
-    out << "DXSCENE 7 " << scene.vEntities.size() << '\n';
+    out << "DXSCENE 8 " << scene.vEntities.size() << '\n';
     out << std::setprecision(std::numeric_limits<float>::max_digits10);
     const auto& camera = scene.camera;
     out << "CAMERA " << (camera.bOrthographic ? 1 : 0) << ' ' << camera.target.x << ' ' << camera.target.y << ' '
@@ -477,8 +520,19 @@ DrawItem Image::BuildDrawItem(const Entity& entity) const {
 DrawItem ModelRenderer::BuildDrawItem(const Entity& entity) const {
     auto result = entity.draw;
     result.bIs2D = false;
-    result.pVertices = asset_.empty() ? nullptr : LoadModelMesh(asset_, animationTime_, animationIndex_);
+    const auto mesh = asset_.empty() ? LoadedMesh{} : LoadModelMesh(asset_, animationTime_, animationIndex_);
+    result.pVertices = mesh.pVertices;
+    result.pShadeRuns = mesh.pShadeRuns;
     result.bVisible = static_cast<bool>(result.pVertices);
+    return result;
+}
+DrawItem MeshRenderer::BuildDrawItem(const Entity& entity) const {
+    auto result = entity.draw;
+    const auto mesh = m_mesh.empty() ? LoadedMesh{} : LoadModelMesh(m_mesh, m_fAnimationTime, m_nAnimationIndex);
+    result.pVertices = mesh.pVertices;
+    result.pShadeRuns = mesh.pShadeRuns;
+    result.bIs2D = mesh.bFlat; // circle / square / triangle pick and outline as quads
+    result.bVisible = entity.draw.bVisible && static_cast<bool>(result.pVertices);
     return result;
 }
 
@@ -573,7 +627,8 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
 
     // Pass 1: Start (first frame) and Update, in Inspector order.
     for (auto& entity : scene.vEntities) {
-        if (entity.renderer == Entity::RendererKind::Model && entity.bPlayAnimation) entity.fAnimationTime += fDelta;
+        if ((entity.renderer == Entity::RendererKind::Model || entity.renderer == Entity::RendererKind::Mesh) && entity.bPlayAnimation)
+            entity.fAnimationTime += fDelta;
         SyncRuntimeComponents(entity);
         const size_t nCount = std::min(entity.vRuntimeComponentNames.size(), entity.vRuntimeComponents.size());
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
@@ -757,6 +812,10 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
             world.bVisible = false;
         else if (entity.renderer == Entity::RendererKind::Polygon)
             world = PolygonRenderer{}.BuildDrawItem(entity);
+        else if (entity.renderer == Entity::RendererKind::Mesh)
+            world = MeshRenderer(scene.projectRoot / std::filesystem::u8path(entity.sModelAsset), entity.fAnimationTime,
+                                 entity.nAnimationIndex)
+                        .BuildDrawItem(entity);
         else if (entity.renderer == Entity::RendererKind::Model)
             world = ModelRenderer(scene.projectRoot / std::filesystem::u8path(entity.sModelAsset), entity.fAnimationTime,
                                   entity.nAnimationIndex)

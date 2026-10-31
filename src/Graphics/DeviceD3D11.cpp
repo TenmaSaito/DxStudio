@@ -111,11 +111,14 @@ public:
     }
 
     void SetPipeline(PipelineKind kind) override {
-        const bool bScene = kind == PipelineKind::SCENE || kind == PipelineKind::SCENE_WIREFRAME;
+        const bool bScene = kind == PipelineKind::SCENE || kind == PipelineKind::SCENE_WIREFRAME || kind == PipelineKind::SCENE_TRANSPARENT;
+        const bool bTransparent = kind == PipelineKind::SCENE_TRANSPARENT;
+        m_pContext->OMSetBlendState(bTransparent ? m_pAlphaBlend.Get() : nullptr, nullptr, 0xFFFFFFFF);
         m_pContext->RSSetState(kind == PipelineKind::SCENE_WIREFRAME ? m_pWireframeRasterizer.Get() : m_pRasterizer.Get());
         m_pContext->VSSetShader(bScene ? m_pSceneVertexShader.Get() : m_pOverlayVertexShader.Get(), nullptr, 0);
         m_pContext->PSSetShader(bScene ? m_pScenePixelShader.Get() : m_pOverlayPixelShader.Get(), nullptr, 0);
-        ID3D11DepthStencilState* pDepth = bScene ? m_pDepthScene.Get() : kind == PipelineKind::GRID ? m_pDepthGrid.Get()
+        // Transparent: depth tested, not written (same state as the grid).
+        ID3D11DepthStencilState* pDepth = bTransparent ? m_pDepthGrid.Get() : bScene ? m_pDepthScene.Get() : kind == PipelineKind::GRID ? m_pDepthGrid.Get()
                                                                                                     : m_pDepthOverlay.Get();
         m_pContext->OMSetDepthStencilState(pDepth, 0);
         m_pContext->IASetPrimitiveTopology(bScene ? D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST : D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
@@ -150,6 +153,7 @@ public:
         m_pOverlayPixelShader.Reset();
         m_pRasterizer.Reset();
         m_pWireframeRasterizer.Reset();
+        m_pAlphaBlend.Reset();
         m_pDepthScene.Reset();
         m_pDepthGrid.Reset();
         m_pDepthOverlay.Reset();
@@ -231,6 +235,18 @@ private:
         depth.DepthEnable = FALSE;
         hr = m_pDevice->CreateDepthStencilState(&depth, &m_pDepthOverlay);
         if (FAILED(hr)) return Fail(error, "Create overlay depth state failed", hr);
+        D3D11_BLEND_DESC blend{};
+        auto& target = blend.RenderTarget[0];
+        target.BlendEnable = TRUE;
+        target.SrcBlend = D3D11_BLEND_SRC_ALPHA;
+        target.DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+        target.BlendOp = D3D11_BLEND_OP_ADD;
+        target.SrcBlendAlpha = D3D11_BLEND_ONE;
+        target.DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+        target.BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        target.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        hr = m_pDevice->CreateBlendState(&blend, &m_pAlphaBlend);
+        if (FAILED(hr)) return Fail(error, "Create alpha blend state failed", hr);
         return true;
     }
 
@@ -268,6 +284,7 @@ private:
     ComPtr<ID3D11InputLayout> m_pInputLayout;
     ComPtr<ID3D11RasterizerState> m_pRasterizer;
     ComPtr<ID3D11RasterizerState> m_pWireframeRasterizer;
+    ComPtr<ID3D11BlendState> m_pAlphaBlend;
     ComPtr<ID3D11DepthStencilState> m_pDepthScene;
     ComPtr<ID3D11DepthStencilState> m_pDepthGrid;
     ComPtr<ID3D11DepthStencilState> m_pDepthOverlay;

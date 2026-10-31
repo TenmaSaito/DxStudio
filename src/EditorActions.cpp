@@ -208,8 +208,8 @@ bool Editor::ShellCommand(int id) {
 void Editor::ShowObjectMenu(POINT point) {
     if (point.x == -1 && point.y == -1) GetCursorPos(&point);
     HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING, ID_ADD_CUBE, L"Create 3D / Cube");
-    AppendMenuW(menu, MF_STRING, ID_ADD_SPRITE, L"Create 2D / World quad");
+    AppendMenuW(menu, MF_STRING, ID_ADD_EMPTY, L"Create Empty");
+    AppendPrimitiveMenus(menu);
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     const UINT availability = vSelectedIndices.empty() ? MF_GRAYED : 0;
     AppendMenuW(menu, MF_STRING | availability, ID_FRAME_SELECTION, L"Frame selection\tF");
@@ -379,6 +379,7 @@ bool Editor::SwitchProject(const std::filesystem::path& descriptor) {
     projectFile = descriptor;
     scene = std::move(loaded);
     LoadSettings();
+    EnsureProjectPrimitives();
     projectPanel = CreateProjectPanel(panels[3].window, instance, projectRoot, base);
     nSelected = scene.vEntities.empty() ? -1 : 0;
     vSelectedIndices = nSelected < 0 ? std::vector<int>{} : std::vector<int>{nSelected};
@@ -710,8 +711,15 @@ void Editor::Command(int id, int notification) {
         SendMessageW(componentChoice, CB_GETLBTEXT, choice, reinterpret_cast<LPARAM>(value.data()));
         value.resize(length);
         auto name = Utf8(value);
-        if (name == "PolygonRenderer" || name == "ModelRenderer" || name == "Image") {
+        if (name == "MeshRenderer" || name == "PolygonRenderer" || name == "ModelRenderer" || name == "Image") {
             auto& entity = scene.vEntities[nSelected];
+            if (name == "MeshRenderer") {
+                entity.renderer = Entity::RendererKind::Mesh;
+                if (entity.sModelAsset.empty()) entity.sModelAsset = PrimitiveAssetPath(PrimitiveShape::CUBE);
+                Populate();
+                SetStatus(L"MeshRenderer attached. Pick a mesh with the Mesh field's button.");
+                return;
+            }
             entity.renderer = name == "PolygonRenderer" ? Entity::RendererKind::Polygon
                               : name == "ModelRenderer" ? Entity::RendererKind::Model
                                                         : Entity::RendererKind::Image;
@@ -780,7 +788,13 @@ void Editor::Command(int id, int notification) {
         for (auto button : gizmoButtons)
             InvalidateRect(button, nullptr, TRUE);
         SetStatus(L"Drag a colored axis to transform. Esc cancels a drag.");
-    } else if (id == ID_ADD_CUBE || id == ID_ADD_SPRITE || id == ID_ADD_EMPTY) {
+    } else if (id >= ID_ADD_PRIMITIVE_FIRST && id < ID_ADD_PRIMITIVE_FIRST + static_cast<int>(PRIMITIVES.size())) {
+        AddPrimitive(PRIMITIVES[static_cast<size_t>(id - ID_ADD_PRIMITIVE_FIRST)].shape);
+    } else if (id == ID_ADD_CUBE) {
+        AddPrimitive(PrimitiveShape::CUBE);
+    } else if (id == ID_MESH_PICK) {
+        ShowMeshPicker();
+    } else if (id == ID_ADD_SPRITE || id == ID_ADD_EMPTY) {
         if (!Apply()) return;
         Entity entity;
         entity.sName = id == ID_ADD_CUBE ? "Cube" : id == ID_ADD_SPRITE ? "Sprite" : "Empty";
@@ -808,7 +822,7 @@ void Editor::Command(int id, int notification) {
         }
         Entity entity;
         entity.sName = Utf8(source.stem().wstring());
-        entity.renderer = Entity::RendererKind::Model;
+        entity.renderer = Entity::RendererKind::Mesh;
         const auto relative = std::filesystem::relative(destination, projectRoot, ec).generic_u8string();
         entity.sModelAsset.assign(reinterpret_cast<const char*>(relative.data()), relative.size());
         scene.vEntities.push_back(std::move(entity));

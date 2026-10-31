@@ -158,7 +158,8 @@ void Editor::Inspect() {
             EnableWindow(e, single);
             SetWindowTextW(e, L"");
         }
-    for (auto control : {materialEdit, textureEdit}) {
+    EnableWindow(meshPick, single);
+    for (auto control : {materialEdit, textureEdit, meshEdit}) {
         EnableWindow(control, single);
         SetWindowTextW(control, L"");
     }
@@ -192,8 +193,10 @@ void Editor::Inspect() {
     SetWindowTextW(edits[0], Wide(entity.sName).c_str());
     SetWindowTextW(materialEdit, Wide(entity.sMaterialAsset).c_str());
     SetWindowTextW(textureEdit, Wide(entity.sTextureAsset).c_str());
+    SetWindowTextW(meshEdit, Wide(entity.sModelAsset).c_str());
     if (entity.renderer != Entity::RendererKind::None) {
-        const wchar_t* rendererName = entity.renderer == Entity::RendererKind::Polygon ? L"PolygonRenderer [IRender]"
+        const wchar_t* rendererName = entity.renderer == Entity::RendererKind::Mesh      ? L"MeshRenderer [IRender]"
+                                      : entity.renderer == Entity::RendererKind::Polygon ? L"PolygonRenderer [IRender]"
                                       : entity.renderer == Entity::RendererKind::Model ? L"ModelRenderer [IRender]"
                                                                                        : L"Image [IRender]";
         SendMessageW(componentList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(rendererName));
@@ -303,6 +306,16 @@ bool Editor::Apply() {
     };
     if (!assetPath(materialEdit, "Material", entity.sMaterialAsset) || !assetPath(textureEdit, "Texture", entity.sTextureAsset))
         return false;
+    if (entity.renderer == Entity::RendererKind::Mesh || entity.renderer == Entity::RendererKind::Model) {
+        std::string sMesh;
+        if (!assetPath(meshEdit, "Mesh", sMesh)) return false;
+        if (sMesh.empty()) {
+            ReportApplyError("Mesh must name an X or FBX file (pick one with the button).");
+            if (!bQuietApply) SetFocus(meshEdit);
+            return false;
+        }
+        entity.sModelAsset = sMesh;
+    }
     auto& d = entity.draw;
     d.position = {values[0], values[1], values[2]};
     // Retain the original radians when an unchanged degree field is reapplied.
@@ -538,7 +551,7 @@ void Editor::ShowAddComponentMenu() {
         std::wstring text(static_cast<size_t>(length) + 1, L'\0');
         SendMessageW(componentChoice, CB_GETLBTEXT, nIndex, reinterpret_cast<LPARAM>(text.data()));
         text.resize(length);
-        const bool renderer = text == L"PolygonRenderer" || text == L"ModelRenderer" || text == L"Image";
+        const bool renderer = text == L"MeshRenderer" || text == L"PolygonRenderer" || text == L"ModelRenderer" || text == L"Image";
         const bool isAttached = std::find(attached.begin(), attached.end(), Utf8(text)) != attached.end();
         AppendMenuW(renderer ? rendering : scripts, MF_STRING | (isAttached ? MF_GRAYED : 0), 1 + nIndex, text.c_str());
     }
@@ -549,6 +562,94 @@ void Editor::ShowAddComponentMenu() {
     if (choice <= 0) return;
     SendMessageW(componentChoice, CB_SETCURSEL, choice - 1, 0);
     Command(ID_ADD_COMPONENT, BN_CLICKED); // existing attach logic
+}
+
+void Editor::EnsureProjectPrimitives() {
+    std::string error;
+    if (!EnsurePrimitiveAssets(projectRoot, error)) Debug::LogWarning(error);
+}
+
+void Editor::AppendPrimitiveMenus(HMENU menu) {
+    HMENU objects3D = CreatePopupMenu(), objects2D = CreatePopupMenu();
+    for (size_t nIndex = 0; nIndex < PRIMITIVES.size(); ++nIndex)
+        AppendMenuW(PRIMITIVES[nIndex].bFlat ? objects2D : objects3D, MF_STRING, ID_ADD_PRIMITIVE_FIRST + static_cast<int>(nIndex),
+                    Wide(PRIMITIVES[nIndex].pName).c_str());
+    AppendMenuW(objects2D, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(objects2D, MF_STRING, ID_ADD_SPRITE, L"World Quad (Polygon Renderer)");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(objects3D), L"3D Object");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(objects2D), L"2D Object");
+}
+
+void Editor::AddPrimitive(PrimitiveShape shape) {
+    if (!Apply()) return;
+    EnsureProjectPrimitives();
+    Entity entity;
+    for (const auto& info : PRIMITIVES)
+        if (info.shape == shape) entity.sName = info.pName;
+    entity.renderer = Entity::RendererKind::Mesh;
+    entity.sModelAsset = PrimitiveAssetPath(shape);
+    for (const auto& info : PRIMITIVES)
+        if (info.shape == shape) entity.draw.bIs2D = info.bFlat; // quad stand-in for players without mesh support
+    entity.draw.color = {0.82f, 0.82f, 0.82f, 1.f};
+    scene.vEntities.push_back(std::move(entity));
+    nSelected = static_cast<int>(scene.vEntities.size()) - 1;
+    vSelectedIndices = {nSelected};
+    Populate();
+    SetStatus(L"Object added with a MeshRenderer. Save the scene to keep it.");
+}
+
+// Unity object picker for the Mesh field: built-in primitives or any X / FBX.
+void Editor::ShowMeshPicker() {
+    if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size() || vSelectedIndices.size() != 1) return;
+    constexpr int BROWSE = 1000;
+    RECT rect{};
+    GetWindowRect(meshPick, &rect);
+    HMENU menu = CreatePopupMenu();
+    const auto& current = scene.vEntities[nSelected].sModelAsset;
+    for (size_t nIndex = 0; nIndex < PRIMITIVES.size(); ++nIndex) {
+        const bool bCurrent = current == PrimitiveAssetPath(PRIMITIVES[nIndex].shape);
+        AppendMenuW(menu, MF_STRING | (bCurrent ? MF_CHECKED : 0), 1 + static_cast<int>(nIndex), Wide(PRIMITIVES[nIndex].pName).c_str());
+        if (nIndex + 1 < PRIMITIVES.size() && PRIMITIVES[nIndex].bFlat != PRIMITIVES[nIndex + 1].bFlat)
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    }
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, BROWSE, L"Browse X / FBX...");
+    const int choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_TOPALIGN, rect.right, rect.bottom, 0, window, nullptr);
+    DestroyMenu(menu);
+    if (choice <= 0) return;
+    if (InspectorHasPendingEdits() && !Apply()) return;
+    std::string sAsset;
+    if (choice == BROWSE) {
+        std::filesystem::path source;
+        if (!ChooseModelFile(window, source)) return;
+        const auto folder = projectRoot / L"Assets" / L"Models";
+        std::error_code ec;
+        std::filesystem::create_directories(folder, ec);
+        const auto destination = folder / source.filename();
+        const auto inside = std::filesystem::weakly_canonical(source, ec).lexically_relative(std::filesystem::weakly_canonical(projectRoot, ec));
+        std::filesystem::path relative;
+        if (!inside.empty() && *inside.begin() != L"..") {
+            relative = inside; // already a project file: reference it in place
+        } else {
+            std::wstring importError;
+            if (!ImportProjectFile(projectRoot, folder, source, importError)) {
+                Error(window, Utf8(importError));
+                return;
+            }
+            relative = std::filesystem::relative(destination, projectRoot, ec);
+        }
+        const auto u8 = relative.generic_u8string();
+        sAsset.assign(reinterpret_cast<const char*>(u8.data()), u8.size());
+    } else {
+        sAsset = PrimitiveAssetPath(PRIMITIVES[static_cast<size_t>(choice - 1)].shape);
+        scene.vEntities[nSelected].draw.bIs2D = PRIMITIVES[static_cast<size_t>(choice - 1)].bFlat;
+        EnsureProjectPrimitives();
+    }
+    auto& entity = scene.vEntities[nSelected];
+    entity.sModelAsset = sAsset;
+    if (entity.renderer == Entity::RendererKind::None) entity.renderer = Entity::RendererKind::Mesh;
+    Populate();
+    SetStatus(L"Mesh assigned. Save the scene to keep it.");
 }
 
 } // namespace dxs::editor
@@ -568,14 +669,14 @@ void Editor::ReportApplyError(const std::string& message) {
 
 bool Editor::IsInspectorEdit(HWND control) const {
     if (!control) return false;
-    if (control == materialEdit || control == textureEdit) return true;
+    if (control == materialEdit || control == textureEdit || control == meshEdit) return true;
     for (int field = 0; field < FIELD_COUNT; ++field)
         if (field != 1 && edits[field] == control) return true;
     return false;
 }
 
 bool Editor::InspectorHasPendingEdits() const {
-    for (HWND control : {materialEdit, textureEdit})
+    for (HWND control : {materialEdit, textureEdit, meshEdit})
         if (control && SendMessageW(control, EM_GETMODIFY, 0, 0)) return true;
     for (int field = 0; field < FIELD_COUNT; ++field)
         if (field != 1 && edits[field] && SendMessageW(edits[field], EM_GETMODIFY, 0, 0)) return true;

@@ -166,6 +166,36 @@ int main() {
     cameraEntity.vComponents={"Camera"}; cameraEntity.draw.position={3,4,5}; cameraEntity.draw.rotation={0.1f,0.2f,0};
     renderScene.vEntities.push_back(cameraEntity); const auto gameCamera=dxs::ActiveGameCamera(renderScene);
     assert(std::abs(gameCamera.fYaw-0.2f)<0.0001f && std::abs(gameCamera.fPitch-0.1f)<0.0001f);
+    // Built-in primitives: written as .x files, loaded through MeshRenderer.
+    {
+        assert(dxs::EnsurePrimitiveAssets(dir, error));
+        dxs::Scene meshScene; meshScene.projectRoot = dir;
+        for (const auto& info : dxs::PRIMITIVES) {
+            const auto vBuilt = dxs::BuildPrimitive(info.shape);
+            assert(!vBuilt.empty() && vBuilt.size() % 3 == 0);
+            for (const auto& v : vBuilt) assert(std::abs(v.x) <= 0.5001f && std::abs(v.y) <= 0.5001f && std::abs(v.z) <= 0.5001f);
+            assert(fs::is_regular_file(dir / fs::u8path(dxs::PrimitiveAssetPath(info.shape))));
+            dxs::Entity mesh; mesh.sName = info.pName; mesh.renderer = dxs::Entity::RendererKind::Mesh;
+            mesh.sModelAsset = dxs::PrimitiveAssetPath(info.shape);
+            meshScene.vEntities.push_back(mesh);
+        }
+        const auto vMeshDraws = dxs::ResolveWorldDraws(meshScene);
+        for (size_t n = 0; n < dxs::PRIMITIVES.size(); ++n) {
+            const auto& draw = vMeshDraws[n];
+            assert(draw.bVisible && draw.pVertices && draw.pShadeRuns);
+            assert(draw.pVertices->size() == dxs::BuildPrimitive(dxs::PRIMITIVES[n].shape).size());
+            std::uint64_t nRuns = 0; for (auto nRun : *draw.pShadeRuns) nRuns += nRun;
+            assert(nRuns == draw.pVertices->size());
+            // 2D shapes (and only those) are flat in XY; Plane lies in XZ.
+            assert(draw.bIs2D == dxs::PRIMITIVES[n].bFlat);
+        }
+        assert(dxs::SaveScene(dir / "mesh.dxs", meshScene, error));
+        dxs::Scene meshLoaded; assert(dxs::LoadScene(dir / "mesh.dxs", meshLoaded, error));
+        assert(meshLoaded.vEntities.size() == dxs::PRIMITIVES.size() && meshLoaded.vEntities[1].renderer == dxs::Entity::RendererKind::Mesh &&
+               meshLoaded.vEntities[1].sModelAsset == "Assets/Primitives/Sphere.x");
+        fs::remove(dir / "mesh.dxs");
+        fs::remove_all(dir / "Assets");
+    }
     fs::remove(dir / "scene.dxs");
     fs::remove(dir / "old.dxs");
     fs::remove(dir / "old2.dxs");

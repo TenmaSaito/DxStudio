@@ -48,6 +48,13 @@ int main() {
     dxs::DrawItem model;
     model.pVertices = pModel;
     vDraws.push_back(model);
+    // Shaded mesh (shade runs) and transparent objects exercise SCENE_TRANSPARENT.
+    model.pShadeRuns = std::make_shared<std::vector<std::uint32_t>>(std::vector<std::uint32_t>{0, 3});
+    model.color.w = 0.4f;
+    vDraws.push_back(model);
+    dxs::DrawItem glass;
+    glass.color = {0.2f, 0.6f, 1.0f, 0.5f};
+    vDraws.push_back(glass);
     for (const auto& entity : scene.vEntities) vDraws.push_back(entity.draw);
 
     const auto exportDir = std::filesystem::path(L"build-direct") / (L"api-export-" + std::to_wstring(GetCurrentProcessId()));
