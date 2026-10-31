@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 add_library(DxStudioCore STATIC
-  src/Engine.cpp src/Primitives.cpp src/Core/Log.cpp src/Core/Coroutine.cpp src/Core/EngineCallbacks.cpp
+  src/Engine.cpp src/Primitives.cpp src/Physics.cpp src/Core/Log.cpp src/Core/Coroutine.cpp src/Core/EngineCallbacks.cpp
   src/Renderer.cpp src/Graphics/ShaderLoader.cpp
   src/Graphics/DeviceD3D12.cpp src/Graphics/DeviceD3D11.cpp src/Graphics/DeviceD3D9.cpp
   third_party/ufbx/ufbx.c)

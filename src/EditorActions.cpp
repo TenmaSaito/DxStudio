@@ -550,6 +550,7 @@ void Editor::Draw() {
     auto items = ResolveWorldDraws(scene);
     std::string error;
     renderer.SetSelection(bGameView ? std::vector<int>{} : vSelectedIndices);
+    renderer.SetDebugLines(bGameView ? std::vector<DirectX::XMFLOAT3>{} : ColliderOutlineSegments(scene), {0.55f, 0.95f, 0.45f, 1.0f});
     const bool rendered = bGameView ? renderer.Render(items, error) : renderer.Render(items, error, nSelected, true, gizmoMode, true);
     if (!rendered) {
         bRendererReady = false;

@@ -58,6 +58,17 @@ Unity 2022 の Dark スキン配色（パネル `#383838`、タブ帯 `#282828`�
 - メッシュは面の向きで 8 段階に陰影が付き、立体感が出ます。2D 図形は XY 平面上にあり、選択・アウトラインも 2D として扱われます。
 - **透明度**: Color の A を 1 未満にするとアルファブレンドで半透明になります（Polygon / Mesh / Model 共通、DX12 / 11 / 9 対応）。不透明物体の後に、カメラから遠い順に描画します。
 
+### 当たり判定と物理（src/Physics.h）
+
+- **Add Component > Physics** に Rigidbody、BoxCollider、SphereCollider を追加しました（Unity と同じ構成）。
+  - Collider だけ: 動かない床・壁。Rigidbody も付けると重力で落ち、ぶつかって止まる・跳ねる・滑ります。
+  - Rigidbody: Mass / Drag / Use Gravity / Is Kinematic / Bounciness / Friction。BoxCollider: Is Trigger / Center / Size。SphereCollider: Is Trigger / Center / Radius。
+  - Box は回転に追従します（OBB）。Scene ビューでは Collider が緑の線で表示されます。
+- スクリプトのコールバック: FixedUpdate、OnCollisionEnter / Stay / Exit(Entity&, const Collision&)、OnTriggerEnter / Stay / Exit(Entity&, Entity& other)。dxs::GetComponent<dxs::Rigidbody>(entity) で AddForce（ForceMode: FORCE / ACCELERATION / IMPULSE / VELOCITY_CHANGE）、Velocity / SetVelocity を使えます。重力は dxs::physics::SetGravity。
+- 物理は 1/50 秒の固定ステップで Update の後に実行され、Play Mode と書き出したゲームの両方で動きます。衝突イベントにはどちらかに Rigidbody が必要です。
+- 現在の制限: 物体は衝突で回転しません（Unity の Freeze Rotation 相当）。形状は Box と Sphere です。
+- 使い方の例は project/Scripts/PhysicsTemplate.h/.cpp（矢印キーで転がし Space でジャンプ、トリガーで色変更）。
+
 ### デリゲートとコールバックインターフェース（`src/Core/Delegate.h`, `src/Core/EngineCallbacks.h`）
 
 ```cpp

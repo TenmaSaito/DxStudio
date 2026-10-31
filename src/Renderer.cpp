@@ -219,6 +219,8 @@ struct Renderer::Impl {
     UINT uBaseVertexCount = 0;
     Camera camera{};
     std::vector<int> vSelection;
+    std::vector<XMFLOAT3> vDebugLines;
+    XMFLOAT4 debugColor{0.55f, 0.95f, 0.45f, 1.0f};
     bool bMarquee = false;
     int nRectX0 = 0, nRectY0 = 0, nRectX1 = 0, nRectY1 = 0;
     int nGizmoHot = -1;
@@ -415,6 +417,12 @@ void Renderer::SetMarquee(bool visible, int x0, int y0, int x1, int y1) {
     p_->nRectX0 = x0; p_->nRectY0 = y0; p_->nRectX1 = x1; p_->nRectY1 = y1;
 }
 void Renderer::SetGizmoHot(int handle) { if (p_) p_->nGizmoHot = handle; }
+void Renderer::SetDebugLines(std::vector<XMFLOAT3> vSegments, const XMFLOAT4& color) {
+    if (!p_) return;
+    if (vSegments.size() % 2) vSegments.pop_back();
+    p_->vDebugLines = std::move(vSegments);
+    p_->debugColor = color;
+}
 
 // ---- Gizmo interaction -----------------------------------------------------------
 int Renderer::HitGizmo(int x, int y, const DrawItem& item, GizmoMode mode) const {
@@ -564,6 +572,14 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
         if (!device.UploadVertices(vModelStarts[nIndex], reinterpret_cast<const Vertex*>(vModel.data()), vModel.size(), error)) return false;
     }
 
+    // Helper lines follow the models in the same dynamic vertex range.
+    UINT uDebugStart = 0, uDebugCount = 0;
+    if (showGrid && !p.vDebugLines.empty() && nCursor + p.vDebugLines.size() <= MAX_VERTEX_COUNT) {
+        uDebugStart = static_cast<UINT>(nCursor);
+        uDebugCount = static_cast<UINT>(p.vDebugLines.size());
+        if (!device.UploadVertices(uDebugStart, reinterpret_cast<const Vertex*>(p.vDebugLines.data()), p.vDebugLines.size(), error)) return false;
+    }
+
     // 2. Scene objects with the project shader (shaded and/or wireframe pass).
     if (!device.BeginFrame(CLEAR_COLOR, error)) return false;
     const float fAspect = static_cast<float>(p.uWidth) / static_cast<float>(p.uHeight);
@@ -652,6 +668,7 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
 
     // 4. Selection outlines (active object last, in the brighter orange).
     device.SetPipeline(PipelineKind::OVERLAY);
+    if (uDebugCount) device.Draw(MakeConstants(vp, p.debugColor), uDebugCount, uDebugStart);
     auto outline = [&](int nIndex) {
         if (nIndex < 0 || static_cast<size_t>(nIndex) >= items.size()) return;
         const auto& item = items[nIndex];

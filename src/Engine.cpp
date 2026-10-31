@@ -62,6 +62,9 @@ std::unordered_map<std::string, Factory>& Components() {
     static std::unordered_map<std::string, Factory> components;
     static const bool builtins = [&] {
         components.emplace("Camera", [] { return std::make_unique<CameraComponent>(); });
+        components.emplace("Rigidbody", [] { return std::make_unique<Rigidbody>(); });
+        components.emplace("BoxCollider", [] { return std::make_unique<BoxCollider>(); });
+        components.emplace("SphereCollider", [] { return std::make_unique<SphereCollider>(); });
         return true;
     }();
     (void)builtins;
@@ -637,6 +640,9 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
             entity.vRuntimeComponents[nIndex]->Update(entity, fDelta);
         }
     }
+
+    // Physics: fixed steps of scaled time (FixedUpdate, contacts, events).
+    SimulatePhysics(scene, fDelta * Time::TimeScale());
 
     // Pass 2: coroutines resume after every Update (Unity order), then
     // LateUpdate, then the Inspector mirror of the live field values.

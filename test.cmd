@@ -13,6 +13,8 @@ call :run CoreTests "tests\CoreTests.cpp project\Scripts\CoroutineTemplate.cpp %
 if errorlevel 1 exit /b 1
 call :run SceneTests "tests\SceneTests.cpp %DXS_ENGINE_SOURCES% project\Scripts\MyComponent.cpp" "%DXS_WINDOW_LIBS% d3dcompiler.lib"
 if errorlevel 1 exit /b 1
+call :run PhysicsTests "tests\PhysicsTests.cpp %DXS_ENGINE_SOURCES%" "%DXS_WINDOW_LIBS% d3dcompiler.lib"
+if errorlevel 1 exit /b 1
 call :run RenderSmoke "tests\RenderSmoke.cpp %DXS_ENGINE_SOURCES% %DXS_RENDER_SOURCES%" "%DXS_RENDER_LIBS% %DXS_WINDOW_LIBS%"
 if errorlevel 1 exit /b 1
 call :run GraphicsApiTests "tests\GraphicsApiTests.cpp %DXS_ENGINE_SOURCES% %DXS_RENDER_SOURCES% project\Scripts\MyComponent.cpp" "%DXS_RENDER_LIBS% %DXS_WINDOW_LIBS%"

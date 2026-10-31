@@ -89,6 +89,9 @@ public:
     std::vector<int> PickRect(int x0, int y0, int x1, int y1, const std::vector<DrawItem>& items) const;
     void SetSelection(const std::vector<int>& indices);
     void SetMarquee(bool visible, int x0, int y0, int x1, int y1);
+    // Scene-view helper lines (e.g. collider outlines): pairs of world-space
+    // points, drawn on top when the grid is shown.
+    void SetDebugLines(std::vector<DirectX::XMFLOAT3> vSegments, const DirectX::XMFLOAT4& color);
     void SetGizmoHot(int handle);
     int HitGizmo(int x, int y, const DrawItem& item, GizmoMode mode) const;
     bool DragGizmo(const DrawItem& start, GizmoMode mode, int axis,

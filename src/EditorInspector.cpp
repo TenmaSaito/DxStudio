@@ -542,7 +542,7 @@ void Editor::ShowTitlebarMenu(HWND header) {
 void Editor::ShowAddComponentMenu() {
     RECT rect{};
     GetWindowRect(componentAdd, &rect);
-    HMENU menu = CreatePopupMenu(), rendering = CreatePopupMenu(), scripts = CreatePopupMenu();
+    HMENU menu = CreatePopupMenu(), rendering = CreatePopupMenu(), physicsMenu = CreatePopupMenu(), scripts = CreatePopupMenu();
     const int count = static_cast<int>(SendMessageW(componentChoice, CB_GETCOUNT, 0, 0));
     std::vector<std::string> attached;
     if (nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size()) attached = scene.vEntities[nSelected].vComponents;
@@ -553,9 +553,12 @@ void Editor::ShowAddComponentMenu() {
         text.resize(length);
         const bool renderer = text == L"MeshRenderer" || text == L"PolygonRenderer" || text == L"ModelRenderer" || text == L"Image";
         const bool isAttached = std::find(attached.begin(), attached.end(), Utf8(text)) != attached.end();
-        AppendMenuW(renderer ? rendering : scripts, MF_STRING | (isAttached ? MF_GRAYED : 0), 1 + nIndex, text.c_str());
+        const bool physicsComponent = text == L"Rigidbody" || text == L"BoxCollider" || text == L"SphereCollider";
+        AppendMenuW(renderer ? rendering : physicsComponent ? physicsMenu : scripts, MF_STRING | (isAttached ? MF_GRAYED : 0), 1 + nIndex,
+                    text.c_str());
     }
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(rendering), L"Rendering");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(physicsMenu), L"Physics");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(scripts), L"Scripts");
     const int choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_CENTERALIGN | TPM_TOPALIGN, (rect.left + rect.right) / 2, rect.bottom, 0, window, nullptr);
     DestroyMenu(menu);

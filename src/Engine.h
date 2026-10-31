@@ -10,6 +10,7 @@
 #include "Primitives.h"
 #include <filesystem>
 #include <concepts>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -93,10 +94,20 @@ template<class T> constexpr EditorField EditField(std::string sName, T& value, b
     else static_assert(!sizeof(T), "DxStudio editor fields support float, int, bool and std::string");
 }
 
+// Contact passed to OnCollisionEnter / Stay / Exit (see Physics.h).
+struct Collision {
+    Entity* pOther = nullptr;            // the other object (valid during the call)
+    int nOtherIndex = -1;                // index in Scene::vEntities
+    DirectX::XMFLOAT3 normal{0, 1, 0};   // points away from the other object, toward this one
+    DirectX::XMFLOAT3 point{0, 0, 0};    // approximate world contact point
+    float fRelativeSpeed = 0.0f;         // closing speed along the normal when it started
+};
+
 // User behavior is defined as a class, matching the component model used by
 // scene-based editors. One instance is kept for each attachment while running.
 //
-// Frame order (same as Unity):  Start (once) -> Update -> coroutines -> LateUpdate
+// Frame order:  Start (once) -> Update -> physics (FixedUpdate, collision /
+// trigger events, 0..n fixed steps) -> coroutines -> LateUpdate
 class Component {
 public:
     virtual ~Component() = default;
@@ -104,6 +115,15 @@ public:
     virtual void Update(Entity&, float fDeltaSeconds) = 0;
     // Runs after every Update and coroutine of the frame (camera follow, etc.).
     virtual void LateUpdate(Entity&, float /*fDeltaSeconds*/) {}
+    // Physics (Physics.h). FixedUpdate runs once per fixed step before the
+    // simulation; the events need a Rigidbody on one of the two objects.
+    virtual void FixedUpdate(Entity&, float /*fFixedDeltaSeconds*/) {}
+    virtual void OnCollisionEnter(Entity&, const Collision&) {}
+    virtual void OnCollisionStay(Entity&, const Collision&) {}
+    virtual void OnCollisionExit(Entity&, const Collision&) {}
+    virtual void OnTriggerEnter(Entity&, Entity& /*other*/) {}
+    virtual void OnTriggerStay(Entity&, Entity& /*other*/) {}
+    virtual void OnTriggerExit(Entity&, Entity& /*other*/) {}
     // Return fields that should be editable in Inspector. A private member may
     // deliberately be exposed by returning EditField() from this member function.
     virtual std::vector<EditorField> EditorFields() { return {}; }
@@ -167,9 +187,25 @@ struct Entity {
 
 constexpr std::size_t MaxComponentsPerEntity = 64;
 
+// Running instance of component T on entity (Play Mode), or nullptr.
+// Example: if (auto* pBody = GetComponent<Rigidbody>(entity)) pBody->AddForce(...);
+template<class T> T* GetComponent(Entity& entity) {
+    for (auto& pComponent : entity.vRuntimeComponents)
+        if (auto* pFound = dynamic_cast<T*>(pComponent.get())) return pFound;
+    return nullptr;
+}
+
+// Runtime-only physics bookkeeping (never serialized).
+struct PhysicsState {
+    float fAccumulator = 0.0f;
+    std::vector<std::uint64_t> vContacts; // entity index pairs touching last step
+    std::vector<std::uint64_t> vTriggers;
+};
+
 struct Scene {
     std::vector<Entity> vEntities;
     Camera camera;
+    PhysicsState physics;
     // Runtime-only base for project-relative model assets; never serialized.
     std::filesystem::path projectRoot;
 };
@@ -228,3 +264,5 @@ void RegisterProjectComponents();
     }
 
 } // namespace dxs
+
+#include "Physics.h" // Rigidbody / colliders are part of the engine API
