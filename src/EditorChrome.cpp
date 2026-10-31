@@ -53,6 +53,10 @@ void Editor::ApplyTheme() {
     theme::ApplyDarkInput(componentChoice);
     for (HWND edit : edits)
         if (edit) SendMessageW(edit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(2, 2));
+    // Unreal: drag inside a numeric field (or use the wheel) to change it.
+    for (int field = 2; field < FIELD_COUNT; ++field)
+        if (edits[field])
+            SetWindowSubclass(edits[field], NumericFieldSubclassProc, static_cast<UINT_PTR>(field), reinterpret_cast<DWORD_PTR>(this));
     // Unity: drag a field's label left/right to scrub its value.
     for (int field = 2; field < FIELD_COUNT; ++field) {
         if (!labels[field]) continue;

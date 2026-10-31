@@ -78,7 +78,14 @@ struct InspectorFieldRow {
     HWND hValue = nullptr; // EDIT, or owner-drawn check box for bool; null for a warning row
     bool bBoolean = false;
     bool bChecked = false;
+    bool bNumeric = false; // float / int: mouse drag and wheel adjust the value
+    bool bInteger = false;
 };
+// Unreal-style numeric field: drag inside the box (or wheel) to change the
+// value; a click without dragging enters text editing with the value selected.
+// uIdSubclass: Transform/Color field index (2..14), or FIELD_SCRUB_COMPONENT + control id.
+constexpr UINT_PTR FIELD_SCRUB_COMPONENT = 0x10000;
+LRESULT CALLBACK NumericFieldSubclassProc(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
 // One attached component shown as a titlebar plus property rows.
 struct InspectorComponentView {
     size_t nComponentIndex = 0;
@@ -112,6 +119,26 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     bool IsInspectorEdit(HWND control) const;
     // True when a Transform / Rendering field holds typed but unapplied text.
     bool InspectorHasPendingEdits() const;
+    // ---- Real-time feedback while editing ----------------------------------
+    // WM_TIMER is only delivered when the queue is empty, so a stream of mouse
+    // moves would starve it. Drags render directly, at most every ~15 ms.
+    ULONGLONG nLastRenderTick = 0;
+    void RequestRender();
+    // Writes one Transform / Color value (field 2..14) straight to the entity.
+    bool SetFieldValue(int field, float fValue);
+    // Live apply of a field while it is being typed (valid numbers only).
+    void ApplyFieldLive(int field);
+    // Updates only the Transform / Color texts (cheap; used during drags).
+    void RefreshTransformFields();
+    // Mouse adjustment of numeric fields (drag inside the box / wheel).
+    int nFieldScrubStartX = 0;
+    float fFieldScrubStartValue = 0.0f;
+    bool bFieldScrubbing = false;
+    bool bFieldPressed = false;
+    // Step per pixel (drag) or per wheel notch, before Shift / Alt modifiers.
+    float FieldScrubStep(UINT_PTR fieldId, bool bWheel) const;
+    // Writes a new numeric value to a Transform field or a component property.
+    void SetScrubbedValue(UINT_PTR fieldId, HWND hEdit, float fValue);
     void ApplyOnFocusLoss(HWND control);
     // ---- Unity/UE shell (menu bar, toolbar, tabs, console, status) ----------
     HWND menuButtons[MENU_COUNT]{};

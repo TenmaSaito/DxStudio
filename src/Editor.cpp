@@ -181,6 +181,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         if ((HIWORD(wp) == EN_SETFOCUS || HIWORD(wp) == EN_KILLFOCUS) && lp)
             InvalidateRect(GetParent(reinterpret_cast<HWND>(lp)), nullptr, FALSE);
         if (HIWORD(wp) == EN_KILLFOCUS && e->IsInspectorEdit(reinterpret_cast<HWND>(lp))) e->ApplyOnFocusLoss(reinterpret_cast<HWND>(lp));
+        // Transform / Color fields follow the keyboard in real time.
+        if (HIWORD(wp) == EN_CHANGE && LOWORD(wp) >= ID_FIRST_EDIT + 2 && LOWORD(wp) < ID_FIRST_EDIT + FIELD_COUNT)
+            e->ApplyFieldLive(LOWORD(wp) - ID_FIRST_EDIT);
         // Inspector property fields commit on check-box clicks and focus loss.
         if (LOWORD(wp) >= ID_COMPONENT_FIELD_FIRST && LOWORD(wp) <= ID_COMPONENT_FIELD_LAST) {
             if (HIWORD(wp) == BN_CLICKED || HIWORD(wp) == EN_KILLFOCUS) e->CommitComponentField(LOWORD(wp), HIWORD(wp) == BN_CLICKED);

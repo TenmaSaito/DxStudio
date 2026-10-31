@@ -2,6 +2,8 @@
 
 #include "EditorWindow.h"
 
+#include <cwctype>
+
 namespace dxs::editor {
 
 void Editor::SyncHierarchy() {
@@ -380,6 +382,8 @@ void Editor::RebuildComponentViews() {
                 row.sField = field;
                 const auto info = std::find_if(fields.begin(), fields.end(), [&](const EditorField& candidate) { return candidate.sName == field; });
                 row.bBoolean = info != fields.end() && info->type == EditorFieldType::Boolean;
+                row.bInteger = info != fields.end() && info->type == EditorFieldType::Integer;
+                row.bNumeric = row.bInteger || (info != fields.end() && info->type == EditorFieldType::Float);
                 const bool readOnly = info != fields.end() && info->bReadOnly;
                 row.hLabel = make(L"STATIC", Wide(field), SS_LEFT | SS_CENTERIMAGE | SS_ENDELLIPSIS | SS_NOPREFIX, 0);
                 if (row.bBoolean) {
@@ -389,6 +393,9 @@ void Editor::RebuildComponentViews() {
                 } else {
                     row.hValue = make(L"EDIT", Wide(value), ES_AUTOHSCROLL | WS_TABSTOP | (readOnly ? ES_READONLY : 0), nFieldId);
                     SendMessageW(row.hValue, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(2, 2));
+                    if (row.bNumeric && !readOnly)
+                        SetWindowSubclass(row.hValue, NumericFieldSubclassProc, FIELD_SCRUB_COMPONENT + static_cast<UINT_PTR>(nFieldId),
+                                          reinterpret_cast<DWORD_PTR>(this));
                 }
                 EnableWindow(row.hValue, !readOnly);
                 ++nFieldId;
@@ -581,6 +588,156 @@ void Editor::ApplyOnFocusLoss(HWND control) {
     const bool bApplied = Apply();
     bQuietApply = false;
     if (!bApplied) Inspect(); // invalid input: show the values the object really has
+}
+
+} // namespace dxs::editor
+namespace dxs::editor {
+
+void Editor::RequestRender() {
+    const ULONGLONG nNow = GetTickCount64();
+    if (nNow - nLastRenderTick >= 15) Draw();
+}
+
+bool Editor::SetFieldValue(int field, float fValue) {
+    if (field < 2 || field > 14 || vSelectedIndices.size() != 1 || nSelected < 0 ||
+        static_cast<size_t>(nSelected) >= scene.vEntities.size() || !std::isfinite(fValue))
+        return false;
+    auto& d = scene.vEntities[nSelected].draw;
+    float* apTargets[] = {&d.position.x, &d.position.y, &d.position.z, &d.rotation.x, &d.rotation.y, &d.rotation.z,
+                          &d.scale.x,    &d.scale.y,    &d.scale.z,    &d.color.x,    &d.color.y,    &d.color.z, &d.color.w};
+    // Rotation fields show degrees; the scene stores radians.
+    *apTargets[field - 2] = field >= 5 && field <= 7 ? DirectX::XMConvertToRadians(fValue) : fValue;
+    return true;
+}
+
+void Editor::ApplyFieldLive(int field) {
+    // Only the field the user is typing in; programmatic SetWindowText of
+    // other fields also sends EN_CHANGE and must not write back.
+    if (field < 2 || field > 14 || GetFocus() != edits[field]) return;
+    const std::wstring sText = Text(edits[field]);
+    if (sText.empty()) return;
+    wchar_t* pEnd = nullptr;
+    const float fValue = std::wcstof(sText.c_str(), &pEnd);
+    while (pEnd && *pEnd && std::iswspace(*pEnd)) ++pEnd;
+    if (!pEnd || *pEnd || pEnd == sText.c_str()) return; // incomplete input such as "-" or "1e"
+    if (SetFieldValue(field, fValue)) RequestRender();
+}
+
+void Editor::RefreshTransformFields() {
+    if (vSelectedIndices.size() != 1 || nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
+    const auto& d = scene.vEntities[nSelected].draw;
+    const float afValues[] = {d.position.x, d.position.y, d.position.z,
+                              DirectX::XMConvertToDegrees(d.rotation.x), DirectX::XMConvertToDegrees(d.rotation.y),
+                              DirectX::XMConvertToDegrees(d.rotation.z), d.scale.x, d.scale.y, d.scale.z,
+                              d.color.x, d.color.y, d.color.z, d.color.w};
+    for (int nIndex = 0; nIndex < 13; ++nIndex) {
+        HWND hEdit = edits[nIndex + 2];
+        if (GetFocus() == hEdit) continue;
+        wchar_t aBuffer[64];
+        swprintf_s(aBuffer, L"%.9g", static_cast<double>(afValues[nIndex]));
+        if (Text(hEdit) != aBuffer) SetWindowTextW(hEdit, aBuffer);
+    }
+}
+
+} // namespace dxs::editor
+namespace dxs::editor {
+
+float Editor::FieldScrubStep(UINT_PTR fieldId, bool bWheel) const {
+    float fStep = 0.01f;                                    // position / scale per pixel
+    if (fieldId >= 5 && fieldId <= 7) fStep = 0.5f;         // rotation (degrees)
+    else if (fieldId >= 11 && fieldId <= 14) fStep = 0.005f; // colour
+    else if (fieldId >= FIELD_SCRUB_COMPONENT) {
+        const InspectorFieldRow* pRow = const_cast<Editor*>(this)->FindFieldRow(static_cast<int>(fieldId - FIELD_SCRUB_COMPONENT), nullptr);
+        fStep = pRow && pRow->bInteger ? 0.1f : 0.01f;      // ints: 1 per 10 pixels
+    }
+    if (bWheel) fStep *= 10.0f;                             // one notch = 10 pixels
+    if (GetKeyState(VK_SHIFT) & 0x8000) fStep *= 10.0f;
+    if (GetKeyState(VK_MENU) & 0x8000) fStep *= 0.1f;
+    return fStep;
+}
+
+void Editor::SetScrubbedValue(UINT_PTR fieldId, HWND hEdit, float fValue) {
+    wchar_t aBuffer[64];
+    if (fieldId >= FIELD_SCRUB_COMPONENT) {
+        const int controlId = static_cast<int>(fieldId - FIELD_SCRUB_COMPONENT);
+        const InspectorFieldRow* pRow = FindFieldRow(controlId, nullptr);
+        if (pRow && pRow->bInteger) swprintf_s(aBuffer, L"%d", static_cast<int>(std::lround(fValue)));
+        else swprintf_s(aBuffer, L"%.6g", static_cast<double>(fValue));
+        SetWindowTextW(hEdit, aBuffer);
+        CommitComponentField(controlId, false);
+    } else {
+        const int field = static_cast<int>(fieldId);
+        if (field >= 11) fValue = std::clamp(fValue, 0.0f, 1.0f);
+        swprintf_s(aBuffer, L"%.6g", static_cast<double>(fValue));
+        SetWindowTextW(hEdit, aBuffer);
+        SendMessageW(hEdit, EM_SETMODIFY, FALSE, 0); // applied directly below
+        SetFieldValue(field, fValue);
+    }
+    RequestRender();
+}
+
+LRESULT CALLBACK NumericFieldSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR fieldId, DWORD_PTR data) {
+    auto* e = reinterpret_cast<Editor*>(data);
+    const bool bEditing = GetFocus() == hwnd; // typing mode: normal edit behaviour
+    auto currentValue = [&](float& fValue) {
+        const std::wstring sText = Text(hwnd);
+        wchar_t* pEnd = nullptr;
+        fValue = std::wcstof(sText.c_str(), &pEnd);
+        return pEnd != sText.c_str() && std::isfinite(fValue);
+    };
+    switch (message) {
+    case WM_SETCURSOR:
+        if (!bEditing && IsWindowEnabled(hwnd)) {
+            SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+            return TRUE;
+        }
+        break;
+    case WM_LBUTTONDOWN:
+        if (bEditing) break;
+        if (!currentValue(e->fFieldScrubStartValue)) break;
+        e->bFieldPressed = true;
+        e->bFieldScrubbing = false;
+        e->nFieldScrubStartX = GET_X_LPARAM(lp);
+        SetCapture(hwnd);
+        return 0;
+    case WM_MOUSEMOVE:
+        if (e->bFieldPressed && GetCapture() == hwnd) {
+            const int dx = GET_X_LPARAM(lp) - e->nFieldScrubStartX;
+            if (!e->bFieldScrubbing && std::abs(dx) < 3) return 0;
+            e->bFieldScrubbing = true;
+            e->SetScrubbedValue(fieldId, hwnd, e->fFieldScrubStartValue + static_cast<float>(dx) * e->FieldScrubStep(fieldId, false));
+            return 0;
+        }
+        break;
+    case WM_LBUTTONUP:
+        if (e->bFieldPressed) {
+            const bool bWasScrubbing = e->bFieldScrubbing;
+            e->bFieldPressed = e->bFieldScrubbing = false;
+            ReleaseCapture();
+            if (!bWasScrubbing) {
+                // Plain click: start typing with the whole value selected.
+                SetFocus(hwnd);
+                SendMessageW(hwnd, EM_SETSEL, 0, -1);
+            }
+            return 0;
+        }
+        break;
+    case WM_CAPTURECHANGED:
+        if (e->bFieldPressed && reinterpret_cast<HWND>(lp) != hwnd) e->bFieldPressed = e->bFieldScrubbing = false;
+        break;
+    case WM_MOUSEWHEEL: {
+        float fValue = 0.0f;
+        // Only a field in typing mode takes the wheel, so scrolling the
+        // Inspector never changes values by accident.
+        if (!bEditing || !IsWindowEnabled(hwnd) || !currentValue(fValue)) break;
+        const float fNotches = static_cast<float>(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA;
+        e->SetScrubbedValue(fieldId, hwnd, fValue + fNotches * e->FieldScrubStep(fieldId, true));
+        SendMessageW(hwnd, EM_SETSEL, 0, -1);
+        return 0;
+    }
+    case WM_NCDESTROY: RemoveWindowSubclass(hwnd, NumericFieldSubclassProc, fieldId); break;
+    }
+    return DefSubclassProc(hwnd, message, wp, lp);
 }
 
 } // namespace dxs::editor

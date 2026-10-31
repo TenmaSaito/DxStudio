@@ -142,7 +142,9 @@ LRESULT CALLBACK LabelDragSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
             wchar_t buffer[64];
             swprintf_s(buffer, L"%.6g", static_cast<double>(value));
             SetWindowTextW(e->edits[index], buffer);
-            e->Apply();
+            SendMessageW(e->edits[index], EM_SETMODIFY, FALSE, 0); // already applied below
+            e->SetFieldValue(index, value);
+            e->RequestRender();
             return 0;
         }
         break;
@@ -538,6 +540,7 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             if (e->drag == Editor::Drag::Select) {
                 if (std::abs(x - e->selectionStart.x) >= 4 || std::abs(y - e->selectionStart.y) >= 4) e->bSelectingRect = true;
                 if (e->bSelectingRect) e->renderer.SetMarquee(true, e->selectionStart.x, e->selectionStart.y, x, y);
+                e->RequestRender();
                 return 0;
             }
             if (e->drag == Editor::Drag::Gizmo) {
@@ -547,7 +550,8 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                                               e->gizmoStartMouse.y, x, y, updated)) {
                         if (wp & MK_SHIFT) SnapGizmo(updated, e->gizmoStartItem, e->gizmoMode, e->nGizmoAxis);
                         e->UpdateGroup(updated);
-                        e->Inspect();
+                        e->RefreshTransformFields(); // full Inspect() per mouse move starved rendering
+                        e->RequestRender();
                     }
                 }
                 return 0;
@@ -574,6 +578,7 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                 }
             }
             e->renderer.SetCamera(e->camera);
+            e->RequestRender();
         } else if (e->bRendererReady && e->nSelected >= 0 && static_cast<size_t>(e->nSelected) < e->scene.vEntities.size()) {
             TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd, 0};
             TrackMouseEvent(&track);

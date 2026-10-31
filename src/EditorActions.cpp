@@ -511,6 +511,7 @@ bool Editor::InitRenderer() {
 
 void Editor::Draw() {
     TickCamera();
+    nLastRenderTick = GetTickCount64();
     if (!bRendererReady || IsIconic(window) || !IsWindowVisible(viewport) || IsIconic(panels[1].window)) return;
     if (bPlaying) {
         const ULONGLONG now = GetTickCount64();
