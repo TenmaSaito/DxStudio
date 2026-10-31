@@ -88,8 +88,14 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
         }
         break;
     case WM_CAPTURECHANGED:
-        e->bHierarchyDragging = false;
-        e->nHierarchyDrag = -1;
+        // Only a capture loss during our own drag cancels it; the list box
+        // also takes and releases capture while it tracks a selection click.
+        if (e->bHierarchyDragging && reinterpret_cast<HWND>(lp) != hwnd) {
+            e->bHierarchyDragging = false;
+            e->nHierarchyDrag = -1;
+            e->nHierarchyHot = -1;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
         break;
     case WM_NCDESTROY: RemoveWindowSubclass(hwnd, HierarchySubclassProc, 1); break;
     }

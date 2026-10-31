@@ -9,7 +9,7 @@ call "%~dp0build-sources.cmd"
 if not exist build-direct mkdir build-direct
 call :run EditorInteractionTests tests\EditorInteractionTests.cpp
 if errorlevel 1 exit /b 1
-call :run CoreTests "tests\CoreTests.cpp %DXS_ENGINE_SOURCES%" "%DXS_WINDOW_LIBS% d3dcompiler.lib"
+call :run CoreTests "tests\CoreTests.cpp project\Scripts\CoroutineTemplate.cpp %DXS_ENGINE_SOURCES%" "%DXS_WINDOW_LIBS% d3dcompiler.lib"
 if errorlevel 1 exit /b 1
 call :run SceneTests "tests\SceneTests.cpp %DXS_ENGINE_SOURCES% project\Scripts\MyComponent.cpp" "%DXS_WINDOW_LIBS% d3dcompiler.lib"
 if errorlevel 1 exit /b 1

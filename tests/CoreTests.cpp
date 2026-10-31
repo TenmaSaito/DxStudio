@@ -2,6 +2,7 @@
 
 #include "Engine.h"
 
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 
@@ -191,6 +192,20 @@ void TestComponentCoroutines() {
     Check(pBlinker && pBlinker->m_nUpdates == 2 && pBlinker->m_bLateAfterUpdate, "Update and LateUpdate order");
     Check(nStarted == 1, "onComponentStarted fired once");
 }
+// The shipped CoroutineTemplate sample must run through all five steps.
+void TestCoroutineTemplate() {
+    dxs::Scene scene;
+    dxs::Entity entity;
+    entity.sName = "Template";
+    std::string error;
+    Check(dxs::AttachComponent(entity, "CoroutineTemplate", error), "CoroutineTemplate is registered");
+    scene.vEntities.push_back(entity);
+    for (int nFrame = 0; nFrame < 300; ++nFrame) dxs::UpdateUserComponents(scene, 1.0f / 60.0f); // 5 s
+    const auto values = dxs::ComponentEditorValues(scene.vEntities[0], 0);
+    const auto step = std::find_if(values.begin(), values.end(), [](const auto& pair) { return pair.first == "Step"; });
+    Check(step != values.end() && step->second == "5", "CoroutineTemplate reaches step 5 within 5 seconds");
+    Check(scene.vEntities[0].draw.position.x > 1.9f && scene.vEntities[0].draw.bVisible, "CoroutineTemplate moved and stopped blinking");
+}
 } // namespace
 
 namespace dxs {
@@ -202,6 +217,7 @@ int main() {
     TestCallbackInterfaces();
     TestCoroutines();
     TestComponentCoroutines();
+    TestCoroutineTemplate();
     if (g_nFailures) return 1;
     std::cout << "Delegate, callback interface and coroutine tests passed.\n";
     return 0;

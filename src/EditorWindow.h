@@ -110,6 +110,8 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     bool bQuietApply = false;
     void ReportApplyError(const std::string& message);
     bool IsInspectorEdit(HWND control) const;
+    // True when a Transform / Rendering field holds typed but unapplied text.
+    bool InspectorHasPendingEdits() const;
     void ApplyOnFocusLoss(HWND control);
     // ---- Unity/UE shell (menu bar, toolbar, tabs, console, status) ----------
     HWND menuButtons[MENU_COUNT]{};

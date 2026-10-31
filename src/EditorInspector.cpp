@@ -567,6 +567,14 @@ bool Editor::IsInspectorEdit(HWND control) const {
     return false;
 }
 
+bool Editor::InspectorHasPendingEdits() const {
+    for (HWND control : {materialEdit, textureEdit})
+        if (control && SendMessageW(control, EM_GETMODIFY, 0, 0)) return true;
+    for (int field = 0; field < FIELD_COUNT; ++field)
+        if (field != 1 && edits[field] && SendMessageW(edits[field], EM_GETMODIFY, 0, 0)) return true;
+    return false;
+}
+
 void Editor::ApplyOnFocusLoss(HWND control) {
     if (bQuietApply || vSelectedIndices.size() != 1 || !SendMessageW(control, EM_GETMODIFY, 0, 0)) return;
     bQuietApply = true;

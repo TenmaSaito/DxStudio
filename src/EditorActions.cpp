@@ -636,7 +636,9 @@ void Editor::Command(int id, int notification) {
         const int caretRow = static_cast<int>(SendMessageW(hierarchy, LB_GETCARETINDEX, 0, 0));
         const int caret =
             caretRow >= 0 && static_cast<size_t>(caretRow) < vHierarchyRows.size() ? vHierarchyRows[caretRow] : -1;
-        if (!Apply()) {
+        // Apply only typed-but-unapplied values: Apply() rebuilds the list,
+        // which would break a drag that starts with this click.
+        if (InspectorHasPendingEdits() && !Apply()) {
             SyncHierarchy();
             return;
         }

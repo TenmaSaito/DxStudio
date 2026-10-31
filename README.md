@@ -89,7 +89,7 @@ Unity C# のコルーチンと同じ感覚で書けます。`StartCoroutine` は
 | `StartCoroutine` / `StopCoroutine` / `StopAllCoroutines` | `Component` の同名メンバー関数 |
 | `Time.deltaTime` / `Time.timeScale` | `dxs::Time::DeltaTime()` / `dxs::Time::SetTimeScale()` |
 
-サンプルとして `project/Scripts/PulseController.cpp` を追加しました（拡大→待機→縮小→点滅を繰り返します）。コルーチン内で例外が起きると、そのコルーチンだけを止めて Console にエラーを出します。`Component` には `LateUpdate` も追加しました。
+使い方のテンプレートとして `project/Scripts/CoroutineTemplate.h/.cpp` を用意しました。待機・1フレーム待ち・子コルーチン・条件待ち・停止をすべて含み、Unity C# との対応表をコメントに載せています。コピーしてクラス名を変えれば、そのまま自分のコンポーネントになります（Add Component > Scripts > CoroutineTemplate でアタッチして Play すると動きを確認できます）。別のサンプルとして `project/Scripts/PulseController.cpp`（拡大→待機→縮小→点滅を繰り返す）もあります。コルーチン内で例外が起きると、そのコルーチンだけを止めて Console にエラーを出します。`Component` には `LateUpdate` も追加しました。
 
 ### 可読性と命名規則
 
