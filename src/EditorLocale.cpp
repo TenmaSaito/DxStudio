@@ -444,6 +444,7 @@ std::filesystem::path PreferencesPath() {
     return std::filesystem::path(aBuffer) / L"DxStudio" / PREFERENCES_FILE;
 }
 
+// UTF-8 → UTF-16
 std::wstring Widen(const std::string& sText) {
     if (sText.empty()) return {};
     const int nLength = MultiByteToWideChar(CP_UTF8, 0, sText.data(), static_cast<int>(sText.size()), nullptr, 0);
@@ -452,6 +453,7 @@ std::wstring Widen(const std::string& sText) {
     return sResult;
 }
 
+// UTF-16 → UTF-8
 std::string Narrow(const std::wstring& sText) {
     if (sText.empty()) return {};
     const int nLength =
@@ -540,10 +542,12 @@ const wchar_t* Tr(const wchar_t* pEnglish) {
     return pEnglish; // 訳なし: 英語のまま
 }
 
+// std::wstring 版
 std::wstring Tr(const std::wstring& sEnglish) {
     return Tr(sEnglish.c_str());
 }
 
+// UTF-8 版（エラーメッセージ用）
 std::string TrUtf8(const std::string& sEnglish) {
     if (g_language == EditorLanguage::ENGLISH) return sEnglish;
     return Narrow(Tr(Widen(sEnglish)));

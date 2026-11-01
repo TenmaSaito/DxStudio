@@ -1,9 +1,22 @@
-// Editor chrome: theme registration, menu bar, tooltips and owner-drawn rows.
+//==================================================================================
+//
+// エディターの画面の枠のソースファイル [EditorChrome.cpp]
+//
+// テーマの登録、メニューバー、ツールチップ、自前で描く行（Hierarchy / インスペクター）、
+// 表示言語の切り替えを扱う。
+//
+//==================================================================================
 
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "EditorWindow.h"
 
 namespace dxs::editor {
 
+//==================================================================================
+// --- ツールチップの追加処理 ---
+//==================================================================================
 void Editor::AddTooltip(HWND control, const wchar_t* text) {
     if (!tooltip || !control) return;
     TTTOOLINFOW info{sizeof(info)};
@@ -17,6 +30,9 @@ void Editor::AddTooltip(HWND control, const wchar_t* text) {
     }
 }
 
+//==================================================================================
+// --- テーマの適用処理（自前で描くボタンの見た目の登録） ---
+//==================================================================================
 void Editor::ApplyTheme() {
     using theme::ButtonRole;
     using theme::Icon;
@@ -64,7 +80,7 @@ void Editor::ApplyTheme() {
         }
     }
 
-    // Unreal: drag inside a numeric field (or use the wheel) to change it.
+    // Unreal と同じ: 数値欄の中をドラッグ（またはホイール）して値を変える
     for (int field = 2; field < FIELD_COUNT; ++field) {
         if (edits[field]) {
             SetWindowSubclass(edits[field], NumericFieldSubclassProc, static_cast<UINT_PTR>(field),
@@ -72,7 +88,7 @@ void Editor::ApplyTheme() {
         }
     }
 
-    // Unity: drag a field's label left/right to scrub its value.
+    // Unity と同じ: 欄のラベルを左右にドラッグして値を変える
     for (int field = 2; field < FIELD_COUNT; ++field) {
         if (!labels[field]) continue;
         SetWindowLongPtrW(labels[field], GWL_STYLE, GetWindowLongPtrW(labels[field], GWL_STYLE) | SS_NOTIFY);
@@ -99,6 +115,9 @@ void Editor::ApplyTheme() {
     AddTooltip(inspectorEnabled, L"Active (visible in the scene)");
 }
 
+//==================================================================================
+// --- 入力欄の枠の余白の取得処理 ---
+//==================================================================================
 RECT Editor::BoxInset(HWND control) const {
     if (!control) return {};
     if (control == hierarchySearch) return {20, 2, 4, 2};
@@ -115,6 +134,9 @@ RECT Editor::BoxInset(HWND control) const {
     return {};
 }
 
+//==================================================================================
+// --- 入力欄の枠の描画処理 ---
+//==================================================================================
 void Editor::PaintInputBoxes(HDC dc, HWND panel) {
     const HWND focus = GetFocus();
     auto paintBox = [&](HWND control) {
@@ -159,6 +181,9 @@ void Editor::PaintInputBoxes(HDC dc, HWND panel) {
     }
 }
 
+//==================================================================================
+// --- エンティティの種類のアイコンの取得処理 ---
+//==================================================================================
 theme::Icon Editor::EntityIcon(const Entity& entity) const {
     if (std::find(entity.vComponents.begin(), entity.vComponents.end(), "Camera") != entity.vComponents.end()) {
         return theme::Icon::CAMERA;
@@ -173,6 +198,9 @@ theme::Icon Editor::EntityIcon(const Entity& entity) const {
     }
 }
 
+//==================================================================================
+// --- Hierarchy の行の描画処理 ---
+//==================================================================================
 void Editor::DrawHierarchyRow(const DRAWITEMSTRUCT& item) {
     HDC dc = item.hDC;
     const RECT rect = item.rcItem;
@@ -192,7 +220,7 @@ void Editor::DrawHierarchyRow(const DRAWITEMSTRUCT& item) {
                 : hot       ? theme::COLOR_ROW_HOVER
                             : theme::COLOR_PANEL);
     if (hot && bHierarchyDragging && entityIndex != nHierarchyDrag) {
-        theme::Frame(dc, rect, theme::COLOR_TAB_ACCENT); // drop target
+        theme::Frame(dc, rect, theme::COLOR_TAB_ACCENT); // ドロップ先
     }
 
     const int mid = (rect.top + rect.bottom) / 2;
@@ -221,6 +249,9 @@ void Editor::DrawHierarchyRow(const DRAWITEMSTRUCT& item) {
     }
 }
 
+//==================================================================================
+// --- コンポーネントの一覧の行の描画処理 ---
+//==================================================================================
 void Editor::DrawComponentRow(const DRAWITEMSTRUCT& item) {
     HDC dc = item.hDC;
     const RECT rect = item.rcItem;
@@ -239,6 +270,9 @@ void Editor::DrawComponentRow(const DRAWITEMSTRUCT& item) {
                      DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 }
 
+//==================================================================================
+// --- プロパティの一覧の行の描画処理 ---
+//==================================================================================
 void Editor::DrawFieldRow(const DRAWITEMSTRUCT& item) {
     HDC dc = item.hDC;
     const RECT rect = item.rcItem;
@@ -268,6 +302,9 @@ void Editor::DrawFieldRow(const DRAWITEMSTRUCT& item) {
     }
 }
 
+//==================================================================================
+// --- インスペクターの見出し（アイコン / Tag / Layer）の描画処理 ---
+//==================================================================================
 void Editor::DrawInspectorStatic(const DRAWITEMSTRUCT& item) {
     HDC dc = item.hDC;
     RECT rect = item.rcItem;
@@ -290,6 +327,9 @@ void Editor::DrawInspectorStatic(const DRAWITEMSTRUCT& item) {
     theme::DrawIcon(dc, theme::Icon::DROPDOWN, arrow, theme::COLOR_TEXT_DIM);
 }
 
+//==================================================================================
+// --- パネルの作成処理 ---
+//==================================================================================
 void Editor::CreatePanels() {
     WNDCLASSEXW wc{sizeof(wc)};
     wc.hInstance = instance;
@@ -305,10 +345,10 @@ void Editor::CreatePanels() {
                                    WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | (i == 2 ? WS_VSCROLL : 0), 0, 0, 100, 100, window,
                                    nullptr, instance, &p);
         if (i == 2) {
-            theme::ApplyDarkControl(p.window); // dark Inspector scrollbar
+            theme::ApplyDarkControl(p.window); // インスペクターのスクロールバーをダークにする
         }
 
-        // Unity-style tab strip chrome: float / minimize / close icons.
+        // Unity 風のタブの帯のボタン: フロート / 最小化 / 閉じる
         const theme::Icon icons[] = {theme::Icon::FLOAT, theme::Icon::MINIMIZE, theme::Icon::CLOSE};
         const wchar_t* labels[] = {L"Float", L"Minimize", L"Close"};
         const int ids[] = {ID_PANEL_FLOAT + i, ID_PANEL_MINIMIZE + i, ID_PANEL_HIDE + i};
@@ -350,6 +390,9 @@ void Editor::CreatePanels() {
     CreateMainMenu();
 }
 
+//==================================================================================
+// --- メインメニューの作成処理 ---
+//==================================================================================
 void Editor::CreateMainMenu() {
     HMENU file = CreatePopupMenu(), edit = CreatePopupMenu(), assets = CreatePopupMenu(), objects = CreatePopupMenu();
     HMENU components = CreatePopupMenu(), build = CreatePopupMenu(), windows = CreatePopupMenu(), help = CreatePopupMenu();
@@ -401,7 +444,7 @@ void Editor::CreateMainMenu() {
     AppendMenuL(objects, MF_STRING, ID_DUPLICATE, L"Duplicate\tCtrl+D");
     AppendMenuL(objects, MF_STRING, ID_DELETE, L"Delete selection");
 
-    // Component menu: every registered class, like Unity's Component menu.
+    // Component メニュー: Unity と同じく、登録済みのクラスをすべて並べる
     const auto names = RegisteredComponentNames();
     for (size_t i = 0; i < names.size() && ID_ADD_COMPONENT_MENU_FIRST + static_cast<int>(i) <= ID_ADD_COMPONENT_MENU_LAST; ++i) {
         AppendMenuL(components, MF_STRING, ID_ADD_COMPONENT_MENU_FIRST + static_cast<int>(i), Wide("Add " + names[i]).c_str());
@@ -438,6 +481,9 @@ void Editor::CreateMainMenu() {
     }
 }
 
+//==================================================================================
+// --- 表示言語の切り替え処理 ---
+//==================================================================================
 //==================================================================================
 // --- 表示言語の切り替え処理 ---
 //==================================================================================
@@ -503,6 +549,9 @@ void Editor::ApplyLanguage(EditorLanguage language) {
     SetStatus(L"Language changed.");
 }
 
+//==================================================================================
+// --- メインメニューを開く処理 ---
+//==================================================================================
 void Editor::OpenMainMenu(int index) {
     if (index < 0 || index >= MENU_COUNT) return;
     UpdateMenuChecks();
@@ -517,6 +566,9 @@ void Editor::OpenMainMenu(int index) {
     }
 }
 
+//==================================================================================
+// --- メニューのチェックの更新処理 ---
+//==================================================================================
 void Editor::UpdateMenuChecks() {
     const auto api = projectSettings.graphicsApi;
     const int apiCommand = api == GraphicsApi::DIRECT3D12   ? ID_GRAPHICS_D3D12
@@ -532,7 +584,10 @@ void Editor::UpdateMenuChecks() {
     }
 }
 
-// Scene "Shaded" and Game "Free Aspect" dropdowns of the view toolbar.
+//==================================================================================
+// --- ビューのツールバーのドロップダウンの表示処理 ---
+//==================================================================================
+// シーンビューの「Shaded」と、ゲームビューの「Free Aspect」のドロップダウン
 void Editor::ShowViewDropdown(int id) {
     const bool drawModes = id == ID_DRAW_MODE_MENU;
     HWND button = drawModes ? drawModeButton : aspectButton;
@@ -555,6 +610,9 @@ void Editor::ShowViewDropdown(int id) {
     }
 }
 
+//==================================================================================
+// --- メインのツールバーのドロップダウンの表示処理 ---
+//==================================================================================
 void Editor::ShowToolbarDropdown(int id) {
     HWND button = id == ID_GRAPHICS_MENU ? graphicsButton : layoutButton;
     RECT r{};

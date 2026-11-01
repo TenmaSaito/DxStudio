@@ -1,9 +1,20 @@
+//==================================================================================
+//
+// エディターの見た目（テーマ）のソースファイル [EditorTheme.cpp]
+//
+// 色・アイコン・自前で描くボタン・フォント・Windows のダークモードの設定を扱う。
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "EditorTheme.h"
 
 #include <commctrl.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
-// GDI+ provides anti-aliased vector icons (GDI lines are aliased).
+// GDI+ でアンチエイリアス付きのベクターのアイコンを描く（GDI の線はギザギザになる）
 #include <algorithm>
 
 namespace Gdiplus {
@@ -23,19 +34,24 @@ using std::min;
 
 namespace dxs::theme {
 namespace {
+//**********************************************************************************
+// *** テーマの状態（プロセスで 1 つ） ***
+//**********************************************************************************
 struct ThemeState {
-    std::unordered_map<HWND, ButtonSpec> buttonSpecs;
-    std::unordered_set<HWND> hotWindows;
-    std::unordered_map<COLORREF, HBRUSH> brushes;
-    Fonts fonts;
-    ULONG_PTR gdiplusToken = 0;
+    std::unordered_map<HWND, ButtonSpec> buttonSpecs; // ボタン → 見た目
+    std::unordered_set<HWND> hotWindows;              // マウスが乗っているウィンドウ
+    std::unordered_map<COLORREF, HBRUSH> brushes;     // 色 → ブラシ（キャッシュ）
+    Fonts fonts;                                      // フォント
+    ULONG_PTR gdiplusToken = 0;                       // GDI+ の初期化のトークン
 };
 
+// --- テーマの状態の取得処理 ---
 ThemeState& State() {
     static ThemeState state;
     return state;
 }
 
+// --- GDI+ の初期化処理（初回のみ） ---
 void EnsureGdiplus() {
     auto& state = State();
     if (state.gdiplusToken) return;
@@ -43,11 +59,15 @@ void EnsureGdiplus() {
     Gdiplus::GdiplusStartup(&state.gdiplusToken, &input, nullptr);
 }
 
+// --- COLORREF → GDI+ の色への変換処理 ---
 Gdiplus::Color ToColor(COLORREF color, BYTE nAlpha = 255) {
     return Gdiplus::Color(nAlpha, GetRValue(color), GetGValue(color), GetBValue(color));
 }
 
-// ---- Hover tracking ---------------------------------------------------------------
+//**********************************************************************************
+// *** マウスが乗ったときの追跡 ***
+//**********************************************************************************
+// --- ボタンのサブクラスプロシージャ（WM_MOUSEMOVE / WM_MOUSELEAVE で再描画する） ---
 LRESULT CALLBACK HoverSubclassProc(HWND hWindow, UINT uMessage, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR) {
     auto& state = State();
     switch (uMessage) {
@@ -64,7 +84,7 @@ LRESULT CALLBACK HoverSubclassProc(HWND hWindow, UINT uMessage, WPARAM wParam, L
         state.hotWindows.erase(hWindow);
         InvalidateRect(hWindow, nullptr, FALSE);
         break;
-    case WM_ERASEBKGND: return 1; // owner draw paints every pixel; avoids flicker
+    case WM_ERASEBKGND: return 1; // 自前の描画で全体を塗るので、背景の消去はしない（ちらつき防止）
     case WM_NCDESTROY:
         state.hotWindows.erase(hWindow);
         state.buttonSpecs.erase(hWindow);
@@ -75,16 +95,22 @@ LRESULT CALLBACK HoverSubclassProc(HWND hWindow, UINT uMessage, WPARAM wParam, L
     return DefSubclassProc(hWindow, uMessage, wParam, lParam);
 }
 
-// ---- Vector icon helpers ------------------------------------------------------------
+//**********************************************************************************
+// *** ベクターのアイコンの描画 ***
+//**********************************************************************************
+// アイコンを描くキャンバス（0..1 の座標で描くと、box の大きさに合わせて拡大される）
 struct IconCanvas {
     Gdiplus::Graphics& graphics;
-    float fX, fY, fSize; // unit square mapped to [fX, fX + fSize]
+    float fX, fY, fSize; // 0..1 の正方形を [fX, fX + fSize] に対応させる
     COLORREF color;
 
     Gdiplus::PointF P(float fU, float fV) const { return {fX + fU * fSize, fY + fV * fSize}; }
 
     float S(float fValue) const { return fValue * fSize; }
 
+    //==============================================================================
+    // --- 折れ線の描画処理 ---
+    //==============================================================================
     void Stroke(std::initializer_list<Gdiplus::PointF> points, float fWidth = 0.09f, BYTE nAlpha = 255) const {
         Gdiplus::Pen pen(ToColor(color, nAlpha), std::max(1.0f, S(fWidth)));
         pen.SetLineJoin(Gdiplus::LineJoinRound);
@@ -94,12 +120,18 @@ struct IconCanvas {
         graphics.DrawLines(&pen, v.data(), static_cast<INT>(v.size()));
     }
 
+    //==============================================================================
+    // --- 多角形の塗りつぶし処理 ---
+    //==============================================================================
     void FillPolygon(std::initializer_list<Gdiplus::PointF> points, BYTE nAlpha = 255) const {
         Gdiplus::SolidBrush brush(ToColor(color, nAlpha));
         std::vector<Gdiplus::PointF> v(points);
         graphics.FillPolygon(&brush, v.data(), static_cast<INT>(v.size()));
     }
 
+    //==============================================================================
+    // --- 多角形の輪郭の描画処理 ---
+    //==============================================================================
     void StrokePolygon(std::initializer_list<Gdiplus::PointF> points, float fWidth = 0.08f, BYTE nAlpha = 255) const {
         Gdiplus::Pen pen(ToColor(color, nAlpha), std::max(1.0f, S(fWidth)));
         pen.SetLineJoin(Gdiplus::LineJoinRound);
@@ -107,6 +139,9 @@ struct IconCanvas {
         graphics.DrawPolygon(&pen, v.data(), static_cast<INT>(v.size()));
     }
 
+    //==============================================================================
+    // --- 四角形の描画処理（bFill で塗りつぶし） ---
+    //==============================================================================
     void Rect(float fU, float fV, float fW, float fH, bool bFill, float fWidth = 0.08f, BYTE nAlpha = 255) const {
         if (bFill) {
             Gdiplus::SolidBrush brush(ToColor(color, nAlpha));
@@ -117,6 +152,9 @@ struct IconCanvas {
         }
     }
 
+    //==============================================================================
+    // --- 楕円の描画処理（bFill で塗りつぶし） ---
+    //==============================================================================
     void Ellipse(float fU, float fV, float fW, float fH, bool bFill, float fWidth = 0.08f, BYTE nAlpha = 255) const {
         if (bFill) {
             Gdiplus::SolidBrush brush(ToColor(color, nAlpha));
@@ -127,6 +165,9 @@ struct IconCanvas {
         }
     }
 
+    //==============================================================================
+    // --- 円弧の描画処理（角度は度） ---
+    //==============================================================================
     void Arc(float fU, float fV, float fW, float fH, float fStart, float fSweep, float fWidth = 0.09f) const {
         Gdiplus::Pen pen(ToColor(color), std::max(1.0f, S(fWidth)));
         pen.SetStartCap(Gdiplus::LineCapRound);
@@ -135,6 +176,7 @@ struct IconCanvas {
     }
 };
 
+// --- 矢印の描画処理（fHead = 矢じりの大きさ） ---
 void Arrow(const IconCanvas& c, Gdiplus::PointF from, Gdiplus::PointF to, float fHead) {
     c.Stroke({from, to});
     const float fDx = to.X - from.X, fDy = to.Y - from.Y;
@@ -147,6 +189,7 @@ void Arrow(const IconCanvas& c, Gdiplus::PointF from, Gdiplus::PointF to, float 
                    {to.X - fUx * fHeadPx + fUy * fHeadPx * 0.7f, to.Y - fUy * fHeadPx - fUx * fHeadPx * 0.7f}});
 }
 
+// --- 立方体のアイコンの描画処理 ---
 void CubeIcon(const IconCanvas& c, bool bFilled) {
     const auto top = c.P(0.5f, 0.08f), left = c.P(0.1f, 0.3f), right = c.P(0.9f, 0.3f), center = c.P(0.5f, 0.52f);
     const auto bottom = c.P(0.5f, 0.94f), bottomLeft = c.P(0.1f, 0.72f), bottomRight = c.P(0.9f, 0.72f);
@@ -161,6 +204,7 @@ void CubeIcon(const IconCanvas& c, bool bFilled) {
     }
 }
 
+// --- フォルダーのアイコンの描画処理 ---
 void FolderIcon(const IconCanvas& c, bool bOpen) {
     c.FillPolygon({c.P(0.06f, 0.2f), c.P(0.4f, 0.2f), c.P(0.5f, 0.32f), c.P(0.94f, 0.32f), c.P(0.94f, 0.84f), c.P(0.06f, 0.84f)},
                   210);
@@ -169,8 +213,8 @@ void FolderIcon(const IconCanvas& c, bool bOpen) {
     }
 }
 
-// "i" (bExclamation = false) or "!" centred at (fU, fV), drawn as shapes:
-// GDI+ text would enumerate every installed font on first use.
+// --- 「i」（bExclamation = false）または「!」を (fU, fV) の中央に図形で描く処理 ---
+// GDI+ の文字を使うと、初回にインストール済みのフォントをすべて調べてしまうため。
 void Glyph(const IconCanvas& c, bool bExclamation, COLORREF color, float fU, float fV) {
     const IconCanvas ink{c.graphics, c.fX, c.fY, c.fSize, color};
     if (bExclamation) {
@@ -182,6 +226,9 @@ void Glyph(const IconCanvas& c, bool bExclamation, COLORREF color, float fU, flo
     }
 }
 
+//==================================================================================
+// --- アイコンごとの描画処理 ---
+//==================================================================================
 void DrawVectorIcon(const IconCanvas& c, Icon icon) {
     using Gdiplus::PointF;
     switch (icon) {
@@ -366,14 +413,17 @@ void DrawVectorIcon(const IconCanvas& c, Icon icon) {
     }
 }
 
+//==================================================================================
+// --- ボタンの種類ごとの背景色の取得処理 ---
+//==================================================================================
 COLORREF RoleBackground(ButtonRole role, HWND hButton) {
     switch (role) {
     case ButtonRole::TOOL:
     case ButtonRole::TRANSPORT:
     case ButtonRole::MENU_BAR:
     case ButtonRole::DROPDOWN:
-        // Toolbar children of the main window sit on the toolbar colour; tool
-        // buttons inside a panel sit on the panel's toolbar strip.
+        // メインウィンドウのツールバーのボタンはツールバーの色の上、パネル内の
+        // ツールのボタンはパネルのツールバーの帯の上にある
         return GetParent(hButton) && GetAncestor(hButton, GA_PARENT) == GetAncestor(hButton, GA_ROOT) ? COLOR_TOOLBAR
                                                                                                       : COLOR_PANEL;
     case ButtonRole::HEADER: return COLOR_HEADER;
@@ -382,7 +432,12 @@ COLORREF RoleBackground(ButtonRole role, HWND hButton) {
 }
 } // namespace
 
-// ---- Public API -----------------------------------------------------------------------
+//**********************************************************************************
+// *** 公開している関数 ***
+//**********************************************************************************
+//==================================================================================
+// --- アイコンの描画処理 ---
+//==================================================================================
 void DrawIcon(HDC hDc, Icon icon, const RECT& box, COLORREF color) {
     if (icon == Icon::NONE) return;
     EnsureGdiplus();
@@ -396,6 +451,9 @@ void DrawIcon(HDC hDc, Icon icon, const RECT& box, COLORREF color) {
     DrawVectorIcon(canvas, icon);
 }
 
+//==================================================================================
+// --- ボタンの見た目の登録処理 ---
+//==================================================================================
 void SetButtonSpec(HWND hButton, const ButtonSpec& spec) {
     if (!hButton) return;
     auto& state = State();
@@ -408,6 +466,9 @@ void SetButtonSpec(HWND hButton, const ButtonSpec& spec) {
     InvalidateRect(hButton, nullptr, FALSE);
 }
 
+//==================================================================================
+// --- ボタンの見た目の取得 / 変更処理 ---
+//==================================================================================
 ButtonSpec GetButtonSpec(HWND hButton) {
     auto& state = State();
     const auto found = state.buttonSpecs.find(hButton);
@@ -428,10 +489,16 @@ void SetButtonExpanded(HWND hButton, bool bExpanded) {
     SetButtonSpec(hButton, spec);
 }
 
+//==================================================================================
+// --- マウスが乗っているかの判定処理 ---
+//==================================================================================
 bool IsHot(HWND hWindow) {
     return State().hotWindows.count(hWindow) != 0;
 }
 
+//==================================================================================
+// --- ボタンの描画処理 ---
+//==================================================================================
 void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
     const auto spec = GetButtonSpec(item.hwndItem);
     HDC hDc = item.hDC;
@@ -505,7 +572,7 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
     }
 
     if (spec.role == ButtonRole::HEADER) {
-        // Unity component header: separator, foldout, icon, bold title, menu.
+        // Unity のコンポーネントの見出し: 区切り線、折りたたみ、アイコン、太字の名前、メニュー
         Fill(hDc, rect, fill);
         Line(hDc, rect.left, rect.top, rect.right, rect.top, COLOR_SEPARATOR);
         const int nMid = (rect.top + rect.bottom) / 2;
@@ -562,7 +629,7 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
         Line(hDc, rect.left, rect.top, rect.right, rect.top, COLOR_TAB_ACCENT, 2);
     }
 
-    // Content: [icon] [text] [chevron]
+    // 中身: [アイコン] [文字] [∨]
     const int nHeight = rect.bottom - rect.top;
     const int nIconSize = std::clamp(nHeight - 12, 10, 16);
     const bool bHasText = !sText.empty() && spec.role != ButtonRole::ICON && spec.role != ButtonRole::TRANSPORT;
@@ -611,6 +678,9 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
     }
 }
 
+//==================================================================================
+// --- 描画の基本関数（塗りつぶし / 枠 / 線 / 角丸 / 文字） ---
+//==================================================================================
 void Fill(HDC hDc, const RECT& rect, COLORREF color) {
     FillRect(hDc, &rect, Brush(color));
 }
@@ -648,6 +718,9 @@ void DrawLabel(HDC hDc, const std::wstring& sText, RECT rect, COLORREF color, HF
     SetBkMode(hDc, nOldMode);
 }
 
+//==================================================================================
+// --- ブラシの取得処理（色ごとにキャッシュ） ---
+//==================================================================================
 HBRUSH Brush(COLORREF color) {
     auto& brushes = State().brushes;
     const auto found = brushes.find(color);
@@ -657,6 +730,9 @@ HBRUSH Brush(COLORREF color) {
     return hBrush;
 }
 
+//==================================================================================
+// --- 2 色の混合処理（fAmount = 0 で a、1 で b） ---
+//==================================================================================
 COLORREF Blend(COLORREF a, COLORREF b, float fAmount) {
     auto mix = [fAmount](int nA, int nB) {
         return static_cast<BYTE>(std::clamp(nA + (nB - nA) * fAmount, 0.0f, 255.0f));
@@ -664,6 +740,9 @@ COLORREF Blend(COLORREF a, COLORREF b, float fAmount) {
     return RGB(mix(GetRValue(a), GetRValue(b)), mix(GetGValue(a), GetGValue(b)), mix(GetBValue(a), GetBValue(b)));
 }
 
+//==================================================================================
+// --- フォントの作成処理（DPI に合わせる） ---
+//==================================================================================
 void InitializeFonts(UINT uDpi) {
     auto& fonts = State().fonts;
     for (HFONT hFont : {fonts.hRegular, fonts.hBold, fonts.hSmall, fonts.hTitle}) {
@@ -683,6 +762,9 @@ void InitializeFonts(UINT uDpi) {
     EnsureGdiplus();
 }
 
+//==================================================================================
+// --- フォントの取得処理 ---
+//==================================================================================
 const Fonts& GetFonts() {
     auto& fonts = State().fonts;
     if (!fonts.hRegular) {
@@ -692,6 +774,9 @@ const Fonts& GetFonts() {
     return fonts;
 }
 
+//==================================================================================
+// --- テーマの資源の解放処理（終了時） ---
+//==================================================================================
 void ReleaseResources() {
     auto& state = State();
     for (auto& [color, hBrush] : state.brushes) {
@@ -708,26 +793,33 @@ void ReleaseResources() {
     state.fonts = {};
 }
 
-// ---- Dark mode -------------------------------------------------------------------------
+//**********************************************************************************
+// *** Windows のダークモード ***
+//**********************************************************************************
 namespace {
-// Undocumented but widely used uxtheme exports (Windows 10 1809+). They are
-// resolved by ordinal and every call is optional.
+// 非公開だが広く使われている uxtheme の関数（Windows 10 1809 以降）。
+// 番号（序数）で取得し、どの呼び出しも無ければ何もしない。
 using SetPreferredAppModeFn = int(WINAPI*)(int);
 using AllowDarkModeForWindowFn = BOOL(WINAPI*)(HWND, BOOL);
 using FlushMenuThemesFn = void(WINAPI*)();
 
+// --- uxtheme.dll の取得処理 ---
 HMODULE UxTheme() {
     static HMODULE hModule = LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     return hModule;
 }
 
 template<class T>
+// --- uxtheme の関数を番号で取得する処理（無ければ nullptr） ---
 T UxOrdinal(int nOrdinal) {
     HMODULE hModule = UxTheme();
     return hModule ? reinterpret_cast<T>(reinterpret_cast<void*>(GetProcAddress(hModule, MAKEINTRESOURCEA(nOrdinal)))) : nullptr;
 }
 } // namespace
 
+//==================================================================================
+// --- ダークモードの有効化処理（プロセス全体） ---
+//==================================================================================
 void EnableDarkMode() {
     constexpr int FORCE_DARK = 2;
     if (auto pSetMode = UxOrdinal<SetPreferredAppModeFn>(135)) {
@@ -741,6 +833,9 @@ void EnableDarkMode() {
     EnsureGdiplus();
 }
 
+//==================================================================================
+// --- タイトルバーのダーク化処理 ---
+//==================================================================================
 void ApplyDarkTitleBar(HWND hWindow) {
     if (auto pAllow = UxOrdinal<AllowDarkModeForWindowFn>(133)) {
         pAllow(hWindow, TRUE);
@@ -753,11 +848,14 @@ void ApplyDarkTitleBar(HWND hWindow) {
     }
 
     const COLORREF caption = COLOR_TOOLBAR;
-    DwmSetWindowAttribute(hWindow, DWMWA_CAPTION, &caption, sizeof(caption)); // Windows 11 only
+    DwmSetWindowAttribute(hWindow, DWMWA_CAPTION, &caption, sizeof(caption)); // Windows 11 のみ
     const COLORREF border = RGB(45, 45, 45);
     DwmSetWindowAttribute(hWindow, DWMWA_BORDER, &border, sizeof(border));
 }
 
+//==================================================================================
+// --- コントロールのダーク化処理 ---
+//==================================================================================
 void ApplyDarkControl(HWND hControl) {
     if (auto pAllow = UxOrdinal<AllowDarkModeForWindowFn>(133)) {
         pAllow(hControl, TRUE);
@@ -766,6 +864,9 @@ void ApplyDarkControl(HWND hControl) {
     SetWindowTheme(hControl, L"DarkMode_Explorer", nullptr);
 }
 
+//==================================================================================
+// --- 入力欄のダーク化処理 ---
+//==================================================================================
 void ApplyDarkInput(HWND hControl) {
     if (auto pAllow = UxOrdinal<AllowDarkModeForWindowFn>(133)) {
         pAllow(hControl, TRUE);
