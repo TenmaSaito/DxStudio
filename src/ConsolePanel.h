@@ -1,8 +1,16 @@
+//==================================================================================
+//
+// Console パネルのヘッダーファイル [ConsolePanel.h]
+//
+// Unity 風の Console ウィンドウ: dxs::Debug のログを種類のアイコン付きで表示し、
+// 種類ごとの絞り込み（件数付き）、Collapse（同じログをまとめる）、Clear ができる。
+//
+//==================================================================================
 #pragma once
 
-// Unity-style Console window: shows dxs::Debug log entries with level icons,
-// per-level filters with counts, Collapse and Clear.
-
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -10,8 +18,8 @@
 
 namespace dxs {
 
-// Creates the console as a child of `hParent`. Resize it with MoveWindow.
+// hParent の子として Console を作る。大きさは MoveWindow で変える。
 HWND CreateConsolePanel(HWND hParent, HINSTANCE hInstance);
-void ClearConsolePanel(HWND hPanel);
+void ClearConsolePanel(HWND hPanel); // 表示中のログをすべて消す
 
 } // namespace dxs
