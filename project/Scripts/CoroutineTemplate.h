@@ -1,4 +1,12 @@
+//==================================================================================
+//
+// コルーチンのテンプレートのヘッダーファイル [CoroutineTemplate.h]
+//
+//==================================================================================
 #pragma once
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Engine.h"
 
 // ============================================================================
@@ -59,10 +67,10 @@ private:
     dxs::Coroutine MoveBy(dxs::Entity& entity, float fDistance, float fSeconds); // 子コルーチン
     dxs::Coroutine BlinkForever(dxs::Entity& entity);                            // 止めるまで続くコルーチン
 
-    float m_fMoveDistance = 2.0f;
-    float m_fMoveSeconds = 1.0f;
-    int m_nSpinFrames = 60;
-    bool m_bBlink = true;
+    float m_fMoveDistance = 2.0f; // 移動する距離
+    float m_fMoveSeconds = 1.0f;  // 移動にかける秒数
+    int m_nSpinFrames = 60;       // 回転するフレーム数
+    bool m_bBlink = true;         // 点滅するか
     int m_nStep = 0;                    // いま何番目の手順か（Inspector で確認用）
     float m_fElapsed = 0.0f;            // Update で数える経過時間（WaitUntil の例で使用）
     dxs::CoroutineHandle m_blinkHandle; // StopCoroutine 用に保持するハンドル

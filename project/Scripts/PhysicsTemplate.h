@@ -1,4 +1,12 @@
+//==================================================================================
+//
+// 物理のテンプレートのヘッダーファイル [PhysicsTemplate.h]
+//
+//==================================================================================
 #pragma once
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Engine.h"
 
 // ============================================================================
@@ -53,8 +61,8 @@
 //  ・Is Kinematic の Rigidbody は重力で落ちず、スクリプトで動かします。
 //    動的な物体を押し出し、衝突イベントも受け取ります。
 
-// IInputReceiver: PlayerInput calls OnInputAction for Jump (event style);
-// Move is polled in FixedUpdate (polling style). Both styles work.
+// IInputReceiver: Jump は PlayerInput が OnInputAction を呼ぶ（イベントで受け取る方法）。
+// Move は FixedUpdate で毎回読む（読みに行く方法）。どちらの方法も使える。
 class PhysicsTemplate final : public dxs::Component, public dxs::IInputReceiver {
 public:
     void Start(dxs::Entity& entity) override;
@@ -76,6 +84,6 @@ private:
     float m_fMoveForce = 12.0f; // N（Mass 1 なら 12 m/s^2）
     float m_fJumpSpeed = 5.0f;  // m/s
     bool m_bGrounded = false;   // 読み取り専用で Inspector に表示
-    bool m_bJumpRequested = false;
-    DirectX::XMFLOAT4 m_originalColor{1, 1, 1, 1};
+    bool m_bJumpRequested = false;                 // 次の物理ステップでジャンプするか
+    DirectX::XMFLOAT4 m_originalColor{1, 1, 1, 1}; // トリガーから出たときに戻す色
 };

@@ -1,9 +1,17 @@
+//==================================================================================
+//
+// 伸び縮みするコンポーネントのヘッダーファイル [PulseController.h]
+//
+// コルーチンの例（Unity の IEnumerator + StartCoroutine）。
+// 物体に「PulseController」を付けて Play を押すと、大きくなる → 待つ → 小さくなる →
+// 3 回点滅する、を繰り返す。Inspector の値は変更できる。
+//
+//==================================================================================
 #pragma once
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Engine.h"
-
-// Coroutine sample (Unity: IEnumerator + StartCoroutine).
-// Attach "PulseController" to an object and press Play: it grows, waits,
-// shrinks, blinks three times and repeats. Inspector values are editable.
 class PulseController final : public dxs::Component {
 public:
     void Start(dxs::Entity& entity) override;
@@ -15,11 +23,11 @@ public:
     }
 
 private:
-    dxs::Coroutine PulseLoop(dxs::Entity& entity);
-    dxs::Coroutine ScaleTo(dxs::Entity& entity, float fTarget);
-    dxs::Coroutine Blink(dxs::Entity& entity);
+    dxs::Coroutine PulseLoop(dxs::Entity& entity);              // 繰り返しの本体
+    dxs::Coroutine ScaleTo(dxs::Entity& entity, float fTarget); // 拡大率を fTarget まで変える
+    dxs::Coroutine Blink(dxs::Entity& entity);                  // 点滅する
 
-    float m_fPulseSeconds = 0.5f;
-    float m_fWaitSeconds = 1.0f;
-    int m_nBlinkCount = 3;
+    float m_fPulseSeconds = 0.5f; // 大きさを変えるのにかける秒数
+    float m_fWaitSeconds = 1.0f;  // 大きいまま待つ秒数
+    int m_nBlinkCount = 3;        // 点滅する回数
 };
