@@ -42,6 +42,36 @@ std::string PathUtf8(const std::filesystem::path& path) {
     return {reinterpret_cast<const char*>(text.data()), text.size()};
 }
 
+// --- X ファイルの文字列を UTF-8 にする処理 ---
+// 日本語のツールが書き出した X ファイルは、名前やテクスチャのパスが Shift-JIS のことが多い。
+// UTF-8 として正しければそのまま、そうでなければ Shift-JIS（CP932）→ システムの既定の順に変換する。
+std::string ToUtf8(const std::string& sText) {
+    if (sText.empty()) return sText;
+
+    const int nSourceLength = static_cast<int>(sText.size());
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, sText.data(), nSourceLength, nullptr, 0) > 0) return sText;
+
+    for (const UINT uCodePage : {932u, static_cast<UINT>(CP_ACP)}) {
+        const int nWide = MultiByteToWideChar(uCodePage, MB_ERR_INVALID_CHARS, sText.data(), nSourceLength, nullptr, 0);
+        if (nWide <= 0) continue;
+
+        std::wstring sWide(static_cast<std::size_t>(nWide), L'\0');
+        MultiByteToWideChar(uCodePage, 0, sText.data(), nSourceLength, sWide.data(), nWide);
+        const int nUtf8 = WideCharToMultiByte(CP_UTF8, 0, sWide.data(), nWide, nullptr, 0, nullptr, nullptr);
+        std::string sResult(static_cast<std::size_t>(nUtf8), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, sWide.data(), nWide, sResult.data(), nUtf8, nullptr, nullptr);
+        return sResult;
+    }
+
+    // どの文字コードでも読めない: 読めない文字を ? にして ASCII だけ残す
+    std::string sResult;
+    for (const char c : sText) {
+        sResult += static_cast<unsigned char>(c) < 0x80 ? c : '?';
+    }
+
+    return sResult;
+}
+
 // --- 識別子に使える文字か（英数字と _） ---
 bool IsIdentifierChar(char c) {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
@@ -221,11 +251,14 @@ bool ParseMaterialAt(const std::string& sText, std::size_t nWord, XMaterialInfo&
     }
 
     const std::size_t nNameBegin = nPos;
-    while (nPos < sText.size() && (IsIdentifierChar(sText[nPos]) || sText[nPos] == '-' || sText[nPos] == '.')) {
+
+    // 名前は英数字のほか、日本語（Shift-JIS / UTF-8 の 0x80 以上のバイト）も使われる
+    while (nPos < sText.size() && (IsIdentifierChar(sText[nPos]) || sText[nPos] == '-' || sText[nPos] == '.' ||
+                                   static_cast<unsigned char>(sText[nPos]) >= 0x80)) {
         ++nPos;
     }
 
-    material.sName = sText.substr(nNameBegin, nPos - nNameBegin);
+    material.sName = ToUtf8(sText.substr(nNameBegin, nPos - nNameBegin));
     while (nPos < sText.size() && std::isspace(static_cast<unsigned char>(sText[nPos])) != 0) {
         ++nPos;
     }
@@ -253,7 +286,8 @@ bool ParseMaterialAt(const std::string& sText, std::size_t nWord, XMaterialInfo&
         const std::size_t nQuote = sText.find('"', nTexture);
         const std::size_t nQuoteEnd = nQuote == std::string::npos ? nQuote : sText.find('"', nQuote + 1);
         if (nQuoteEnd != std::string::npos && nQuoteEnd < nClose) {
-            material.sTexture = sText.substr(nQuote + 1, nQuoteEnd - nQuote - 1);
+            // 先に UTF-8 にする（Shift-JIS の 2 バイト目に \ と同じ値が来る文字があるため）
+            material.sTexture = ToUtf8(sText.substr(nQuote + 1, nQuoteEnd - nQuote - 1));
             std::replace(material.sTexture.begin(), material.sTexture.end(), '\\', '/');
 
             // X ファイルの文字列では \\ が \ を表すため、続いた / を 1 つにまとめる
@@ -455,7 +489,7 @@ std::filesystem::path UniqueFilePath(const std::filesystem::path& folder, const 
 //==================================================================================
 // --- X ファイルの Material の読み取り処理 ---
 //==================================================================================
-bool ReadXMaterials(const std::filesystem::path& xFile, std::vector<XMaterialInfo>& vOut, std::string& error) {
+static bool ReadXMaterialsImpl(const std::filesystem::path& xFile, std::vector<XMaterialInfo>& vOut, std::string& error) {
     error.clear();
     vOut.clear();
 
@@ -497,8 +531,8 @@ bool ReadXMaterials(const std::filesystem::path& xFile, std::vector<XMaterialInf
 //==================================================================================
 // --- X ファイルからのマテリアルファイルの作成処理 ---
 //==================================================================================
-bool CreateMaterialsFromX(const std::filesystem::path& projectRoot, const std::filesystem::path& xFile,
-                          std::vector<std::string>& vCreatedAssets, std::string& error) {
+static bool CreateMaterialsFromXImpl(const std::filesystem::path& projectRoot, const std::filesystem::path& xFile,
+                                     std::vector<std::string>& vCreatedAssets, std::string& error) {
     vCreatedAssets.clear();
 
     std::vector<XMaterialInfo> vMaterials;
@@ -559,7 +593,7 @@ bool CreateMaterialsFromX(const std::filesystem::path& projectRoot, const std::f
 //==================================================================================
 // --- FBX → X ファイルの変換処理 ---
 //==================================================================================
-bool ConvertFbxToX(const std::filesystem::path& fbxFile, const std::filesystem::path& xFile, std::string& error) {
+static bool ConvertFbxToXImpl(const std::filesystem::path& fbxFile, const std::filesystem::path& xFile, std::string& error) {
     error.clear();
 
     // FBX の読み込み（法線が無ければ生成する）
@@ -663,6 +697,39 @@ bool ConvertFbxToX(const std::filesystem::path& fbxFile, const std::filesystem::
     }
 
     return WriteFileAtomically(xFile, BuildXText(vVertices, vFaceMaterials, vMaterials, bHasUv), error);
+}
+
+//==================================================================================
+// --- 公開している関数（例外を外に出さない） ---
+//==================================================================================
+// ファイル名の変換などで標準ライブラリが例外を投げても、エディターが落ちないよう
+// ここで捕まえて false とエラーの文字列にする。
+bool ReadXMaterials(const std::filesystem::path& xFile, std::vector<XMaterialInfo>& vOut, std::string& error) {
+    try {
+        return ReadXMaterialsImpl(xFile, vOut, error);
+    } catch (const std::exception& exception) {
+        error = std::string("Unexpected error while reading the X file: ") + exception.what();
+        return false;
+    }
+}
+
+bool CreateMaterialsFromX(const std::filesystem::path& projectRoot, const std::filesystem::path& xFile,
+                          std::vector<std::string>& vCreatedAssets, std::string& error) {
+    try {
+        return CreateMaterialsFromXImpl(projectRoot, xFile, vCreatedAssets, error);
+    } catch (const std::exception& exception) {
+        error = std::string("Unexpected error while creating the material: ") + exception.what();
+        return false;
+    }
+}
+
+bool ConvertFbxToX(const std::filesystem::path& fbxFile, const std::filesystem::path& xFile, std::string& error) {
+    try {
+        return ConvertFbxToXImpl(fbxFile, xFile, error);
+    } catch (const std::exception& exception) {
+        error = std::string("Unexpected error while converting the FBX file: ") + exception.what();
+        return false;
+    }
 }
 
 } // namespace dxs

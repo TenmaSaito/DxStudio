@@ -179,6 +179,125 @@ void TestFbxToX(const fs::path& root) {
     assert(!error.empty());
 }
 
+//==================================================================================
+// --- 日本語のツールが書き出した形の X ファイルのテスト ---
+//==================================================================================
+// ・先頭に template の宣言（template MeshFace / template Mesh など）が並ぶ
+// ・Frame の中に Mesh があり、FrameTransformMatrix で位置がずれている
+// ・テクスチャのパスとマテリアル名が Shift-JIS（2 バイト目が \ と同じ値の「表」を含む）
+void TestToolExportedX(const fs::path& root) {
+    // 「素材」= 91 66 8D DE、「表」= 95 5C、「赤」= 90 D4（Shift-JIS）
+    const std::string sTexture = "C:\\\\Users\\\\\x91\x66\x8D\xDE\\\\\x95\x5C.png";
+    const std::string sText = std::string(R"(xof 0302txt 0064
+template MeshFace {
+ <3D82AB5F-62DA-11cf-AB39-0020AF71E433>
+ DWORD nFaceVertexIndices;
+ array DWORD faceVertexIndices[nFaceVertexIndices];
+}
+
+template Mesh {
+ <3D82AB44-62DA-11cf-AB39-0020AF71E433>
+ DWORD nVertices;
+ array Vector vertices[nVertices];
+ DWORD nFaces;
+ array MeshFace faces[nFaces];
+ [...]
+}
+
+template Material {
+ <3D82AB4D-62DA-11cf-AB39-0020AF71E433>
+ ColorRGBA faceColor;
+ FLOAT power;
+ ColorRGB specularColor;
+ ColorRGB emissiveColor;
+ [...]
+}
+
+Header {
+ 1;
+ 0;
+ 1;
+}
+
+Frame Left {
+ FrameTransformMatrix {
+  1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0;;
+ }
+ Mesh {
+  3;
+  0.0;0.0;0.0;,
+  1.0;0.0;0.0;,
+  0.0;1.0;0.0;;
+  1;
+  3;0,1,2;;
+  MeshMaterialList {
+   1;
+   1;
+   0;;
+   Material )") + "\x90\xD4" + R"( {
+    1.000000;0.000000;0.000000;1.000000;;
+    5.000000;
+    0.000000;0.000000;0.000000;;
+    0.000000;0.000000;0.000000;;
+    TextureFilename {
+     ")" + sTexture + R"(";
+    }
+   }
+  }
+ }
+}
+
+Frame Right {
+ FrameTransformMatrix {
+  1.0,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,0.0,10.0,0.0,0.0,1.0;;
+ }
+ Mesh RightMesh {
+  3;
+  0.0;0.0;0.0;,
+  1.0;0.0;0.0;,
+  0.0;1.0;0.0;;
+  1;
+  3;0,1,2;;
+ }
+}
+)";
+
+    const fs::path xFile = root / L"Assets" / L"Models" / L"Tool.x";
+    fs::create_directories(xFile.parent_path());
+    {
+        std::ofstream out(xFile, std::ios::binary);
+        out << sText;
+    }
+
+    // メッシュ: template の宣言を読み飛ばし、2 つの Mesh を両方読む。
+    // 右の Mesh は Frame の行列で x = +10 にずれるので、正規化後は左右の端に分かれる。
+    const auto draw = dxs::MeshRenderer(xFile).BuildDrawItem(dxs::Entity{});
+    assert(draw.pVertices && draw.pVertices->size() == 6);
+    float fMinX = 1.0f, fMaxX = -1.0f;
+    for (const auto& vertex : *draw.pVertices) {
+        fMinX = std::min(fMinX, vertex.x);
+        fMaxX = std::max(fMaxX, vertex.x);
+    }
+
+    assert(std::abs(fMinX + 0.5f) < 1e-4f && std::abs(fMaxX - 0.5f) < 1e-4f);
+
+    // マテリアル: Shift-JIS の名前とテクスチャのパスを UTF-8 にして読む（落ちないこと）
+    std::vector<dxs::XMaterialInfo> vMaterials;
+    std::string error;
+    assert(dxs::ReadXMaterials(xFile, vMaterials, error));
+    assert(vMaterials.size() == 1);
+    assert(vMaterials[0].sName == "\xE8\xB5\xA4");                                          // 「赤」
+    assert(vMaterials[0].sTexture == "C:/Users/\xE7\xB4\xA0\xE6\x9D\x90/\xE8\xA1\xA8.png"); // C:/Users/素材/表.png
+
+    std::vector<std::string> vCreated;
+    assert(dxs::CreateMaterialsFromX(root, xFile, vCreated, error));
+    assert(vCreated.size() == 1 && vCreated[0] == "Assets/Models/Tool.dxmat");
+    dxs::Material material;
+    assert(dxs::LoadMaterial(root / fs::u8path(vCreated[0]), material, error));
+    assert(material.sTextureAsset == vMaterials[0].sTexture); // プロジェクトの外のパスは書いてあるまま
+    assert(std::abs(material.baseColor.x - 1.0f) < 1e-6f && std::abs(material.baseColor.y) < 1e-6f);
+}
+
 } // namespace
 
 //==================================================================================
@@ -192,6 +311,7 @@ int main() {
 
     TestMaterialsFromX(root);
     TestFbxToX(root);
+    TestToolExportedX(root);
 
     fs::remove_all(root, ec);
     std::cout << "ModelConvertTests passed\n";

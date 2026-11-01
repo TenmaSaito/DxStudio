@@ -209,6 +209,183 @@ struct NumberScanner {
     }
 };
 
+// --- 位置 nOpen の '{' に対応する '}' の位置を探す処理（文字列の中は数えない。無ければ npos） ---
+size_t MatchingBrace(const std::string& text, size_t nOpen) {
+    int nDepth = 0;
+    bool bInString = false;
+    for (size_t nPos = nOpen; nPos < text.size(); ++nPos) {
+        const char c = text[nPos];
+        if (c == '"') {
+            bInString = !bInString;
+        } else if (!bInString && c == '{') {
+            ++nDepth;
+        } else if (!bInString && c == '}') {
+            --nDepth;
+            if (nDepth == 0) return nPos;
+        }
+    }
+
+    return std::string::npos;
+}
+
+// --- X ファイルの Mesh の本体（'{' の直後から）を読み、world で変換して三角形を追加する処理 ---
+// 書式: 頂点数; x;y;z;, ...; 面数; 頂点数;番号,番号,...;, ...;（その後の子ブロックは読まない）
+bool ParseXMeshBody(const char* pBegin, const char* pEnd, const DirectX::XMFLOAT4X4& world, Mesh& triangles) {
+    using namespace DirectX;
+    NumberScanner scan{pBegin, pEnd};
+    const XMMATRIX matrix = XMLoadFloat4x4(&world);
+
+    // 頂点
+    int nVertices{};
+    if (!scan.NextInt(nVertices) || nVertices < 3 || nVertices > 1000000) return false;
+    std::vector<XMFLOAT3> vPoints(static_cast<size_t>(nVertices));
+    for (auto& point : vPoints) {
+        double x, y, z;
+        if (!scan.Next(x) || !scan.Next(y) || !scan.Next(z)) return false;
+        const XMVECTOR position = XMVector3TransformCoord(
+            XMVectorSet(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z), 1.0f), matrix);
+        XMStoreFloat3(&point, position);
+    }
+
+    // 面（多角形を扇状に三角形へ分割する）
+    int nFaces{};
+    if (!scan.NextInt(nFaces) || nFaces < 1 || nFaces > 1000000) return false;
+    for (int nFace = 0; nFace < nFaces; ++nFace) {
+        int nCorners{};
+        if (!scan.NextInt(nCorners) || nCorners < 3 || nCorners > 1024) return false;
+        std::vector<int> vIds(static_cast<size_t>(nCorners));
+        for (int& nId : vIds) {
+            if (!scan.NextInt(nId) || nId < 0 || nId >= nVertices) return false;
+        }
+
+        for (int nCorner = 1; nCorner + 1 < nCorners; ++nCorner) {
+            triangles.push_back(vPoints[vIds[0]]);
+            triangles.push_back(vPoints[vIds[nCorner]]);
+            triangles.push_back(vPoints[vIds[nCorner + 1]]);
+        }
+
+        if (triangles.size() > 1000000) return false;
+    }
+
+    return true;
+}
+
+//==================================================================================
+// --- X ファイル（テキスト形式）のすべての Mesh を三角形リストにする処理 ---
+//==================================================================================
+// ・template の宣言（template Mesh { ... } など）は読み飛ばす
+// ・Frame の FrameTransformMatrix を、子から親の順に掛けて頂点を変換する
+//   （X ファイルの行列は行ベクトル用: 頂点 * 子の行列 * 親の行列）
+// ・Mesh の中の子ブロック（法線、UV、マテリアル）は読まない
+bool ParseXMeshes(const std::string& text, Mesh& triangles) {
+    using namespace DirectX;
+
+    // ヘッダー（xof 0303txt 0032 など）を確認し、1 行目の後から読む
+    if (text.size() < 16 || text.compare(0, 4, "xof ") != 0 || text.compare(8, 3, "txt") != 0) return false;
+    size_t nPos = text.find('\n');
+    if (nPos == std::string::npos) return false;
+
+    // '{' ごとに、外側のワールド行列を積んでおく（'}' で戻す）
+    XMFLOAT4X4 world;
+    XMStoreFloat4x4(&world, XMMatrixIdentity());
+    std::vector<XMFLOAT4X4> vOuter;
+    auto isIdentifierChar = [](char c) {
+        return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+    };
+
+    while (nPos < text.size()) {
+        const char c = text[nPos];
+
+        // コメント（// または #）と文字列は読み飛ばす
+        if ((c == '/' && nPos + 1 < text.size() && text[nPos + 1] == '/') || c == '#') {
+            nPos = text.find('\n', nPos);
+            continue;
+        }
+
+        if (c == '"') {
+            const size_t nClose = text.find('"', nPos + 1);
+            nPos = nClose == std::string::npos ? text.size() : nClose + 1;
+            continue;
+        }
+
+        if (c == '{') {
+            vOuter.push_back(world);
+            ++nPos;
+            continue;
+        }
+
+        if (c == '}') {
+            if (!vOuter.empty()) {
+                world = vOuter.back();
+                vOuter.pop_back();
+            }
+
+            ++nPos;
+            continue;
+        }
+
+        // 数字で始まる語（1.0e-5 など）と記号は読み飛ばす
+        if (!std::isalpha(static_cast<unsigned char>(c)) && c != '_') {
+            ++nPos;
+            continue;
+        }
+
+        const size_t nWordBegin = nPos;
+        while (nPos < text.size() && isIdentifierChar(text[nPos])) {
+            ++nPos;
+        }
+
+        const std::string sWord = text.substr(nWordBegin, nPos - nWordBegin);
+        if (sWord == "template") {
+            // テンプレートの宣言: ブロックごと読み飛ばす
+            const size_t nOpen = text.find('{', nPos);
+            const size_t nClose = nOpen == std::string::npos ? nOpen : MatchingBrace(text, nOpen);
+            if (nClose == std::string::npos) return false;
+            nPos = nClose + 1;
+        } else if (sWord == "FrameTransformMatrix") {
+            // 親の Frame のワールド行列に、この Frame の行列を掛ける
+            const size_t nOpen = text.find('{', nPos);
+            const size_t nClose = nOpen == std::string::npos ? nOpen : MatchingBrace(text, nOpen);
+            if (nClose == std::string::npos) return false;
+            NumberScanner scan{text.data() + nOpen + 1, text.data() + nClose};
+            XMFLOAT4X4 local;
+            for (int nIndex = 0; nIndex < 16; ++nIndex) {
+                double dValue{};
+                if (!scan.Next(dValue)) return false;
+                local.m[nIndex / 4][nIndex % 4] = static_cast<float>(dValue);
+            }
+
+            const XMFLOAT4X4& parent = vOuter.empty() ? world : vOuter.back(); // vOuter.back() = Frame の外側
+            XMStoreFloat4x4(&world, XMMatrixMultiply(XMLoadFloat4x4(&local), XMLoadFloat4x4(&parent)));
+            nPos = nClose + 1;
+        } else if (sWord == "Mesh") {
+            // Mesh [名前] { ... }: 名前の後が '{' でなければ別の語（参照など）
+            size_t nOpen = nPos;
+            while (nOpen < text.size() && std::isspace(static_cast<unsigned char>(text[nOpen]))) {
+                ++nOpen;
+            }
+
+            // 名前には日本語（0x80 以上のバイト）も使われる
+            while (nOpen < text.size() && (isIdentifierChar(text[nOpen]) || text[nOpen] == '-' || text[nOpen] == '.' ||
+                                           static_cast<unsigned char>(text[nOpen]) >= 0x80)) {
+                ++nOpen;
+            }
+
+            while (nOpen < text.size() && std::isspace(static_cast<unsigned char>(text[nOpen]))) {
+                ++nOpen;
+            }
+
+            if (nOpen >= text.size() || text[nOpen] != '{') continue;
+            const size_t nClose = MatchingBrace(text, nOpen);
+            if (nClose == std::string::npos) return false;
+            if (!ParseXMeshBody(text.data() + nOpen + 1, text.data() + nClose, world, triangles)) return false;
+            nPos = nClose + 1;
+        }
+    }
+
+    return !triangles.empty();
+}
+
 // --- メッシュを単位ボックス [-0.5, 0.5] に収める処理（中心を原点へ、最も長い辺を 1 に） ---
 void Normalize(Mesh& mesh) {
     if (mesh.empty()) return;
@@ -261,37 +438,8 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
     std::vector<DirectX::XMFLOAT3> points;
     Mesh triangles;
     if (_wcsicmp(ext.c_str(), L".x") == 0) {
-        // DirectX のテキスト形式: Mesh { 頂点数; 頂点...; 面数; 面（頂点数; 番号...）... }
-        const auto begin = text.find("Mesh");
-        const auto brace = begin == std::string::npos ? begin : text.find('{', begin);
-        if (brace == std::string::npos) return {};
-        NumberScanner scan{text.data() + brace + 1, text.data() + text.size()};
-        int count{};
-        if (!scan.NextInt(count) || count < 3 || count > 1000000) return {};
-        points.resize(count);
-        for (auto& v : points) {
-            double x, y, z;
-            if (!scan.Next(x) || !scan.Next(y) || !scan.Next(z)) return {};
-            v = {static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)};
-        }
-
-        int faces{};
-        if (!scan.NextInt(faces) || faces < 1 || faces > 1000000) return {};
-        for (int f = 0; f < faces; ++f) {
-            int n{};
-            if (!scan.NextInt(n) || n < 3 || n > 1024) return {};
-            std::vector<int> ids(n);
-            for (int& id : ids) {
-                if (!scan.NextInt(id) || id < 0 || id >= count) return {};
-            }
-
-            // 多角形を扇状に三角形へ分割する
-            for (int i = 1; i + 1 < n; ++i) {
-                triangles.push_back(points[ids[0]]);
-                triangles.push_back(points[ids[i]]);
-                triangles.push_back(points[ids[i + 1]]);
-            }
-        }
+        // DirectX のテキスト形式（template の宣言、Frame の階層、複数の Mesh に対応）
+        if (!ParseXMeshes(text, triangles)) return {};
     } else if (_wcsicmp(ext.c_str(), L".fbx") == 0) {
         // FBX: ufbx で読み込む
         ufbx_load_opts opts{};
