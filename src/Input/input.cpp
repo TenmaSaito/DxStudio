@@ -20,7 +20,10 @@ namespace dxs {
 bool CWin32InputSource::HasFocus() {
     HWND hForeground = GetForegroundWindow();
     DWORD dwProcess = 0;
-    if (hForeground) GetWindowThreadProcessId(hForeground, &dwProcess);
+    if (hForeground) {
+        GetWindowThreadProcessId(hForeground, &dwProcess);
+    }
+
     return hForeground && dwProcess == GetCurrentProcessId();
 }
 
@@ -29,6 +32,7 @@ bool CWin32InputSource::HasFocus() {
 //==================================================================================
 int ScanCodeToVirtualKey(int nScanCode) {
     if (nScanCode <= 0 || nScanCode >= NUM_KEY_MAX) return 0;
+
     // 0x80 以上の DIK コードは E0 付きの拡張キー。MapVirtualKey で正しく
     // 変換できない物があるため、主なキーはここで直接対応させる。
     switch (nScanCode) {
@@ -57,6 +61,7 @@ int ScanCodeToVirtualKey(int nScanCode) {
     case 0xB7: return VK_SNAPSHOT;
     default: break;
     }
+
     const UINT uScan = nScanCode >= 0x80 ? (0xE000u | static_cast<UINT>(nScanCode & 0x7F)) : static_cast<UINT>(nScanCode);
     return static_cast<int>(MapVirtualKeyW(uScan, MAPVK_VSC_TO_VK_EX));
 }
@@ -66,18 +71,26 @@ void CWin32InputSource::ReadKeyboard(BYTE aState[NUM_KEY_MAX]) {
     static int s_aVirtualKey[NUM_KEY_MAX] = {};
     static bool s_bMapped = false;
     if (!s_bMapped) {
-        for (int nCode = 0; nCode < NUM_KEY_MAX; ++nCode) s_aVirtualKey[nCode] = ScanCodeToVirtualKey(nCode);
+        for (int nCode = 0; nCode < NUM_KEY_MAX; ++nCode) {
+            s_aVirtualKey[nCode] = ScanCodeToVirtualKey(nCode);
+        }
+
         s_bMapped = true;
     }
-    for (int nCode = 0; nCode < NUM_KEY_MAX; ++nCode)
+
+    for (int nCode = 0; nCode < NUM_KEY_MAX; ++nCode) {
         aState[nCode] = s_aVirtualKey[nCode] && (GetAsyncKeyState(s_aVirtualKey[nCode]) & 0x8000) ? 0x80 : 0x00;
+    }
 }
 
 // --- マウスの読み取り処理 ---
 void CWin32InputSource::ReadMouse(BYTE aButtons[3], POINT& cursor) {
     // 左右入れ替えの設定は GetAsyncKeyState 側で処理される（物理ボタンで読む）
     const int aVirtualKey[3] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON};
-    for (int nButton = 0; nButton < 3; ++nButton) aButtons[nButton] = (GetAsyncKeyState(aVirtualKey[nButton]) & 0x8000) ? 0x80 : 0x00;
+    for (int nButton = 0; nButton < 3; ++nButton) {
+        aButtons[nButton] = (GetAsyncKeyState(aVirtualKey[nButton]) & 0x8000) ? 0x80 : 0x00;
+    }
+
     GetCursorPos(&cursor);
 }
 
@@ -96,6 +109,7 @@ void CWin32InputSource::SetJoypadVibration(int nPadID, const XINPUT_VIBRATION& v
 // *** 入力クラス（基底） ***
 //**********************************************************************************
 CInput::CInput() {}
+
 CInput::~CInput() {}
 
 // --- 初期化 / 終了処理 ---
@@ -104,10 +118,14 @@ HRESULT CInput::Init(const HINSTANCE, const HWND hWnd) {
     return S_OK;
 }
 
-void CInput::Uninit(void) { m_hWnd = nullptr; }
+void CInput::Uninit(void) {
+    m_hWnd = nullptr;
+}
 
 // --- 読み取り元の設定 / 取得処理（未設定なら Win32） ---
-void CInput::SetSource(IInputSource* pSource) { m_pSource = pSource; }
+void CInput::SetSource(IInputSource* pSource) {
+    m_pSource = pSource;
+}
 
 IInputSource& CInput::Source() {
     static CWin32InputSource win32;
@@ -118,6 +136,7 @@ IInputSource& CInput::Source() {
 // *** キーボードクラス ***
 //**********************************************************************************
 CInputKeyboard::CInputKeyboard() {}
+
 CInputKeyboard::~CInputKeyboard() {}
 
 //==================================================================================
@@ -132,7 +151,9 @@ HRESULT CInputKeyboard::Init(const HINSTANCE hInstance, const HWND hWnd) {
     return hr;
 }
 
-void CInputKeyboard::Uninit(void) { CInput::Uninit(); }
+void CInputKeyboard::Uninit(void) {
+    CInput::Uninit();
+}
 
 //==================================================================================
 // --- 更新処理 ---
@@ -140,12 +161,18 @@ void CInputKeyboard::Uninit(void) { CInput::Uninit(); }
 void CInputKeyboard::Update(void) {
     BYTE aKeyState[NUM_KEY_MAX] = {}; // 今フレームのキーボードの入力情報
     auto& source = Source();
-    if (source.HasFocus()) source.ReadKeyboard(aKeyState); // フォーカスが無ければすべて離された扱い
+    if (source.HasFocus()) {
+        source.ReadKeyboard(aKeyState); // フォーカスが無ければすべて離された扱い
+    }
+
     for (int nCntKey = 0; nCntKey < NUM_KEY_MAX; nCntKey++) {
         // リリース = 前は押されていて今は違う / トリガー = 前は違って今は押されている
         m_aKeyStateRelease[nCntKey] = (m_aKeyState[nCntKey] & (m_aKeyState[nCntKey] ^ aKeyState[nCntKey]));
         m_aKeyStateTrigger[nCntKey] = ((aKeyState[nCntKey] ^ m_aKeyState[nCntKey]) & aKeyState[nCntKey]);
-        if (m_aKeyState[nCntKey] != aKeyState[nCntKey]) m_nKeyStateRepeat[nCntKey] = 0; // 状態が変わったらリピートのカウントをやり直す
+        if (m_aKeyState[nCntKey] != aKeyState[nCntKey]) {
+            m_nKeyStateRepeat[nCntKey] = 0; // 状態が変わったらリピートのカウントをやり直す
+        }
+
         m_aKeyState[nCntKey] = aKeyState[nCntKey];
     }
 }
@@ -180,6 +207,7 @@ bool CInputKeyboard::GetRepeat(const int nKey, const int nWaitPress, const int n
 // *** マウスクラス ***
 //**********************************************************************************
 CInputMouse::CInputMouse() {}
+
 CInputMouse::~CInputMouse() {}
 
 HRESULT CInputMouse::Init(const HINSTANCE hInstance, const HWND hWnd) {
@@ -187,7 +215,9 @@ HRESULT CInputMouse::Init(const HINSTANCE hInstance, const HWND hWnd) {
     return CInput::Init(hInstance, hWnd);
 }
 
-void CInputMouse::Uninit(void) { CInput::Uninit(); }
+void CInputMouse::Uninit(void) {
+    CInput::Uninit();
+}
 
 //==================================================================================
 // --- 更新処理 ---
@@ -196,7 +226,10 @@ void CInputMouse::Update(void) {
     BYTE aButtons[KEY_MAX] = {};
     POINT cursor = m_cursor;
     auto& source = Source();
-    if (source.HasFocus()) source.ReadMouse(aButtons, cursor);
+    if (source.HasFocus()) {
+        source.ReadMouse(aButtons, cursor);
+    }
+
     m_cursorPrev = m_bHasPrev ? m_cursor : cursor; // 初回は移動量 0 になるようにする
     m_cursor = cursor;
     m_bHasPrev = true;
@@ -210,18 +243,31 @@ void CInputMouse::Update(void) {
 //==================================================================================
 // --- プレス / トリガー / リリースの判定処理 ---
 //==================================================================================
-bool CInputMouse::GetPress(const int nKey) { return nKey >= 0 && nKey < KEY_MAX && (m_aMouseState[nKey] & 0x80); }
-bool CInputMouse::GetTrigger(const int nKey) { return nKey >= 0 && nKey < KEY_MAX && (m_aMouseStateTrigger[nKey] & 0x80); }
-bool CInputMouse::GetRelease(const int nKey) { return nKey >= 0 && nKey < KEY_MAX && (m_aMouseStateRelease[nKey] & 0x80); }
+bool CInputMouse::GetPress(const int nKey) {
+    return nKey >= 0 && nKey < KEY_MAX && (m_aMouseState[nKey] & 0x80);
+}
+
+bool CInputMouse::GetTrigger(const int nKey) {
+    return nKey >= 0 && nKey < KEY_MAX && (m_aMouseStateTrigger[nKey] & 0x80);
+}
+
+bool CInputMouse::GetRelease(const int nKey) {
+    return nKey >= 0 && nKey < KEY_MAX && (m_aMouseStateRelease[nKey] & 0x80);
+}
 
 //==================================================================================
 // --- カーソル位置 / 移動量の取得処理 ---
 //==================================================================================
-Vector3 CInputMouse::GetPositionInScreen(void) { return {static_cast<float>(m_cursor.x), static_cast<float>(m_cursor.y), 0.0f}; }
+Vector3 CInputMouse::GetPositionInScreen(void) {
+    return {static_cast<float>(m_cursor.x), static_cast<float>(m_cursor.y), 0.0f};
+}
 
 Vector3 CInputMouse::GetPositionInClient(void) {
     POINT client = m_cursor;
-    if (m_hWnd) ScreenToClient(m_hWnd, &client);
+    if (m_hWnd) {
+        ScreenToClient(m_hWnd, &client);
+    }
+
     return {static_cast<float>(client.x), static_cast<float>(client.y), 0.0f};
 }
 

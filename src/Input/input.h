@@ -24,9 +24,9 @@ namespace dxs {
 //**********************************************************************************
 // *** 定数宣言 ***
 //**********************************************************************************
-constexpr int NUM_KEY_MAX = 256;              // キーボードのキー数
-constexpr int INPUT_DEFAULT_WAIT_PRESS = 60;  // リピートの連続入力までの待機フレーム
-constexpr int INPUT_DEFAULT_INTERVAL = 30;    // リピートの連続入力の間隔フレーム
+constexpr int NUM_KEY_MAX = 256;             // キーボードのキー数
+constexpr int INPUT_DEFAULT_WAIT_PRESS = 60; // リピートの連続入力までの待機フレーム
+constexpr int INPUT_DEFAULT_INTERVAL = 30;   // リピートの連続入力の間隔フレーム
 
 //**********************************************************************************
 // *** デバイスの読み取り元インターフェース（DxStudio で追加） ***
@@ -34,10 +34,13 @@ constexpr int INPUT_DEFAULT_INTERVAL = 30;    // リピートの連続入力の�
 class IInputSource {
 public:
     virtual ~IInputSource() = default;
+
     // ゲームがフォーカスを持っていない間は false（すべて離された扱いになる）
     virtual bool HasFocus() = 0;
+
     // aState[DIK コード] = 押されていれば 0x80
     virtual void ReadKeyboard(BYTE aState[NUM_KEY_MAX]) = 0;
+
     // ボタン: [0] 左 / [1] 右 / [2] 中（押されていれば 0x80）、カーソルはスクリーン座標
     virtual void ReadMouse(BYTE aButtons[3], POINT& cursor) = 0;
     virtual bool ReadJoypad(int nPadID, XINPUT_STATE& state) = 0;
@@ -130,9 +133,9 @@ public:
     Vector3 GetMove(void); // 追加: 前のフレームからのカーソルの移動量（ピクセル）
 
 private:
-    POINT m_cursor{};                    // カーソル位置（スクリーン座標）
-    POINT m_cursorPrev{};                // 前のフレームのカーソル位置
-    bool m_bHasPrev = false;             // 前のフレームの位置があるか
+    POINT m_cursor{};                        // カーソル位置（スクリーン座標）
+    POINT m_cursorPrev{};                    // 前のフレームのカーソル位置
+    bool m_bHasPrev = false;                 // 前のフレームの位置があるか
     BYTE m_aMouseState[KEY_MAX] = {};        // プレス情報
     BYTE m_aMouseStateTrigger[KEY_MAX] = {}; // トリガー情報
     BYTE m_aMouseStateRelease[KEY_MAX] = {}; // リリース情報

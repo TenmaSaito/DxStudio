@@ -5,10 +5,12 @@
 #include <uxtheme.h>
 // GDI+ provides anti-aliased vector icons (GDI lines are aliased).
 #include <algorithm>
+
 namespace Gdiplus {
 using std::max;
 using std::min;
 } // namespace Gdiplus
+
 #include <objidl.h>
 #include <gdiplus.h>
 
@@ -56,19 +58,20 @@ LRESULT CALLBACK HoverSubclassProc(HWND hWindow, UINT uMessage, WPARAM wParam, L
             TrackMouseEvent(&track);
             InvalidateRect(hWindow, nullptr, FALSE);
         }
+
         break;
     case WM_MOUSELEAVE:
         state.hotWindows.erase(hWindow);
         InvalidateRect(hWindow, nullptr, FALSE);
         break;
-    case WM_ERASEBKGND:
-        return 1; // owner draw paints every pixel; avoids flicker
+    case WM_ERASEBKGND: return 1; // owner draw paints every pixel; avoids flicker
     case WM_NCDESTROY:
         state.hotWindows.erase(hWindow);
         state.buttonSpecs.erase(hWindow);
         RemoveWindowSubclass(hWindow, HoverSubclassProc, 1);
         break;
     }
+
     return DefSubclassProc(hWindow, uMessage, wParam, lParam);
 }
 
@@ -79,7 +82,9 @@ struct IconCanvas {
     COLORREF color;
 
     Gdiplus::PointF P(float fU, float fV) const { return {fX + fU * fSize, fY + fV * fSize}; }
+
     float S(float fValue) const { return fValue * fSize; }
+
     void Stroke(std::initializer_list<Gdiplus::PointF> points, float fWidth = 0.09f, BYTE nAlpha = 255) const {
         Gdiplus::Pen pen(ToColor(color, nAlpha), std::max(1.0f, S(fWidth)));
         pen.SetLineJoin(Gdiplus::LineJoinRound);
@@ -88,17 +93,20 @@ struct IconCanvas {
         std::vector<Gdiplus::PointF> v(points);
         graphics.DrawLines(&pen, v.data(), static_cast<INT>(v.size()));
     }
+
     void FillPolygon(std::initializer_list<Gdiplus::PointF> points, BYTE nAlpha = 255) const {
         Gdiplus::SolidBrush brush(ToColor(color, nAlpha));
         std::vector<Gdiplus::PointF> v(points);
         graphics.FillPolygon(&brush, v.data(), static_cast<INT>(v.size()));
     }
+
     void StrokePolygon(std::initializer_list<Gdiplus::PointF> points, float fWidth = 0.08f, BYTE nAlpha = 255) const {
         Gdiplus::Pen pen(ToColor(color, nAlpha), std::max(1.0f, S(fWidth)));
         pen.SetLineJoin(Gdiplus::LineJoinRound);
         std::vector<Gdiplus::PointF> v(points);
         graphics.DrawPolygon(&pen, v.data(), static_cast<INT>(v.size()));
     }
+
     void Rect(float fU, float fV, float fW, float fH, bool bFill, float fWidth = 0.08f, BYTE nAlpha = 255) const {
         if (bFill) {
             Gdiplus::SolidBrush brush(ToColor(color, nAlpha));
@@ -108,6 +116,7 @@ struct IconCanvas {
             graphics.DrawRectangle(&pen, fX + S(fU), fY + S(fV), S(fW), S(fH));
         }
     }
+
     void Ellipse(float fU, float fV, float fW, float fH, bool bFill, float fWidth = 0.08f, BYTE nAlpha = 255) const {
         if (bFill) {
             Gdiplus::SolidBrush brush(ToColor(color, nAlpha));
@@ -117,6 +126,7 @@ struct IconCanvas {
             graphics.DrawEllipse(&pen, fX + S(fU), fY + S(fV), S(fW), S(fH));
         }
     }
+
     void Arc(float fU, float fV, float fW, float fH, float fStart, float fSweep, float fWidth = 0.09f) const {
         Gdiplus::Pen pen(ToColor(color), std::max(1.0f, S(fWidth)));
         pen.SetStartCap(Gdiplus::LineCapRound);
@@ -132,7 +142,8 @@ void Arrow(const IconCanvas& c, Gdiplus::PointF from, Gdiplus::PointF to, float 
     if (fLength < 0.001f) return;
     const float fUx = fDx / fLength, fUy = fDy / fLength;
     const float fHeadPx = c.S(fHead);
-    c.FillPolygon({to, {to.X - fUx * fHeadPx - fUy * fHeadPx * 0.7f, to.Y - fUy * fHeadPx + fUx * fHeadPx * 0.7f},
+    c.FillPolygon({to,
+                   {to.X - fUx * fHeadPx - fUy * fHeadPx * 0.7f, to.Y - fUy * fHeadPx + fUx * fHeadPx * 0.7f},
                    {to.X - fUx * fHeadPx + fUy * fHeadPx * 0.7f, to.Y - fUy * fHeadPx - fUx * fHeadPx * 0.7f}});
 }
 
@@ -151,8 +162,11 @@ void CubeIcon(const IconCanvas& c, bool bFilled) {
 }
 
 void FolderIcon(const IconCanvas& c, bool bOpen) {
-    c.FillPolygon({c.P(0.06f, 0.2f), c.P(0.4f, 0.2f), c.P(0.5f, 0.32f), c.P(0.94f, 0.32f), c.P(0.94f, 0.84f), c.P(0.06f, 0.84f)}, 210);
-    if (bOpen) c.FillPolygon({c.P(0.18f, 0.44f), c.P(1.0f, 0.44f), c.P(0.88f, 0.84f), c.P(0.06f, 0.84f)}, 255);
+    c.FillPolygon({c.P(0.06f, 0.2f), c.P(0.4f, 0.2f), c.P(0.5f, 0.32f), c.P(0.94f, 0.32f), c.P(0.94f, 0.84f), c.P(0.06f, 0.84f)},
+                  210);
+    if (bOpen) {
+        c.FillPolygon({c.P(0.18f, 0.44f), c.P(1.0f, 0.44f), c.P(0.88f, 0.84f), c.P(0.06f, 0.84f)}, 255);
+    }
 }
 
 // "i" (bExclamation = false) or "!" centred at (fU, fV), drawn as shapes:
@@ -193,12 +207,8 @@ void DrawVectorIcon(const IconCanvas& c, Icon icon) {
         c.Rect(0.08f, 0.38f, 0.54f, 0.54f, false);
         Arrow(c, c.P(0.42f, 0.58f), c.P(0.9f, 0.1f), 0.2f);
         break;
-    case Icon::PLAY:
-        c.FillPolygon({c.P(0.24f, 0.12f), c.P(0.86f, 0.5f), c.P(0.24f, 0.88f)});
-        break;
-    case Icon::STOP:
-        c.Rect(0.2f, 0.2f, 0.6f, 0.6f, true);
-        break;
+    case Icon::PLAY: c.FillPolygon({c.P(0.24f, 0.12f), c.P(0.86f, 0.5f), c.P(0.24f, 0.88f)}); break;
+    case Icon::STOP: c.Rect(0.2f, 0.2f, 0.6f, 0.6f, true); break;
     case Icon::PAUSE:
         c.Rect(0.22f, 0.16f, 0.18f, 0.68f, true);
         c.Rect(0.6f, 0.16f, 0.18f, 0.68f, true);
@@ -212,9 +222,7 @@ void DrawVectorIcon(const IconCanvas& c, Icon icon) {
         c.Rect(0.3f, 0.1f, 0.38f, 0.26f, false, 0.07f);
         c.Rect(0.26f, 0.56f, 0.5f, 0.34f, true, 0.07f, 200);
         break;
-    case Icon::LOAD:
-        FolderIcon(c, true);
-        break;
+    case Icon::LOAD: FolderIcon(c, true); break;
     case Icon::EXPORT:
         c.Stroke({c.P(0.12f, 0.5f), c.P(0.12f, 0.9f), c.P(0.88f, 0.9f), c.P(0.88f, 0.5f)});
         Arrow(c, c.P(0.5f, 0.7f), c.P(0.5f, 0.06f), 0.22f);
@@ -242,6 +250,7 @@ void DrawVectorIcon(const IconCanvas& c, Icon icon) {
             c.Stroke({c.P(0.04f, fT), c.P(0.2f, fT)}, 0.06f);
             c.Stroke({c.P(0.8f, fT), c.P(0.96f, fT)}, 0.06f);
         }
+
         break;
     case Icon::LAYOUT:
         c.Rect(0.08f, 0.12f, 0.36f, 0.76f, false, 0.08f);
@@ -275,24 +284,23 @@ void DrawVectorIcon(const IconCanvas& c, Icon icon) {
         Glyph(c, false, icon == Icon::INFO ? RGB(40, 40, 40) : COLOR_PANEL, 0.5f, 0.5f);
         break;
     case Icon::PROJECT:
-    case Icon::FOLDER:
-        FolderIcon(c, false);
-        break;
+    case Icon::FOLDER: FolderIcon(c, false); break;
     case Icon::CONSOLE:
         c.Rect(0.06f, 0.14f, 0.88f, 0.72f, false, 0.08f);
         c.Stroke({c.P(0.22f, 0.36f), c.P(0.38f, 0.5f), c.P(0.22f, 0.64f)}, 0.08f);
         c.Stroke({c.P(0.48f, 0.66f), c.P(0.74f, 0.66f)}, 0.08f);
         break;
     case Icon::KEBAB:
-        for (const float fV : {0.18f, 0.5f, 0.82f}) c.Ellipse(0.42f, fV - 0.08f, 0.16f, 0.16f, true);
+        for (const float fV : {0.18f, 0.5f, 0.82f}) {
+            c.Ellipse(0.42f, fV - 0.08f, 0.16f, 0.16f, true);
+        }
+
         break;
     case Icon::CLOSE:
         c.Stroke({c.P(0.22f, 0.22f), c.P(0.78f, 0.78f)}, 0.1f);
         c.Stroke({c.P(0.78f, 0.22f), c.P(0.22f, 0.78f)}, 0.1f);
         break;
-    case Icon::MINIMIZE:
-        c.Stroke({c.P(0.2f, 0.62f), c.P(0.8f, 0.62f)}, 0.1f);
-        break;
+    case Icon::MINIMIZE: c.Stroke({c.P(0.2f, 0.62f), c.P(0.8f, 0.62f)}, 0.1f); break;
     case Icon::FLOAT:
         c.Rect(0.32f, 0.12f, 0.56f, 0.5f, false, 0.08f);
         c.Rect(0.12f, 0.38f, 0.56f, 0.5f, true, 0.08f, 160);
@@ -301,31 +309,17 @@ void DrawVectorIcon(const IconCanvas& c, Icon icon) {
         c.Rect(0.12f, 0.12f, 0.76f, 0.76f, false, 0.08f);
         c.Rect(0.12f, 0.12f, 0.3f, 0.76f, true, 0.08f, 160);
         break;
-    case Icon::CHEVRON_RIGHT:
-        c.Stroke({c.P(0.36f, 0.2f), c.P(0.66f, 0.5f), c.P(0.36f, 0.8f)}, 0.11f);
-        break;
-    case Icon::CHEVRON_DOWN:
-        c.Stroke({c.P(0.2f, 0.36f), c.P(0.5f, 0.66f), c.P(0.8f, 0.36f)}, 0.11f);
-        break;
-    case Icon::DROPDOWN:
-        c.FillPolygon({c.P(0.2f, 0.36f), c.P(0.8f, 0.36f), c.P(0.5f, 0.7f)});
-        break;
-    case Icon::CHECK:
-        c.Stroke({c.P(0.16f, 0.52f), c.P(0.4f, 0.76f), c.P(0.86f, 0.24f)}, 0.14f);
-        break;
-    case Icon::CUBE:
-        CubeIcon(c, true);
-        break;
+    case Icon::CHEVRON_RIGHT: c.Stroke({c.P(0.36f, 0.2f), c.P(0.66f, 0.5f), c.P(0.36f, 0.8f)}, 0.11f); break;
+    case Icon::CHEVRON_DOWN: c.Stroke({c.P(0.2f, 0.36f), c.P(0.5f, 0.66f), c.P(0.8f, 0.36f)}, 0.11f); break;
+    case Icon::DROPDOWN: c.FillPolygon({c.P(0.2f, 0.36f), c.P(0.8f, 0.36f), c.P(0.5f, 0.7f)}); break;
+    case Icon::CHECK: c.Stroke({c.P(0.16f, 0.52f), c.P(0.4f, 0.76f), c.P(0.86f, 0.24f)}, 0.14f); break;
+    case Icon::CUBE: CubeIcon(c, true); break;
     case Icon::MODEL:
         CubeIcon(c, true);
         c.Stroke({c.P(0.5f, 0.52f), c.P(0.5f, 0.94f)}, 0.05f);
         break;
-    case Icon::GAME_OBJECT:
-        CubeIcon(c, false);
-        break;
-    case Icon::QUAD:
-        c.FillPolygon({c.P(0.5f, 0.1f), c.P(0.9f, 0.5f), c.P(0.5f, 0.9f), c.P(0.1f, 0.5f)}, 220);
-        break;
+    case Icon::GAME_OBJECT: CubeIcon(c, false); break;
+    case Icon::QUAD: c.FillPolygon({c.P(0.5f, 0.1f), c.P(0.9f, 0.5f), c.P(0.5f, 0.9f), c.P(0.1f, 0.5f)}, 220); break;
     case Icon::CAMERA:
         c.Rect(0.06f, 0.3f, 0.6f, 0.44f, true);
         c.FillPolygon({c.P(0.66f, 0.52f), c.P(0.94f, 0.3f), c.P(0.94f, 0.74f)});
@@ -349,6 +343,7 @@ void DrawVectorIcon(const IconCanvas& c, Icon icon) {
             c.Stroke({c.P(0.42f, 0.44f), c.P(0.3f, 0.6f), c.P(0.42f, 0.76f)}, 0.07f);
             c.Stroke({c.P(0.6f, 0.44f), c.P(0.72f, 0.6f), c.P(0.6f, 0.76f)}, 0.07f);
         }
+
         break;
     case Icon::WARNING:
         c.FillPolygon({c.P(0.5f, 0.06f), c.P(0.96f, 0.9f), c.P(0.04f, 0.9f)});
@@ -366,11 +361,8 @@ void DrawVectorIcon(const IconCanvas& c, Icon icon) {
     case Icon::PERSPECTIVE:
         c.StrokePolygon({c.P(0.3f, 0.3f), c.P(0.7f, 0.3f), c.P(0.92f, 0.86f), c.P(0.08f, 0.86f)}, 0.08f);
         break;
-    case Icon::ORTHOGRAPHIC:
-        c.Rect(0.14f, 0.2f, 0.72f, 0.64f, false, 0.08f);
-        break;
-    case Icon::NONE:
-        break;
+    case Icon::ORTHOGRAPHIC: c.Rect(0.14f, 0.2f, 0.72f, 0.64f, false, 0.08f); break;
+    case Icon::NONE: break;
     }
 }
 
@@ -382,7 +374,8 @@ COLORREF RoleBackground(ButtonRole role, HWND hButton) {
     case ButtonRole::DROPDOWN:
         // Toolbar children of the main window sit on the toolbar colour; tool
         // buttons inside a panel sit on the panel's toolbar strip.
-        return GetParent(hButton) && GetAncestor(hButton, GA_PARENT) == GetAncestor(hButton, GA_ROOT) ? COLOR_TOOLBAR : COLOR_PANEL;
+        return GetParent(hButton) && GetAncestor(hButton, GA_PARENT) == GetAncestor(hButton, GA_ROOT) ? COLOR_TOOLBAR
+                                                                                                      : COLOR_PANEL;
     case ButtonRole::HEADER: return COLOR_HEADER;
     default: return COLOR_PANEL;
     }
@@ -408,7 +401,10 @@ void SetButtonSpec(HWND hButton, const ButtonSpec& spec) {
     auto& state = State();
     const bool bNew = !state.buttonSpecs.count(hButton);
     state.buttonSpecs[hButton] = spec;
-    if (bNew) SetWindowSubclass(hButton, HoverSubclassProc, 1, 0);
+    if (bNew) {
+        SetWindowSubclass(hButton, HoverSubclassProc, 1, 0);
+    }
+
     InvalidateRect(hButton, nullptr, FALSE);
 }
 
@@ -432,7 +428,9 @@ void SetButtonExpanded(HWND hButton, bool bExpanded) {
     SetButtonSpec(hButton, spec);
 }
 
-bool IsHot(HWND hWindow) { return State().hotWindows.count(hWindow) != 0; }
+bool IsHot(HWND hWindow) {
+    return State().hotWindows.count(hWindow) != 0;
+}
 
 void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
     const auto spec = GetButtonSpec(item.hwndItem);
@@ -455,36 +453,55 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
     case ButtonRole::PUSH:
         fill = bActive ? COLOR_ACCENT : bPressed ? COLOR_BUTTON_PRESSED : bHot ? COLOR_BUTTON_HOVER : COLOR_BUTTON;
         border = COLOR_BUTTON_BORDER;
-        if (bActive) textColor = COLOR_TEXT_BRIGHT;
+        if (bActive) {
+            textColor = COLOR_TEXT_BRIGHT;
+        }
+
         break;
     case ButtonRole::PRIMARY:
-        fill = bDisabled ? COLOR_BUTTON : bPressed ? Blend(COLOR_ACCENT, RGB(0, 0, 0), 0.25f) : bHot ? COLOR_ACCENT_HOVER : COLOR_ACCENT;
+        fill = bDisabled  ? COLOR_BUTTON
+               : bPressed ? Blend(COLOR_ACCENT, RGB(0, 0, 0), 0.25f)
+               : bHot     ? COLOR_ACCENT_HOVER
+                          : COLOR_ACCENT;
         border = Blend(fill, RGB(0, 0, 0), 0.35f);
-        if (!bDisabled) textColor = COLOR_TEXT_BRIGHT;
+        if (!bDisabled) {
+            textColor = COLOR_TEXT_BRIGHT;
+        }
+
         break;
     case ButtonRole::TOOL:
     case ButtonRole::TRANSPORT:
     case ButtonRole::DROPDOWN:
     case ButtonRole::ICON:
-        fill = bActive ? COLOR_ACCENT : bPressed ? COLOR_BUTTON_PRESSED : bHot ? Blend(background, RGB(255, 255, 255), 0.12f) : background;
-        if (bActive) textColor = COLOR_TEXT_BRIGHT;
+        fill = bActive    ? COLOR_ACCENT
+               : bPressed ? COLOR_BUTTON_PRESSED
+               : bHot     ? Blend(background, RGB(255, 255, 255), 0.12f)
+                          : background;
+        if (bActive) {
+            textColor = COLOR_TEXT_BRIGHT;
+        }
+
         if (spec.role == ButtonRole::TRANSPORT || spec.role == ButtonRole::DROPDOWN) {
-            if (!bActive && !bHot && !bPressed) fill = Blend(background, RGB(255, 255, 255), 0.06f);
+            if (!bActive && !bHot && !bPressed) {
+                fill = Blend(background, RGB(255, 255, 255), 0.06f);
+            }
+
             border = Blend(background, RGB(0, 0, 0), 0.4f);
         }
+
         break;
     case ButtonRole::MENU_BAR:
         fill = bPressed || bActive ? COLOR_SELECTION : bHot ? Blend(background, RGB(255, 255, 255), 0.14f) : background;
         break;
     case ButtonRole::TAB:
         fill = bActive ? COLOR_TAB_ACTIVE : bHot ? Blend(COLOR_TAB_STRIP, RGB(255, 255, 255), 0.06f) : COLOR_TAB_STRIP;
-        if (!bActive) textColor = COLOR_TEXT_DIM;
+        if (!bActive) {
+            textColor = COLOR_TEXT_DIM;
+        }
+
         break;
-    case ButtonRole::HEADER:
-        fill = bHot ? COLOR_HEADER_HOVER : COLOR_HEADER;
-        break;
-    case ButtonRole::CHECKBOX:
-        break;
+    case ButtonRole::HEADER: fill = bHot ? COLOR_HEADER_HOVER : COLOR_HEADER; break;
+    case ButtonRole::CHECKBOX: break;
     }
 
     if (spec.role == ButtonRole::HEADER) {
@@ -507,7 +524,8 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
         Fill(hDc, rect, background);
         const int nMid = (rect.top + rect.bottom) / 2;
         RECT chevron{rect.left, nMid - 5, rect.left + 10, nMid + 5};
-        DrawIcon(hDc, spec.bExpanded ? Icon::CHEVRON_DOWN : Icon::CHEVRON_RIGHT, chevron, bHot ? COLOR_TEXT_BRIGHT : COLOR_TEXT_DIM);
+        DrawIcon(hDc, spec.bExpanded ? Icon::CHEVRON_DOWN : Icon::CHEVRON_RIGHT, chevron,
+                 bHot ? COLOR_TEXT_BRIGHT : COLOR_TEXT_DIM);
         RECT textRect{rect.left + 14, rect.top, rect.right, rect.bottom};
         DrawLabel(hDc, sText, textRect, textColor, fonts.hRegular, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         return;
@@ -522,10 +540,12 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
             InflateRect(&check, -1, -1);
             DrawIcon(hDc, Icon::CHECK, check, bDisabled ? COLOR_TEXT_DISABLED : COLOR_TEXT_BRIGHT);
         }
+
         if (!sText.empty()) {
             RECT textRect{box.right + 6, rect.top, rect.right, rect.bottom};
             DrawLabel(hDc, sText, textRect, textColor, fonts.hRegular, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         }
+
         return;
     }
 
@@ -537,6 +557,7 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
     } else {
         Fill(hDc, body, fill);
     }
+
     if (spec.role == ButtonRole::TAB && bActive) {
         Line(hDc, rect.left, rect.top, rect.right, rect.top, COLOR_TAB_ACCENT, 2);
     }
@@ -554,6 +575,7 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
         GetTextExtentPoint32W(hDc, sText.c_str(), static_cast<int>(sText.size()), &textSize);
         SelectObject(hDc, hOld);
     }
+
     const int nGap = bHasIcon && bHasText ? 5 : 0;
     const int nContent = (bHasIcon ? nIconSize : 0) + nGap + (bHasText ? textSize.cx : 0) + (nChevron ? nChevron + 3 : 0);
     const bool bLeftAligned = spec.role == ButtonRole::TAB || spec.role == ButtonRole::MENU_BAR;
@@ -562,19 +584,26 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
     if (bHasIcon) {
         RECT iconBox{nX, nMid - nIconSize / 2, nX + nIconSize, nMid - nIconSize / 2 + nIconSize};
         COLORREF iconColor = spec.iconColor == CLR_INVALID || bActive ? textColor : spec.iconColor;
-        if (bDisabled) iconColor = COLOR_TEXT_DISABLED;
+        if (bDisabled) {
+            iconColor = COLOR_TEXT_DISABLED;
+        }
+
         DrawIcon(hDc, spec.icon, iconBox, iconColor);
         nX += nIconSize + nGap;
     }
+
     if (bHasText) {
         RECT textRect{nX, rect.top, std::max<LONG>(nX, rect.right - 4 - (nChevron ? nChevron + 3 : 0)), rect.bottom};
         DrawLabel(hDc, sText, textRect, textColor, hFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         nX += textSize.cx + 3;
     }
+
     if (nChevron) {
-        RECT chevron{std::min<LONG>(nX, rect.right - nChevron - 4), nMid - 5, std::min<LONG>(nX, rect.right - nChevron - 4) + nChevron, nMid + 5};
+        RECT chevron{std::min<LONG>(nX, rect.right - nChevron - 4), nMid - 5,
+                     std::min<LONG>(nX, rect.right - nChevron - 4) + nChevron, nMid + 5};
         DrawIcon(hDc, Icon::DROPDOWN, chevron, COLOR_TEXT_DIM);
     }
+
     if ((item.itemState & ODS_FOCUS) && !(item.itemState & ODS_NOFOCUSRECT) && spec.role != ButtonRole::MENU_BAR) {
         RECT focus = rect;
         InflateRect(&focus, -1, -1);
@@ -582,9 +611,13 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
     }
 }
 
-void Fill(HDC hDc, const RECT& rect, COLORREF color) { FillRect(hDc, &rect, Brush(color)); }
+void Fill(HDC hDc, const RECT& rect, COLORREF color) {
+    FillRect(hDc, &rect, Brush(color));
+}
 
-void Frame(HDC hDc, const RECT& rect, COLORREF color) { FrameRect(hDc, &rect, Brush(color)); }
+void Frame(HDC hDc, const RECT& rect, COLORREF color) {
+    FrameRect(hDc, &rect, Brush(color));
+}
 
 void Line(HDC hDc, int nX0, int nY0, int nX1, int nY1, COLORREF color, int nWidth) {
     HPEN hPen = CreatePen(PS_SOLID, nWidth, color);
@@ -625,15 +658,20 @@ HBRUSH Brush(COLORREF color) {
 }
 
 COLORREF Blend(COLORREF a, COLORREF b, float fAmount) {
-    auto mix = [fAmount](int nA, int nB) { return static_cast<BYTE>(std::clamp(nA + (nB - nA) * fAmount, 0.0f, 255.0f)); };
+    auto mix = [fAmount](int nA, int nB) {
+        return static_cast<BYTE>(std::clamp(nA + (nB - nA) * fAmount, 0.0f, 255.0f));
+    };
     return RGB(mix(GetRValue(a), GetRValue(b)), mix(GetGValue(a), GetGValue(b)), mix(GetBValue(a), GetBValue(b)));
 }
 
 void InitializeFonts(UINT uDpi) {
     auto& fonts = State().fonts;
     for (HFONT hFont : {fonts.hRegular, fonts.hBold, fonts.hSmall, fonts.hTitle}) {
-        if (hFont) DeleteObject(hFont);
+        if (hFont) {
+            DeleteObject(hFont);
+        }
     }
+
     auto make = [uDpi](int nPixels, int nWeight) {
         return CreateFontW(-MulDiv(nPixels, static_cast<int>(uDpi), 96), 0, 0, 0, nWeight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_NATURAL_QUALITY, DEFAULT_PITCH, L"Segoe UI");
@@ -647,17 +685,26 @@ void InitializeFonts(UINT uDpi) {
 
 const Fonts& GetFonts() {
     auto& fonts = State().fonts;
-    if (!fonts.hRegular) InitializeFonts(96);
+    if (!fonts.hRegular) {
+        InitializeFonts(96);
+    }
+
     return fonts;
 }
 
 void ReleaseResources() {
     auto& state = State();
-    for (auto& [color, hBrush] : state.brushes) DeleteObject(hBrush);
+    for (auto& [color, hBrush] : state.brushes) {
+        DeleteObject(hBrush);
+    }
+
     state.brushes.clear();
     for (HFONT hFont : {state.fonts.hRegular, state.fonts.hBold, state.fonts.hSmall, state.fonts.hTitle}) {
-        if (hFont) DeleteObject(hFont);
+        if (hFont) {
+            DeleteObject(hFont);
+        }
     }
+
     state.fonts = {};
 }
 
@@ -668,11 +715,14 @@ namespace {
 using SetPreferredAppModeFn = int(WINAPI*)(int);
 using AllowDarkModeForWindowFn = BOOL(WINAPI*)(HWND, BOOL);
 using FlushMenuThemesFn = void(WINAPI*)();
+
 HMODULE UxTheme() {
     static HMODULE hModule = LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     return hModule;
 }
-template<class T> T UxOrdinal(int nOrdinal) {
+
+template<class T>
+T UxOrdinal(int nOrdinal) {
     HMODULE hModule = UxTheme();
     return hModule ? reinterpret_cast<T>(reinterpret_cast<void*>(GetProcAddress(hModule, MAKEINTRESOURCEA(nOrdinal)))) : nullptr;
 }
@@ -680,17 +730,28 @@ template<class T> T UxOrdinal(int nOrdinal) {
 
 void EnableDarkMode() {
     constexpr int FORCE_DARK = 2;
-    if (auto pSetMode = UxOrdinal<SetPreferredAppModeFn>(135)) pSetMode(FORCE_DARK);
-    if (auto pFlush = UxOrdinal<FlushMenuThemesFn>(136)) pFlush();
+    if (auto pSetMode = UxOrdinal<SetPreferredAppModeFn>(135)) {
+        pSetMode(FORCE_DARK);
+    }
+
+    if (auto pFlush = UxOrdinal<FlushMenuThemesFn>(136)) {
+        pFlush();
+    }
+
     EnsureGdiplus();
 }
 
 void ApplyDarkTitleBar(HWND hWindow) {
-    if (auto pAllow = UxOrdinal<AllowDarkModeForWindowFn>(133)) pAllow(hWindow, TRUE);
+    if (auto pAllow = UxOrdinal<AllowDarkModeForWindowFn>(133)) {
+        pAllow(hWindow, TRUE);
+    }
+
     const BOOL bDark = TRUE;
     constexpr DWORD DWMWA_DARK_MODE = 20, DWMWA_DARK_MODE_OLD = 19, DWMWA_CAPTION = 35, DWMWA_BORDER = 34;
-    if (FAILED(DwmSetWindowAttribute(hWindow, DWMWA_DARK_MODE, &bDark, sizeof(bDark))))
+    if (FAILED(DwmSetWindowAttribute(hWindow, DWMWA_DARK_MODE, &bDark, sizeof(bDark)))) {
         DwmSetWindowAttribute(hWindow, DWMWA_DARK_MODE_OLD, &bDark, sizeof(bDark));
+    }
+
     const COLORREF caption = COLOR_TOOLBAR;
     DwmSetWindowAttribute(hWindow, DWMWA_CAPTION, &caption, sizeof(caption)); // Windows 11 only
     const COLORREF border = RGB(45, 45, 45);
@@ -698,12 +759,18 @@ void ApplyDarkTitleBar(HWND hWindow) {
 }
 
 void ApplyDarkControl(HWND hControl) {
-    if (auto pAllow = UxOrdinal<AllowDarkModeForWindowFn>(133)) pAllow(hControl, TRUE);
+    if (auto pAllow = UxOrdinal<AllowDarkModeForWindowFn>(133)) {
+        pAllow(hControl, TRUE);
+    }
+
     SetWindowTheme(hControl, L"DarkMode_Explorer", nullptr);
 }
 
 void ApplyDarkInput(HWND hControl) {
-    if (auto pAllow = UxOrdinal<AllowDarkModeForWindowFn>(133)) pAllow(hControl, TRUE);
+    if (auto pAllow = UxOrdinal<AllowDarkModeForWindowFn>(133)) {
+        pAllow(hControl, TRUE);
+    }
+
     SetWindowTheme(hControl, L"DarkMode_CFD", nullptr);
 }
 

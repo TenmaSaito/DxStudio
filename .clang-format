@@ -1,9 +1,16 @@
-# DxStudio formatting. One statement per line, 4-space indent, 130 columns.
+# DxStudio のコード整形の設定（clang-format）。4 スペースの字下げ、1 行 130 桁。
+# 方針: 詰め過ぎない。if / for / while の本体は {} で囲み、関数の定義の間は 1 行空ける。
+# （early return / continue / break だけの if は tools/tidy.ps1 で 1 行に戻す）
 BasedOnStyle: LLVM
 IndentWidth: 4
 ColumnLimit: 130
 AccessModifierOffset: -4
-AllowShortIfStatementsOnASingleLine: WithoutElse
+InsertBraces: true
+SeparateDefinitionBlocks: Always
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+ReflowComments: false
+AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 AllowShortBlocksOnASingleLine: Never
 AllowShortFunctionsOnASingleLine: Inline

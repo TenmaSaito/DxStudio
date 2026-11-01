@@ -28,6 +28,7 @@ public:
 
     void Start(dxs::Entity& entity) override;
     void Update(dxs::Entity& entity, float fDeltaSeconds) override;
+
     std::vector<dxs::EditorField> EditorFields() override {
         return {dxs::EditField("Speed", m_fSpeed),
                 dxs::EditRange("Volume", m_fVolume, 0.0f, 1.0f),

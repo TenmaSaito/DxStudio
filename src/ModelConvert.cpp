@@ -49,9 +49,7 @@ bool IsIdentifierChar(char c) {
 
 // --- 大文字小文字を区別しない検索処理 ---
 std::size_t FindNoCase(const std::string& sText, const std::string& sWord, std::size_t nFrom, std::size_t nEnd) {
-    if (sWord.empty() || nEnd < sWord.size()) {
-        return std::string::npos;
-    }
+    if (sWord.empty() || nEnd < sWord.size()) return std::string::npos;
 
     for (std::size_t nPos = nFrom; nPos + sWord.size() <= nEnd; ++nPos) {
         bool bMatch = true;
@@ -63,10 +61,9 @@ std::size_t FindNoCase(const std::string& sText, const std::string& sWord, std::
             }
         }
 
-        if (bMatch) {
-            return nPos;
-        }
+        if (bMatch) return nPos;
     }
+
     return std::string::npos;
 }
 
@@ -80,6 +77,7 @@ std::wstring SafeFileStem(const std::string& sName) {
             sResult += L'_';
         }
     }
+
     return sResult;
 }
 
@@ -94,6 +92,7 @@ std::string XIdentifier(const std::string& sName, std::size_t nIndex) {
     if (sResult.empty() || std::isdigit(static_cast<unsigned char>(sResult.front())) != 0) {
         sResult = "Material_" + std::to_string(nIndex) + (sResult.empty() ? "" : "_" + sResult);
     }
+
     return sResult;
 }
 
@@ -110,6 +109,7 @@ bool ReadWholeFile(const std::filesystem::path& file, std::string& sText, std::s
         error = "The file is empty or too large: " + PathUtf8(file);
         return false;
     }
+
     return true;
 }
 
@@ -139,6 +139,7 @@ bool WriteFileAtomically(const std::filesystem::path& file, const std::string& s
         std::filesystem::remove(temp, ignored);
         return false;
     }
+
     return true;
 }
 
@@ -155,19 +156,17 @@ std::size_t MatchingBrace(const std::string& sText, std::size_t nOpen) {
             bInString = !bInString;
             continue;
         }
-        if (bInString) {
-            continue;
-        }
+
+        if (bInString) continue;
 
         if (c == '{') {
             ++nDepth;
         } else if (c == '}') {
             --nDepth;
-            if (nDepth == 0) {
-                return nPos;
-            }
+            if (nDepth == 0) return nPos;
         }
     }
+
     return std::string::npos;
 }
 
@@ -196,6 +195,7 @@ bool ScanFloats(const std::string& sText, std::size_t nBegin, std::size_t nEnd, 
         ++nRead;
         p = pNext;
     }
+
     return nRead == nCount;
 }
 
@@ -219,32 +219,29 @@ bool ParseMaterialAt(const std::string& sText, std::size_t nWord, XMaterialInfo&
     while (nPos < sText.size() && std::isspace(static_cast<unsigned char>(sText[nPos])) != 0) {
         ++nPos;
     }
+
     const std::size_t nNameBegin = nPos;
     while (nPos < sText.size() && (IsIdentifierChar(sText[nPos]) || sText[nPos] == '-' || sText[nPos] == '.')) {
         ++nPos;
     }
+
     material.sName = sText.substr(nNameBegin, nPos - nNameBegin);
     while (nPos < sText.size() && std::isspace(static_cast<unsigned char>(sText[nPos])) != 0) {
         ++nPos;
     }
-    if (nPos >= sText.size() || sText[nPos] != '{') {
-        return false;
-    }
+
+    if (nPos >= sText.size() || sText[nPos] != '{') return false;
 
     const std::size_t nOpen = nPos;
     const std::size_t nClose = MatchingBrace(sText, nOpen);
-    if (nClose == std::string::npos) {
-        return false;
-    }
+    if (nClose == std::string::npos) return false;
     nNext = nClose + 1;
 
     // 数値はテクスチャの指定より前にある: 拡散色 4、強さ 1、鏡面反射色 3、発光色 3
     const std::size_t nTexture = FindNoCase(sText, "TextureFilename", nOpen, nClose);
     const std::size_t nNumbersEnd = nTexture == std::string::npos ? nClose : nTexture;
     float aValues[11]{};
-    if (!ScanFloats(sText, nOpen + 1, nNumbersEnd, aValues, 11)) {
-        return false;
-    }
+    if (!ScanFloats(sText, nOpen + 1, nNumbersEnd, aValues, 11)) return false;
 
     material.diffuse = {aValues[0], aValues[1], aValues[2], aValues[3]};
     material.fPower = aValues[4];
@@ -269,10 +266,9 @@ bool ParseMaterialAt(const std::string& sText, std::size_t nWord, XMaterialInfo&
     // 色は有限の値であること
     const float aCheck[] = {material.diffuse.x, material.diffuse.y, material.diffuse.z, material.diffuse.w};
     for (const float fValue : aCheck) {
-        if (!std::isfinite(fValue)) {
-            return false;
-        }
+        if (!std::isfinite(fValue)) return false;
     }
+
     return true;
 }
 
@@ -297,12 +293,11 @@ struct XOutputMaterial {
 XOutputMaterial MakeOutputMaterial(const ufbx_material* pMaterial, std::size_t nIndex, const std::filesystem::path& xFolder) {
     XOutputMaterial result;
     result.sName = XIdentifier(pMaterial ? std::string(pMaterial->name.data, pMaterial->name.length) : std::string(), nIndex);
-    if (!pMaterial) {
-        return result;
-    }
+    if (!pMaterial) return result;
 
     // 拡散色: FBX の Diffuse を優先し、無ければ PBR の Base Color（どの形式でも定義される）
-    const ufbx_material_map& diffuse = pMaterial->fbx.diffuse_color.has_value ? pMaterial->fbx.diffuse_color : pMaterial->pbr.base_color;
+    const ufbx_material_map& diffuse =
+        pMaterial->fbx.diffuse_color.has_value ? pMaterial->fbx.diffuse_color : pMaterial->pbr.base_color;
     const ufbx_real dFactor = pMaterial->fbx.diffuse_factor.has_value ? pMaterial->fbx.diffuse_factor.value_real : 1.0;
     result.diffuse = {diffuse.value_vec3.x * dFactor, diffuse.value_vec3.y * dFactor, diffuse.value_vec3.z * dFactor, 1.0};
     if (pMaterial->pbr.opacity.has_value) {
@@ -318,9 +313,11 @@ XOutputMaterial MakeOutputMaterial(const ufbx_material* pMaterial, std::size_t n
         if (ec || relative.empty()) {
             relative = texturePath.filename();
         }
+
         const auto text = relative.generic_u8string();
         result.sTexture.assign(reinterpret_cast<const char*>(text.data()), text.size());
     }
+
     return result;
 }
 
@@ -352,12 +349,13 @@ std::string BuildXText(const std::vector<XVertex>& vVertices, const std::vector<
         out << ';';
         WriteNumber(out, material.diffuse.w);
         out << ";;\n";
-        out << "  8.000000;\n";              // 鏡面反射の強さ
+        out << "  8.000000;\n";                    // 鏡面反射の強さ
         out << "  0.000000;0.000000;0.000000;;\n"; // 鏡面反射色
         out << "  0.000000;0.000000;0.000000;;\n"; // 発光色
         if (!material.sTexture.empty()) {
             out << "  TextureFilename {\n    \"" << material.sTexture << "\";\n  }\n";
         }
+
         out << "}\n\n";
     }
 
@@ -395,11 +393,13 @@ std::string BuildXText(const std::vector<XVertex>& vVertices, const std::vector<
         WriteNumber(out, normal.z);
         out << (nIndex + 1 < vVertices.size() ? ";,\n" : ";;\n");
     }
+
     out << "    " << nFaceCount << ";\n";
     for (std::size_t nFace = 0; nFace < nFaceCount; ++nFace) {
         out << "    3;" << nFace * 3 << ',' << nFace * 3 + 1 << ',' << nFace * 3 + 2;
         out << (nFace + 1 < nFaceCount ? ";,\n" : ";;\n");
     }
+
     out << "  }\n";
 
     // UV（X ファイルの V は下向きなので反転する）
@@ -414,6 +414,7 @@ std::string BuildXText(const std::vector<XVertex>& vVertices, const std::vector<
             WriteNumber(out, 1.0 - uv.y);
             out << (nIndex + 1 < vVertices.size() ? ";,\n" : ";;\n");
         }
+
         out << "  }\n";
     }
 
@@ -424,9 +425,11 @@ std::string BuildXText(const std::vector<XVertex>& vVertices, const std::vector<
     for (std::size_t nFace = 0; nFace < nFaceCount; ++nFace) {
         out << "    " << vFaceMaterials[nFace] << (nFace + 1 < nFaceCount ? ",\n" : ";\n");
     }
+
     for (const auto& material : vMaterials) {
         out << "    { " << material.sName << " }\n";
     }
+
     out << "  }\n";
 
     out << "}\n";
@@ -445,6 +448,7 @@ std::filesystem::path UniqueFilePath(const std::filesystem::path& folder, const 
     for (int nNumber = 1; std::filesystem::exists(candidate, ec) && nNumber < 10000; ++nNumber) {
         candidate = folder / (sStem + L"_" + std::to_wstring(nNumber) + sExtension);
     }
+
     return candidate;
 }
 
@@ -456,15 +460,14 @@ bool ReadXMaterials(const std::filesystem::path& xFile, std::vector<XMaterialInf
     vOut.clear();
 
     std::string sText;
-    if (!ReadWholeFile(xFile, sText, error)) {
-        return false;
-    }
+    if (!ReadWholeFile(xFile, sText, error)) return false;
 
     // ヘッダー: "xof 0303txt 0032"（txt 以外のバイナリ / 圧縮形式は読めない）
     if (sText.size() < 16 || sText.compare(0, 4, "xof ") != 0) {
         error = "This is not a DirectX X file: " + PathUtf8(xFile);
         return false;
     }
+
     if (sText.compare(8, 3, "txt") != 0) {
         error = "Only text X files are supported (this file is binary or compressed).";
         return false;
@@ -487,6 +490,7 @@ bool ReadXMaterials(const std::filesystem::path& xFile, std::vector<XMaterialInf
 
         nPos = sText.find(WORD, nNext);
     }
+
     return true;
 }
 
@@ -498,9 +502,7 @@ bool CreateMaterialsFromX(const std::filesystem::path& projectRoot, const std::f
     vCreatedAssets.clear();
 
     std::vector<XMaterialInfo> vMaterials;
-    if (!ReadXMaterials(xFile, vMaterials, error)) {
-        return false;
-    }
+    if (!ReadXMaterials(xFile, vMaterials, error)) return false;
 
     // Material が無い X ファイルでも、白のマテリアルを 1 つ作る
     if (vMaterials.empty()) {
@@ -520,6 +522,7 @@ bool CreateMaterialsFromX(const std::filesystem::path& projectRoot, const std::f
         if (vMaterials.size() > 1) {
             sFileStem += L"_" + (source.sName.empty() ? std::to_wstring(nIndex) : SafeFileStem(source.sName));
         }
+
         const auto output = UniqueFilePath(folder, sFileStem, L".dxmat");
 
         // Direct3D 11 / 12 の描画は baseColor を使う（拡散色をそのまま入れる）
@@ -535,20 +538,21 @@ bool CreateMaterialsFromX(const std::filesystem::path& projectRoot, const std::f
             if (relative.empty() || *relative.begin() == L"..") {
                 relative = std::filesystem::u8path(source.sTexture); // プロジェクトの外: 書いてあるまま残す
             }
+
             material.sTextureAsset = PathUtf8(relative.generic_wstring());
         }
 
-        if (!SaveMaterial(output, material, error)) {
-            return false;
-        }
+        if (!SaveMaterial(output, material, error)) return false;
 
         // 作ったファイルをプロジェクトからの相対パスで返す
         auto asset = std::filesystem::weakly_canonical(output, ec).lexically_relative(root);
         if (asset.empty() || *asset.begin() == L"..") {
             asset = output;
         }
+
         vCreatedAssets.push_back(PathUtf8(asset.generic_wstring()));
     }
+
     return true;
 }
 
@@ -578,9 +582,7 @@ bool ConvertFbxToX(const std::filesystem::path& fbxFile, const std::filesystem::
     // マテリアルの番号を取得する（初めてのマテリアルなら追加する）
     auto findMaterial = [&](const ufbx_material* pMaterial) {
         const auto found = materialIndex.find(pMaterial);
-        if (found != materialIndex.end()) {
-            return found->second;
-        }
+        if (found != materialIndex.end()) return found->second;
 
         const auto nIndex = static_cast<std::uint32_t>(vMaterials.size());
         vMaterials.push_back(MakeOutputMaterial(pMaterial, nIndex, xFolder));
@@ -592,9 +594,7 @@ bool ConvertFbxToX(const std::filesystem::path& fbxFile, const std::filesystem::
     // （エンジンが FBX を描くときと同じ変換）
     for (std::size_t nMesh = 0; nMesh < pScene->meshes.count; ++nMesh) {
         const ufbx_mesh* pMesh = pScene->meshes.data[nMesh];
-        if (!pMesh || !pMesh->vertex_position.exists) {
-            continue;
-        }
+        if (!pMesh || !pMesh->vertex_position.exists) continue;
 
         bHasUv = bHasUv || pMesh->vertex_uv.exists;
         std::vector<std::uint32_t> vIndices(std::max<std::size_t>(3, pMesh->max_face_triangles * 3));
@@ -610,10 +610,12 @@ bool ConvertFbxToX(const std::filesystem::path& fbxFile, const std::filesystem::
                 if (pMesh->face_material.count > nFace && pMesh->face_material.data[nFace] < pMesh->materials.count) {
                     pMaterial = pMesh->materials.data[pMesh->face_material.data[nFace]];
                 }
+
                 const std::uint32_t nMaterial = findMaterial(pMaterial);
 
                 // 多角形を三角形に分け、角ごとに位置・法線・UV を取り出す
-                const std::uint32_t nTriangles = ufbx_triangulate_face(vIndices.data(), vIndices.size(), pMesh, pMesh->faces.data[nFace]);
+                const std::uint32_t nTriangles =
+                    ufbx_triangulate_face(vIndices.data(), vIndices.size(), pMesh, pMesh->faces.data[nFace]);
                 for (std::size_t nCorner = 0; nCorner < static_cast<std::size_t>(nTriangles) * 3; ++nCorner) {
                     const std::uint32_t nVertex = vIndices[nCorner];
                     XVertex vertex;
@@ -621,6 +623,7 @@ bool ConvertFbxToX(const std::filesystem::path& fbxFile, const std::filesystem::
                     if (pMesh->vertex_normal.exists) {
                         vertex.normal = ufbx_get_vertex_vec3(&pMesh->vertex_normal, nVertex);
                     }
+
                     if (pMesh->vertex_uv.exists) {
                         vertex.uv = ufbx_get_vertex_vec2(&pMesh->vertex_uv, nVertex);
                     }
@@ -629,6 +632,7 @@ bool ConvertFbxToX(const std::filesystem::path& fbxFile, const std::filesystem::
                         vertex.position = ufbx_transform_position(pMatrix, vertex.position);
                         vertex.normal = ufbx_vec3_normalize(ufbx_transform_direction(&normalMatrix, vertex.normal));
                     }
+
                     vVertices.push_back(vertex);
                 }
 
@@ -638,6 +642,7 @@ bool ConvertFbxToX(const std::filesystem::path& fbxFile, const std::filesystem::
             }
         }
     }
+
     ufbx_free_scene(pScene);
 
     // 書き出せる大きさか
@@ -645,6 +650,7 @@ bool ConvertFbxToX(const std::filesystem::path& fbxFile, const std::filesystem::
         error = "The FBX file contains no mesh to convert.";
         return false;
     }
+
     if (vVertices.size() > MAX_VERTICES) {
         error = "The mesh is too large to convert (" + std::to_string(vVertices.size()) + " vertices, maximum " +
                 std::to_string(MAX_VERTICES) + ").";

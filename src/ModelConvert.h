@@ -25,12 +25,12 @@ namespace dxs {
 // *** X ファイルのマテリアル 1 つ分 ***
 //**********************************************************************************
 struct XMaterialInfo {
-    std::string sName;                           // マテリアルの名前（無ければ空）
+    std::string sName;                                 // マテリアルの名前（無ければ空）
     DirectX::XMFLOAT4 diffuse{1.0f, 1.0f, 1.0f, 1.0f}; // 拡散色（RGBA）
-    float fPower = 0.0f;                         // 鏡面反射の強さ
-    DirectX::XMFLOAT3 specular{0.0f, 0.0f, 0.0f}; // 鏡面反射色
-    DirectX::XMFLOAT3 emissive{0.0f, 0.0f, 0.0f}; // 発光色
-    std::string sTexture;                        // TextureFilename（X ファイルからの相対パス）
+    float fPower = 0.0f;                               // 鏡面反射の強さ
+    DirectX::XMFLOAT3 specular{0.0f, 0.0f, 0.0f};      // 鏡面反射色
+    DirectX::XMFLOAT3 emissive{0.0f, 0.0f, 0.0f};      // 発光色
+    std::string sTexture;                              // TextureFilename（X ファイルからの相対パス）
 };
 
 //**********************************************************************************

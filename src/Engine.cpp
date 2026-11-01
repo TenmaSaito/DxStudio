@@ -35,10 +35,12 @@ namespace {
 //**********************************************************************************
 // --- カメラの値が有効か（有限の値で、距離・角度が範囲内か） ---
 bool ValidCamera(const Camera& camera) {
-    const float values[] = {camera.target.x, camera.target.y,    camera.target.z, camera.fYaw,    camera.fPitch,
+    const float values[] = {camera.target.x,  camera.target.y,     camera.target.z,  camera.fYaw,    camera.fPitch,
                             camera.fDistance, camera.fFieldOfView, camera.fNearClip, camera.fFarClip};
-    for (float value : values)
+    for (float value : values) {
         if (!std::isfinite(value)) return false;
+    }
+
     return camera.fDistance >= 0.2f && camera.fDistance <= 80.0f && camera.fPitch >= -1.54f && camera.fPitch <= 1.54f &&
            camera.fFieldOfView >= 1.0f && camera.fFieldOfView <= 179.0f && camera.fNearClip > 0.0f &&
            camera.fFarClip > camera.fNearClip;
@@ -49,28 +51,38 @@ bool Valid(const Entity& e) {
     const auto& d = e.draw;
     const float values[] = {d.position.x, d.position.y, d.position.z, d.rotation.x, d.rotation.y, d.rotation.z, d.scale.x,
                             d.scale.y,    d.scale.z,    d.color.x,    d.color.y,    d.color.z,    d.color.w};
+
     // 名前は 1..1024 文字で改行なし、コンポーネント数は上限以内
     if (e.sName.empty() || e.sName.size() > 1024 || e.sName.find_first_of("\r\n") != std::string::npos ||
-        e.vComponents.size() > MaxComponentsPerEntity)
+        e.vComponents.size() > MaxComponentsPerEntity) {
         return false;
+    }
+
     // コンポーネント名: 空でなく、128 文字以内、改行なし、重複なし
     for (size_t i = 0; i < e.vComponents.size(); ++i) {
         const auto& component = e.vComponents[i];
         if (component.empty() || component.size() > 128 || component.find_first_of("\r\n") != std::string::npos ||
-            std::find(e.vComponents.begin(), e.vComponents.begin() + i, component) != e.vComponents.begin() + i)
+            std::find(e.vComponents.begin(), e.vComponents.begin() + i, component) != e.vComponents.begin() + i) {
             return false;
+        }
     }
+
     // 保存値: 名前と値の長さ、改行を含まないこと
     for (const auto& [component, fields] : e.componentProperties) {
         if (component.empty() || component.size() > 128 || fields.size() > 128) return false;
-        for (const auto& [name, value] : fields)
+        for (const auto& [name, value] : fields) {
             if (name.empty() || name.size() > 128 || value.size() > 4096 || name.find_first_of("\r\n") != std::string::npos ||
-                value.find_first_of("\r\n") != std::string::npos)
+                value.find_first_of("\r\n") != std::string::npos) {
                 return false;
+            }
+        }
     }
+
     // トランスフォームと色はすべて有限の値
-    for (float v : values)
+    for (float v : values) {
         if (!std::isfinite(v)) return false;
+    }
+
     return true;
 }
 
@@ -85,6 +97,7 @@ std::string PathText(const std::filesystem::path& p) {
 //**********************************************************************************
 // 名前 → 生成関数。組み込みのコンポーネントは初回のアクセス時に登録する。
 using Factory = std::function<std::unique_ptr<Component>()>;
+
 std::unordered_map<std::string, Factory>& Components() {
     static std::unordered_map<std::string, Factory> components;
     static const bool builtins = [&] {
@@ -105,6 +118,7 @@ bool ValidParents(const Scene& scene) {
     for (size_t i = 0; i < scene.vEntities.size(); ++i) {
         int parent = scene.vEntities[i].nParent;
         if (parent < -1 || parent >= static_cast<int>(scene.vEntities.size()) || parent == static_cast<int>(i)) return false;
+
         // 親をたどり、エンティティ数より多く進んだら循環している
         size_t steps = 0;
         while (parent >= 0) {
@@ -112,15 +126,16 @@ bool ValidParents(const Scene& scene) {
             parent = scene.vEntities[static_cast<size_t>(parent)].nParent;
         }
     }
+
     return true;
 }
 
 //**********************************************************************************
 // *** メッシュの読み込み ***
 //**********************************************************************************
-using Mesh = std::vector<DirectX::XMFLOAT3>;     // 三角形リスト（3 頂点で 1 つ）
+using Mesh = std::vector<DirectX::XMFLOAT3>;  // 三角形リスト（3 頂点で 1 つ）
 using ShadeRuns = std::vector<std::uint32_t>; // 明るさごとの頂点数
-constexpr int SHADE_LEVELS = 8;                 // 陰影の段階数
+constexpr int SHADE_LEVELS = 8;               // 陰影の段階数
 
 // --- 三角形を明るさ順に並べ替える処理 ---
 // メッシュ空間の固定の光で各三角形の明るさを求め、SHADE_LEVELS 段階に分ける。
@@ -131,14 +146,19 @@ ShadeRuns SortByShade(Mesh& mesh) {
     std::vector<std::vector<XMFLOAT3>> vBuckets(SHADE_LEVELS);
     for (size_t nIndex = 0; nIndex + 2 < mesh.size(); nIndex += 3) {
         const XMVECTOR a = XMLoadFloat3(&mesh[nIndex]), b = XMLoadFloat3(&mesh[nIndex + 1]), c = XMLoadFloat3(&mesh[nIndex + 2]);
+
         // 面の法線と光の向きの内積を 0..1 の明るさにする
         XMVECTOR normal = XMVector3Cross(XMVectorSubtract(b, a), XMVectorSubtract(c, a));
         const float fLength = XMVectorGetX(XMVector3Length(normal));
         float fLight = 0.5f;
-        if (fLength > 1e-12f) fLight = (XMVectorGetX(XMVector3Dot(XMVectorScale(normal, 1.0f / fLength), light)) + 1.0f) * 0.5f;
+        if (fLength > 1e-12f) {
+            fLight = (XMVectorGetX(XMVector3Dot(XMVectorScale(normal, 1.0f / fLength), light)) + 1.0f) * 0.5f;
+        }
+
         const int nLevel = std::clamp(static_cast<int>(fLight * SHADE_LEVELS), 0, SHADE_LEVELS - 1);
         vBuckets[nLevel].insert(vBuckets[nLevel].end(), {mesh[nIndex], mesh[nIndex + 1], mesh[nIndex + 2]});
     }
+
     // 暗い順に連結し、区間ごとの頂点数を記録する
     ShadeRuns vRuns;
     mesh.clear();
@@ -146,6 +166,7 @@ ShadeRuns SortByShade(Mesh& mesh) {
         vRuns.push_back(static_cast<std::uint32_t>(bucket.size()));
         mesh.insert(mesh.end(), bucket.begin(), bucket.end());
     }
+
     return vRuns;
 }
 
@@ -153,16 +174,20 @@ ShadeRuns SortByShade(Mesh& mesh) {
 struct LoadedMesh {
     std::shared_ptr<const Mesh> pVertices;       // 頂点（正規化済み）
     std::shared_ptr<const ShadeRuns> pShadeRuns; // 明るさごとの頂点数
-    bool bFlat = false; // すべての頂点が z = 0 上にある（2D の基本図形）
+    bool bFlat = false;                          // すべての頂点が z = 0 上にある（2D の基本図形）
 };
+
 // テキストから数値を順に読み取る（.x ファイル用。区切り文字は読み飛ばす）
 struct NumberScanner {
     const char* p{};   // 現在の位置
     const char* end{}; // 終端
+
     // 次の数値を読む
     bool Next(double& value) {
-        while (p < end && !((*p >= '0' && *p <= '9') || *p == '-' || *p == '+' || *p == '.'))
+        while (p < end && !((*p >= '0' && *p <= '9') || *p == '-' || *p == '+' || *p == '.')) {
             ++p;
+        }
+
         if (p >= end) return false;
         char* next{};
         value = std::strtod(p, &next);
@@ -170,9 +195,11 @@ struct NumberScanner {
             ++p;
             return Next(value);
         }
+
         p = next;
         return std::isfinite(value);
     }
+
     // 次の数値を整数として読む
     bool NextInt(int& value) {
         double number{};
@@ -181,6 +208,7 @@ struct NumberScanner {
         return true;
     }
 };
+
 // --- メッシュを単位ボックス [-0.5, 0.5] に収める処理（中心を原点へ、最も長い辺を 1 に） ---
 void Normalize(Mesh& mesh) {
     if (mesh.empty()) return;
@@ -193,6 +221,7 @@ void Normalize(Mesh& mesh) {
         hi.y = std::max(hi.y, v.y);
         hi.z = std::max(hi.z, v.z);
     }
+
     const DirectX::XMFLOAT3 center{(lo.x + hi.x) * .5f, (lo.y + hi.y) * .5f, (lo.z + hi.z) * .5f};
     const float extent = std::max({hi.x - lo.x, hi.y - lo.y, hi.z - lo.z, 1e-6f});
     for (auto& v : mesh) {
@@ -201,6 +230,7 @@ void Normalize(Mesh& mesh) {
         v.z = (v.z - center.z) / extent;
     }
 }
+
 //==================================================================================
 // --- モデルファイル（.x / .fbx）の読み込み処理 ---
 //==================================================================================
@@ -211,14 +241,18 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
         std::filesystem::file_time_type time;
         LoadedMesh mesh;
     };
+
     static std::unordered_map<std::wstring, CacheEntry> cache;
     const auto key = path.lexically_normal().wstring();
     const auto ext = path.extension().wstring();
     std::error_code timeError;
     const auto writeTime = std::filesystem::last_write_time(path, timeError);
-    if (_wcsicmp(ext.c_str(), L".fbx") != 0)
-        if (auto found = cache.find(key); found != cache.end() && !timeError && found->second.time == writeTime)
+    if (_wcsicmp(ext.c_str(), L".fbx") != 0) {
+        if (auto found = cache.find(key); found != cache.end() && !timeError && found->second.time == writeTime) {
             return found->second.mesh;
+        }
+    }
+
     // ファイル全体を読み込む（64MB まで）
     std::ifstream input(path, std::ios::binary);
     if (!input) return {};
@@ -240,14 +274,17 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
             if (!scan.Next(x) || !scan.Next(y) || !scan.Next(z)) return {};
             v = {static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)};
         }
+
         int faces{};
         if (!scan.NextInt(faces) || faces < 1 || faces > 1000000) return {};
         for (int f = 0; f < faces; ++f) {
             int n{};
             if (!scan.NextInt(n) || n < 3 || n > 1024) return {};
             std::vector<int> ids(n);
-            for (int& id : ids)
+            for (int& id : ids) {
                 if (!scan.NextInt(id) || id < 0 || id >= count) return {};
+            }
+
             // 多角形を扇状に三角形へ分割する
             for (int i = 1; i + 1 < n; ++i) {
                 triangles.push_back(points[ids[0]]);
@@ -265,6 +302,7 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
         if (!source) return {};
         ufbx_scene* evaluated = nullptr;
         ufbx_scene* active = source;
+
         // アニメーションがあれば、指定した時間（ループ）の姿勢を評価する
         if (source->anim_stacks.count > 0) {
             const size_t clip = std::min(static_cast<size_t>(std::max(animationIndex, 0)), source->anim_stacks.count - 1);
@@ -274,8 +312,11 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
                 duration > 0.0 ? stack->time_begin + std::fmod(std::max(animationTime, 0.0f), duration) : stack->time_begin;
             ufbx_error evaluateError{};
             evaluated = ufbx_evaluate_scene(source, stack->anim, time, nullptr, &evaluateError);
-            if (evaluated) active = evaluated;
+            if (evaluated) {
+                active = evaluated;
+            }
         }
+
         // 全メッシュ・全インスタンスの面を三角形にし、ワールド座標へ変換して集める
         for (size_t m = 0; m < active->meshes.count; ++m) {
             const auto* mesh = active->meshes.data[m];
@@ -288,25 +329,38 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
                     const uint32_t count = ufbx_triangulate_face(indices.data(), indices.size(), mesh, mesh->faces.data[f]);
                     for (size_t t = 0; t < static_cast<size_t>(count) * 3; ++t) {
                         ufbx_vec3 value = ufbx_get_vertex_vec3(&mesh->skinned_position, indices[t]);
-                        if (matrix) value = ufbx_transform_position(matrix, value);
+                        if (matrix) {
+                            value = ufbx_transform_position(matrix, value);
+                        }
+
                         triangles.push_back(
                             {static_cast<float>(value.x), static_cast<float>(value.y), static_cast<float>(value.z)});
                     }
                 }
             }
         }
-        if (evaluated) ufbx_free_scene(evaluated);
+
+        if (evaluated) {
+            ufbx_free_scene(evaluated);
+        }
+
         ufbx_free_scene(source);
-    } else
+    } else {
         return {};
+    }
+
     // 正規化 → 2D 判定 → 明るさ順の並べ替え → キャッシュ
     if (triangles.empty() || triangles.size() > 1000000) return {};
     Normalize(triangles);
     LoadedMesh result;
-    result.bFlat = std::all_of(triangles.begin(), triangles.end(), [](const DirectX::XMFLOAT3& v) { return std::abs(v.z) < 1e-5f; });
+    result.bFlat =
+        std::all_of(triangles.begin(), triangles.end(), [](const DirectX::XMFLOAT3& v) { return std::abs(v.z) < 1e-5f; });
     result.pShadeRuns = std::make_shared<ShadeRuns>(SortByShade(triangles));
     result.pVertices = std::make_shared<Mesh>(std::move(triangles));
-    if (_wcsicmp(ext.c_str(), L".fbx") != 0 && !timeError) cache[key] = {writeTime, result};
+    if (_wcsicmp(ext.c_str(), L".fbx") != 0 && !timeError) {
+        cache[key] = {writeTime, result};
+    }
+
     return result;
 }
 } // namespace
@@ -319,11 +373,13 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
 Entity::~Entity() = default;
 Entity::Entity(Entity&&) noexcept = default;
 Entity& Entity::operator=(Entity&&) noexcept = default;
+
 Entity::Entity(const Entity& other)
     : sName(other.sName), draw(other.draw), nParent(other.nParent), renderer(other.renderer), sModelAsset(other.sModelAsset),
       sMaterialAsset(other.sMaterialAsset), sTextureAsset(other.sTextureAsset), bPlayAnimation(other.bPlayAnimation),
       fAnimationTime(other.fAnimationTime), nAnimationIndex(other.nAnimationIndex), vComponents(other.vComponents),
       componentProperties(other.componentProperties) {}
+
 Entity& Entity::operator=(const Entity& other) {
     if (this != &other) {
         sName = other.sName;
@@ -338,11 +394,13 @@ Entity& Entity::operator=(const Entity& other) {
         nAnimationIndex = other.nAnimationIndex;
         vComponents = other.vComponents;
         componentProperties = other.componentProperties;
+
         // 実行中のインスタンスは破棄する
         vRuntimeComponentNames.clear();
         vRuntimeComponents.clear();
         vRuntimeComponentStarted.clear();
     }
+
     return *this;
 }
 
@@ -366,18 +424,22 @@ bool LoadMaterial(const std::filesystem::path& path, Material& material, std::st
         error = "Invalid material file: " + PathText(path);
         return false;
     }
+
     const float values[] = {loaded.baseColor.x, loaded.baseColor.y, loaded.baseColor.z, loaded.baseColor.w};
-    for (float value : values)
+    for (float value : values) {
         if (!std::isfinite(value)) {
             error = "Material contains a non-finite color.";
             return false;
         }
+    }
+
     // 余計なデータが続いていないか
     file >> std::ws;
     if (file.peek() != std::char_traits<char>::eof()) {
         error = "Unexpected data in material file.";
         return false;
     }
+
     material = std::move(loaded);
     return true;
 }
@@ -387,6 +449,7 @@ bool LoadMaterial(const std::filesystem::path& path, Material& material, std::st
 //==================================================================================
 bool SaveMaterial(const std::filesystem::path& path, const Material& material, std::string& error) {
     error.clear();
+
     // 一時ファイルに書いてから置き換える（書き込み途中で壊れないように）
     auto temp = path;
     temp += L".tmp";
@@ -395,6 +458,7 @@ bool SaveMaterial(const std::filesystem::path& path, const Material& material, s
         error = "Cannot create material: " + PathText(path);
         return false;
     }
+
     file << "DXMATERIAL 1 " << std::quoted(material.sName) << ' ' << std::setprecision(std::numeric_limits<float>::max_digits10)
          << material.baseColor.x << ' ' << material.baseColor.y << ' ' << material.baseColor.z << ' ' << material.baseColor.w
          << ' ' << std::quoted(material.sTextureAsset) << ' ' << std::quoted(material.sShaderAsset) << '\n';
@@ -405,6 +469,7 @@ bool SaveMaterial(const std::filesystem::path& path, const Material& material, s
         std::filesystem::remove(temp, ignored);
         return false;
     }
+
     return true;
 }
 
@@ -429,6 +494,7 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
         error = "Cannot open scene: " + PathText(path);
         return false;
     }
+
     std::string magic;
     unsigned version = 0;
     size_t count = 0;
@@ -436,6 +502,7 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
         error = "Invalid scene header (expected DXSCENE 1-8 and an entity count up to 10000).";
         return false;
     }
+
     // 一時的なシーンに読み込み、成功したときだけ置き換える
     Scene loaded;
     if (version >= 4) { // カメラ（バージョン 4 以降）
@@ -447,35 +514,48 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
             error = "Invalid scene camera (projection, finite values, pitch or distance).";
             return false;
         }
+
         camera.bOrthographic = orthographic == 1;
     }
+
     loaded.vEntities.reserve(count);
     for (size_t i = 0; i < count; ++i) {
         Entity e;
         int is2D = 0;
         auto& d = e.draw;
+
         // 名前とコンポーネント（バージョン 2 は 1 つ、3 以降は個数付き）
         bool headerValid = static_cast<bool>(file >> std::quoted(e.sName));
         if (headerValid && version == 2) {
             std::string component;
             headerValid = static_cast<bool>(file >> std::quoted(component));
-            if (headerValid && !component.empty()) e.vComponents.push_back(std::move(component));
+            if (headerValid && !component.empty()) {
+                e.vComponents.push_back(std::move(component));
+            }
         } else if (headerValid && version >= 3) {
             size_t componentCount = 0;
             headerValid = static_cast<bool>(file >> componentCount) && componentCount <= MaxComponentsPerEntity;
             for (size_t j = 0; headerValid && j < componentCount; ++j) {
                 std::string component;
                 headerValid = static_cast<bool>(file >> std::quoted(component));
-                if (headerValid) e.vComponents.push_back(std::move(component));
+                if (headerValid) {
+                    e.vComponents.push_back(std::move(component));
+                }
             }
         }
-        if (headerValid && version >= 5) headerValid = static_cast<bool>(file >> e.nParent); // 親（5 以降）
+
+        if (headerValid && version >= 5) {
+            headerValid = static_cast<bool>(file >> e.nParent); // 親（5 以降）
+        }
+
         if (headerValid && version >= 6) { // レンダラーとモデル（6 以降。種類の上限はバージョンで変わる）
             unsigned renderer = 0;
-            headerValid =
-                static_cast<bool>(file >> renderer >> std::quoted(e.sModelAsset)) && renderer <= (version >= 8 ? 4u : version >= 7 ? 3u : 2u);
+            headerValid = static_cast<bool>(file >> renderer >> std::quoted(e.sModelAsset)) && renderer <= (version >= 8   ? 4u
+                                                                                                            : version >= 7 ? 3u
+                                                                                                                           : 2u);
             e.renderer = static_cast<Entity::RendererKind>(renderer);
         }
+
         if (headerValid && version >= 7) { // マテリアル・テクスチャ・アニメーション・保存値（7 以降）
             size_t propertyCount = 0;
             int playAnimation = 0;
@@ -487,9 +567,12 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
             for (size_t p = 0; headerValid && p < propertyCount; ++p) {
                 std::string component, field, value;
                 headerValid = static_cast<bool>(file >> std::quoted(component) >> std::quoted(field) >> std::quoted(value));
-                if (headerValid) e.componentProperties[component][field] = value;
+                if (headerValid) {
+                    e.componentProperties[component][field] = value;
+                }
             }
         }
+
         // トランスフォームと色
         if (!headerValid ||
             !(file >> is2D >> d.position.x >> d.position.y >> d.position.z >> d.rotation.x >> d.rotation.y >> d.rotation.z >>
@@ -498,19 +581,26 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
             error = "Invalid entity at index " + std::to_string(i) + ".";
             return false;
         }
+
         d.bIs2D = is2D == 1;
-        if (version < 6) e.renderer = Entity::RendererKind::Polygon;
+        if (version < 6) {
+            e.renderer = Entity::RendererKind::Polygon;
+        }
+
         loaded.vEntities.push_back(std::move(e));
     }
+
     if (!ValidParents(loaded)) {
         error = "Invalid or cyclic entity parent relationship.";
         return false;
     }
+
     file >> std::ws;
     if (file.peek() != std::char_traits<char>::eof()) {
         error = "Unexpected data after the scene entities.";
         return false;
     }
+
     // 成功: シーンを置き換えて通知する
     loaded.projectRoot = path.parent_path();
     scene = std::move(loaded);
@@ -523,25 +613,30 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
 //==================================================================================
 bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::string& error) {
     error.clear();
+
     // 保存する前にすべての値を検証する
     if (scene.vEntities.size() > 10000) {
         error = "Too many entities (maximum 10000).";
         return false;
     }
+
     if (!ValidCamera(scene.camera)) {
         error = "Invalid scene camera (finite values, pitch or distance).";
         return false;
     }
+
     if (!ValidParents(scene)) {
         error = "Invalid or cyclic entity parent relationship.";
         return false;
     }
+
     for (const auto& entity : scene.vEntities) {
         if (!Valid(entity)) {
             error = "Invalid entity name or non-finite transform/color.";
             return false;
         }
     }
+
     // まずメモリ上に書き出す（float は元の値に戻せる桁数で）
     std::ostringstream out;
     out.imbue(std::locale::classic());
@@ -553,21 +648,29 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
     for (const auto& e : scene.vEntities) {
         const auto& d = e.draw;
         out << std::quoted(e.sName) << ' ' << e.vComponents.size();
-        for (const auto& component : e.vComponents)
+        for (const auto& component : e.vComponents) {
             out << ' ' << std::quoted(component);
+        }
+
         size_t propertyCount = 0;
-        for (const auto& [component, fields] : e.componentProperties)
+        for (const auto& [component, fields] : e.componentProperties) {
             propertyCount += fields.size();
+        }
+
         out << ' ' << e.nParent << ' ' << static_cast<unsigned>(e.renderer) << ' ' << std::quoted(e.sModelAsset) << ' '
             << std::quoted(e.sMaterialAsset) << ' ' << std::quoted(e.sTextureAsset) << ' ' << (e.bPlayAnimation ? 1 : 0) << ' '
             << e.fAnimationTime << ' ' << e.nAnimationIndex << ' ' << propertyCount;
-        for (const auto& [component, fields] : e.componentProperties)
-            for (const auto& [field, value] : fields)
+        for (const auto& [component, fields] : e.componentProperties) {
+            for (const auto& [field, value] : fields) {
                 out << ' ' << std::quoted(component) << ' ' << std::quoted(field) << ' ' << std::quoted(value);
-        out << ' ' << (d.bIs2D ? 1 : 0) << ' ' << d.position.x << ' ' << d.position.y << ' ' << d.position.z << ' ' << d.rotation.x
-            << ' ' << d.rotation.y << ' ' << d.rotation.z << ' ' << d.scale.x << ' ' << d.scale.y << ' ' << d.scale.z << ' '
-            << d.color.x << ' ' << d.color.y << ' ' << d.color.z << ' ' << d.color.w << '\n';
+            }
+        }
+
+        out << ' ' << (d.bIs2D ? 1 : 0) << ' ' << d.position.x << ' ' << d.position.y << ' ' << d.position.z << ' '
+            << d.rotation.x << ' ' << d.rotation.y << ' ' << d.rotation.z << ' ' << d.scale.x << ' ' << d.scale.y << ' '
+            << d.scale.z << ' ' << d.color.x << ' ' << d.color.y << ' ' << d.color.z << ' ' << d.color.w << '\n';
     }
+
     // 同じフォルダーの一時ファイルに書き、成功したときだけ置き換える
     auto temp = path;
     temp += L".tmp";
@@ -577,6 +680,7 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
             error = "Cannot write scene: " + PathText(temp);
             return false;
         }
+
         file << out.str();
         file.close();
         if (!file) {
@@ -584,12 +688,14 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
             return false;
         }
     }
+
     if (!MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         error = "Cannot replace scene (Windows error " + std::to_string(GetLastError()) + "): " + PathText(path);
         std::error_code ignored;
         std::filesystem::remove(temp, ignored);
         return false;
     }
+
     EngineEvents::Get().onSceneSaved.Broadcast(scene);
     return true;
 }
@@ -602,12 +708,16 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
 //==================================================================================
 bool RegisterComponent(const std::string& name, ComponentUpdate update) {
     if (name.empty() || name.size() > 128 || name.find_first_of("\r\n") != std::string::npos || !update) return false;
+
     // 関数を Update で呼ぶだけのコンポーネントで包む
     struct CallbackComponent final : Component {
         explicit CallbackComponent(ComponentUpdate callback) : callback_(callback) {}
+
         void Update(Entity& entity, float dt) override { callback_(entity, dt); }
+
         ComponentUpdate callback_;
     };
+
     return Components().emplace(name, [update]() { return std::make_unique<CallbackComponent>(update); }).second;
 }
 
@@ -617,11 +727,13 @@ bool RegisterComponent(const std::string& name, ComponentUpdate update) {
 DrawItem PolygonRenderer::BuildDrawItem(const Entity& entity) const {
     return entity.draw;
 }
+
 DrawItem Image::BuildDrawItem(const Entity& entity) const {
     auto result = entity.draw;
     result.bIs2D = true;
     return result;
 }
+
 DrawItem ModelRenderer::BuildDrawItem(const Entity& entity) const {
     auto result = entity.draw;
     result.bIs2D = false;
@@ -631,6 +743,7 @@ DrawItem ModelRenderer::BuildDrawItem(const Entity& entity) const {
     result.bVisible = static_cast<bool>(result.pVertices); // 読めなければ描かない
     return result;
 }
+
 DrawItem MeshRenderer::BuildDrawItem(const Entity& entity) const {
     auto result = entity.draw;
     const auto mesh = m_mesh.empty() ? LoadedMesh{} : LoadModelMesh(m_mesh, m_fAnimationTime, m_nAnimationIndex);
@@ -665,14 +778,17 @@ bool AttachComponent(Entity& entity, const std::string& name, std::string& error
         error = "The component is not registered: " + name;
         return false;
     }
+
     if (std::find(entity.vComponents.begin(), entity.vComponents.end(), name) != entity.vComponents.end()) {
         error = "This component is already attached.";
         return false;
     }
+
     if (entity.vComponents.size() >= MaxComponentsPerEntity) {
         error = "An object can have up to " + std::to_string(MaxComponentsPerEntity) + " components.";
         return false;
     }
+
     entity.vComponents.push_back(name);
     EngineEvents::Get().onComponentAttached.Broadcast(entity, name);
     return true;
@@ -699,8 +815,10 @@ bool DetachComponent(Entity& entity, std::size_t componentIndex) {
 std::vector<std::string> RegisteredComponentNames() {
     std::vector<std::string> result;
     result.reserve(Components().size());
-    for (const auto& component : Components())
+    for (const auto& component : Components()) {
         result.push_back(component.first);
+    }
+
     std::sort(result.begin(), result.end());
     return result;
 }
@@ -726,7 +844,10 @@ void SyncRuntimeComponents(Entity& entity) {
 
 // --- 保存されたインスペクターの値を反映し、Start() をちょうど 1 回呼ぶ ---
 void StartComponentIfNeeded(Entity& entity, std::size_t nIndex) {
-    if (nIndex >= entity.vRuntimeComponentStarted.size()) entity.vRuntimeComponentStarted.resize(nIndex + 1, false);
+    if (nIndex >= entity.vRuntimeComponentStarted.size()) {
+        entity.vRuntimeComponentStarted.resize(nIndex + 1, false);
+    }
+
     if (entity.vRuntimeComponentStarted[nIndex]) return;
     auto& component = *entity.vRuntimeComponents[nIndex];
     const auto saved = entity.componentProperties.find(entity.vRuntimeComponentNames[nIndex]);
@@ -734,6 +855,7 @@ void StartComponentIfNeeded(Entity& entity, std::size_t nIndex) {
         const auto copy = saved->second; // 反映中に保存値が書き換わるのでコピーを使う
         ApplySavedProperties(component, copy);
     }
+
     component.Start(entity);
     entity.vRuntimeComponentStarted[nIndex] = true;
     EngineEvents::Get().onComponentStarted.Broadcast(entity, component, entity.vRuntimeComponentNames[nIndex]);
@@ -747,6 +869,7 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
     const float fDelta = std::max(deltaSeconds, 0.0f);
     Time::Advance(fDelta); // Time の経過時間を進める
     auto& events = EngineEvents::Get();
+
     // 最初に入力を更新する（このフレームのすべての Update が同じ状態を見る）
     auto* pInput = CInputSystem::GetInstance();
     pInput->SetAssetRoot(scene.projectRoot);
@@ -755,8 +878,11 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
 
     // 1 周目: Start（初回のみ）と Update を、インスペクターの順に呼ぶ
     for (auto& entity : scene.vEntities) {
-        if ((entity.renderer == Entity::RendererKind::Model || entity.renderer == Entity::RendererKind::Mesh) && entity.bPlayAnimation)
+        if ((entity.renderer == Entity::RendererKind::Model || entity.renderer == Entity::RendererKind::Mesh) &&
+            entity.bPlayAnimation) {
             entity.fAnimationTime += fDelta; // アニメーションを進める
+        }
+
         SyncRuntimeComponents(entity);
         const size_t nCount = std::min(entity.vRuntimeComponentNames.size(), entity.vRuntimeComponents.size());
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
@@ -774,14 +900,21 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
     for (auto& entity : scene.vEntities) {
         const size_t nCount = std::min(entity.vRuntimeComponentNames.size(), entity.vRuntimeComponents.size());
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
-            if (entity.vRuntimeComponents[nIndex])
+            if (entity.vRuntimeComponents[nIndex]) {
                 entity.vRuntimeComponents[nIndex]->Coroutines().Tick(fDelta * Time::TimeScale(), fDelta);
+            }
         }
+
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
-            if (entity.vRuntimeComponents[nIndex]) entity.vRuntimeComponents[nIndex]->LateUpdate(entity, fDelta);
+            if (entity.vRuntimeComponents[nIndex]) {
+                entity.vRuntimeComponents[nIndex]->LateUpdate(entity, fDelta);
+            }
         }
+
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
-            if (entity.vRuntimeComponents[nIndex]) ComponentEditorValues(entity, nIndex);
+            if (entity.vRuntimeComponents[nIndex]) {
+                ComponentEditorValues(entity, nIndex);
+            }
         }
     }
 
@@ -791,7 +924,10 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
 namespace {
 // --- インスタンスが無ければ作る（エディターで値を表示・編集するため） ---
 void EnsureComponentInstances(Entity& entity) {
-    if (entity.vRuntimeComponentNames == entity.vComponents && entity.vRuntimeComponents.size() == entity.vComponents.size()) return;
+    if (entity.vRuntimeComponentNames == entity.vComponents && entity.vRuntimeComponents.size() == entity.vComponents.size()) {
+        return;
+    }
+
     entity.vRuntimeComponentNames = entity.vComponents;
     entity.vRuntimeComponents.clear();
     entity.vRuntimeComponentStarted.clear();
@@ -843,10 +979,15 @@ bool ParseVector(const std::string& sText, float* pValues, int nCount) {
     std::istringstream in(sNormalized);
     in.imbue(std::locale::classic());
     std::vector<std::string> vParts;
-    for (std::string sPart; in >> sPart;) vParts.push_back(sPart);
+    for (std::string sPart; in >> sPart;) {
+        vParts.push_back(sPart);
+    }
+
     if (static_cast<int>(vParts.size()) != nCount) return false;
-    for (int nIndex = 0; nIndex < nCount; ++nIndex)
+    for (int nIndex = 0; nIndex < nCount; ++nIndex) {
         if (!ParseFloat(vParts[static_cast<size_t>(nIndex)], pValues[nIndex])) return false;
+    }
+
     return true;
 }
 
@@ -871,10 +1012,10 @@ void WriteEnum(EditorField& field, long long nValue) {
 
 // 配列を行に展開した 1 行分（"Points"、"Points.Size"、"Points[0]"、...）
 struct FlatField {
-    EditorFieldInfo info;                    // 表示用の情報
-    EditorField field;                       // 通常の行の値（pValue が有効）
+    EditorFieldInfo info;                      // 表示用の情報
+    EditorField field;                         // 通常の行の値（pValue が有効）
     std::shared_ptr<EditorArrayAccess> pArray; // 所属する配列
-    std::size_t nElement = 0;                // 要素の番号
+    std::size_t nElement = 0;                  // 要素の番号
     // 行の種類: 通常 / 配列の見出し / 配列のサイズ / 配列の要素
     enum class KIND : unsigned char { LEAF, HEADER, SIZE, ELEMENT } kind = KIND::LEAF;
 };
@@ -906,7 +1047,9 @@ std::vector<FlatField> Flatten(std::vector<EditorField>& vFields) {
             vFlat.push_back(std::move(flat));
             continue;
         }
+
         const auto& pArray = field.pArray;
+
         // 配列: 見出し → サイズ → 要素の順に並べる
         FlatField header;
         header.kind = FlatField::KIND::HEADER;
@@ -930,7 +1073,8 @@ std::vector<FlatField> Flatten(std::vector<EditorField>& vFields) {
         for (std::size_t nElement = 0; nElement < nCount; ++nElement) {
             FlatField element;
             element.kind = FlatField::KIND::ELEMENT;
-            element.info = LeafInfo(pArray->element, field.sName + "[" + std::to_string(nElement) + "]", "Element " + std::to_string(nElement));
+            element.info = LeafInfo(pArray->element, field.sName + "[" + std::to_string(nElement) + "]",
+                                    "Element " + std::to_string(nElement));
             element.info.bReadOnly = field.bReadOnly || pArray->element.bReadOnly;
             element.info.nIndent = 1;
             element.info.sArrayPath = field.sName;
@@ -939,6 +1083,7 @@ std::vector<FlatField> Flatten(std::vector<EditorField>& vFields) {
             vFlat.push_back(std::move(element));
         }
     }
+
     return vFlat;
 }
 
@@ -961,11 +1106,13 @@ bool FlatAssign(FlatField& flat, const std::string& sValue, std::string& error) 
             error = "The size of a fixed array cannot change.";
             return false;
         }
+
         float fSize = 0;
         if (!ParseFloat(sValue, fSize) || fSize < 0 || fSize != std::floor(fSize) || fSize > EDITOR_ARRAY_MAX_SIZE) {
             error = "Size must be a whole number from 0 to " + std::to_string(EDITOR_ARRAY_MAX_SIZE) + ".";
             return false;
         }
+
         flat.pArray->resize(static_cast<std::size_t>(fSize));
         return true;
     }
@@ -974,6 +1121,7 @@ bool FlatAssign(FlatField& flat, const std::string& sValue, std::string& error) 
             error = "The selected field is read-only.";
             return false;
         }
+
         return flat.pArray->set && flat.pArray->set(flat.nElement, sValue, error);
     default: return AssignEditorField(flat.field, sValue, error);
     }
@@ -986,13 +1134,18 @@ void ApplySavedProperties(Component& component, const Entity::PropertyMap& saved
         if (flat.kind != FlatField::KIND::SIZE || flat.info.bReadOnly) continue;
         const auto found = saved.find(flat.info.sPath);
         std::string ignored;
-        if (found != saved.end()) FlatAssign(flat, found->second, ignored);
+        if (found != saved.end()) {
+            FlatAssign(flat, found->second, ignored);
+        }
     }
+
     for (auto& flat : Flatten(vFields)) {
         if (flat.kind == FlatField::KIND::SIZE || flat.kind == FlatField::KIND::HEADER) continue;
         const auto found = saved.find(flat.info.sPath);
         std::string ignored;
-        if (found != saved.end()) FlatAssign(flat, found->second, ignored);
+        if (found != saved.end()) {
+            FlatAssign(flat, found->second, ignored);
+        }
     }
 }
 
@@ -1019,9 +1172,11 @@ std::string EditorFieldText(const EditorField& field) {
     case EditorFieldType::String: return *static_cast<const std::string*>(field.pValue);
     case EditorFieldType::Enum: {
         const long long nValue = ReadEnum(field);
+
         // 名前があれば名前、無ければ数値
-        return nValue >= 0 && static_cast<size_t>(nValue) < field.vEnumNames.size() ? field.vEnumNames[static_cast<size_t>(nValue)]
-                                                                                    : std::to_string(nValue);
+        return nValue >= 0 && static_cast<size_t>(nValue) < field.vEnumNames.size()
+                   ? field.vEnumNames[static_cast<size_t>(nValue)]
+                   : std::to_string(nValue);
     }
     case EditorFieldType::Vector2: {
         const auto& value = *static_cast<const DirectX::XMFLOAT2*>(field.pValue);
@@ -1043,49 +1198,76 @@ bool AssignEditorField(EditorField& field, const std::string& value, std::string
         error = "The selected field is read-only.";
         return false;
     }
+
     if (!field.pValue) {
         error = "The field has no storage.";
         return false;
     }
+
     try {
         size_t used = 0;
         if (field.type == EditorFieldType::Float) {
             float parsed = 0;
-            if (!ParseFloat(value, parsed)) throw std::invalid_argument("float");
-            if (field.bRange) parsed = std::clamp(parsed, field.fMin, field.fMax); // スライダーの範囲に収める
+            if (!ParseFloat(value, parsed)) {
+                throw std::invalid_argument("float");
+            }
+
+            if (field.bRange) {
+                parsed = std::clamp(parsed, field.fMin, field.fMax); // スライダーの範囲に収める
+            }
+
             *static_cast<float*>(field.pValue) = parsed;
         } else if (field.type == EditorFieldType::Integer) {
             int parsed = std::stoi(value, &used);
-            if (used != value.size()) throw std::invalid_argument("int");
-            if (field.bRange)
+            if (used != value.size()) {
+                throw std::invalid_argument("int");
+            }
+
+            if (field.bRange) {
                 parsed = std::clamp(parsed, static_cast<int>(std::ceil(field.fMin)), static_cast<int>(std::floor(field.fMax)));
+            }
+
             *static_cast<int*>(field.pValue) = parsed;
         } else if (field.type == EditorFieldType::Boolean) {
-            if (value == "true" || value == "1")
+            if (value == "true" || value == "1") {
                 *static_cast<bool*>(field.pValue) = true;
-            else if (value == "false" || value == "0")
+            } else if (value == "false" || value == "0") {
                 *static_cast<bool*>(field.pValue) = false;
-            else
+            } else {
                 throw std::invalid_argument("bool");
+            }
         } else if (field.type == EditorFieldType::String) {
             *static_cast<std::string*>(field.pValue) = value;
         } else if (field.type == EditorFieldType::Enum) {
             // 値の名前（大文字小文字は区別しない）または数値
             const std::string sValue = Trimmed(value);
             long long nValue = -1;
-            for (size_t nIndex = 0; nIndex < field.vEnumNames.size(); ++nIndex)
-                if (_stricmp(field.vEnumNames[nIndex].c_str(), sValue.c_str()) == 0) nValue = static_cast<long long>(nIndex);
+            for (size_t nIndex = 0; nIndex < field.vEnumNames.size(); ++nIndex) {
+                if (_stricmp(field.vEnumNames[nIndex].c_str(), sValue.c_str()) == 0) {
+                    nValue = static_cast<long long>(nIndex);
+                }
+            }
+
             if (nValue < 0) {
                 nValue = std::stoll(sValue, &used);
-                if (used != sValue.size()) throw std::invalid_argument("enum");
+                if (used != sValue.size()) {
+                    throw std::invalid_argument("enum");
+                }
             }
+
             WriteEnum(field, nValue);
         } else if (field.type == EditorFieldType::Vector2 || field.type == EditorFieldType::Vector3) {
             float aValues[3]{};
             const int nCount = field.type == EditorFieldType::Vector2 ? 2 : 3;
-            if (!ParseVector(value, aValues, nCount)) throw std::invalid_argument("vector");
-            if (nCount == 2) *static_cast<DirectX::XMFLOAT2*>(field.pValue) = {aValues[0], aValues[1]};
-            else *static_cast<DirectX::XMFLOAT3*>(field.pValue) = {aValues[0], aValues[1], aValues[2]};
+            if (!ParseVector(value, aValues, nCount)) {
+                throw std::invalid_argument("vector");
+            }
+
+            if (nCount == 2) {
+                *static_cast<DirectX::XMFLOAT2*>(field.pValue) = {aValues[0], aValues[1]};
+            } else {
+                *static_cast<DirectX::XMFLOAT3*>(field.pValue) = {aValues[0], aValues[1], aValues[2]};
+            }
         } else {
             throw std::invalid_argument("type");
         }
@@ -1093,6 +1275,7 @@ bool AssignEditorField(EditorField& field, const std::string& value, std::string
         error = "The value does not match the component field type.";
         return false;
     }
+
     return true;
 }
 
@@ -1105,16 +1288,21 @@ std::vector<EditorFieldInfo> ComponentFieldInfos(Entity& entity, std::size_t com
     if (componentIndex >= entity.vRuntimeComponents.size() || !entity.vRuntimeComponents[componentIndex]) return result;
     auto& component = *entity.vRuntimeComponents[componentIndex];
     auto& saved = entity.componentProperties[entity.vRuntimeComponentNames[componentIndex]];
+
     // Play モード外では保存値が正、Play 中は実行中の値が正
     if (!entity.vRuntimeComponentStarted[componentIndex]) {
         const auto copy = saved;
         ApplySavedProperties(component, copy);
     }
+
     auto vFields = component.EditorFields();
     auto vFlat = Flatten(vFields);
     StoreProperties(vFlat, saved);
     result.reserve(vFlat.size());
-    for (auto& flat : vFlat) result.push_back(std::move(flat.info));
+    for (auto& flat : vFlat) {
+        result.push_back(std::move(flat.info));
+    }
+
     return result;
 }
 
@@ -1123,8 +1311,12 @@ std::vector<EditorFieldInfo> ComponentFieldInfos(Entity& entity, std::size_t com
 //==================================================================================
 std::vector<std::pair<std::string, std::string>> ComponentEditorValues(Entity& entity, std::size_t componentIndex) {
     std::vector<std::pair<std::string, std::string>> result;
-    for (auto& info : ComponentFieldInfos(entity, componentIndex))
-        if (!info.bArrayHeader) result.emplace_back(std::move(info.sPath), std::move(info.sValue));
+    for (auto& info : ComponentFieldInfos(entity, componentIndex)) {
+        if (!info.bArrayHeader) {
+            result.emplace_back(std::move(info.sPath), std::move(info.sValue));
+        }
+    }
+
     return result;
 }
 
@@ -1139,21 +1331,25 @@ bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex, const s
         error = "The component class is not registered.";
         return false;
     }
+
     auto& component = *entity.vRuntimeComponents[componentIndex];
     auto& saved = entity.componentProperties[entity.vRuntimeComponentNames[componentIndex]];
     if (!entity.vRuntimeComponentStarted[componentIndex]) {
         const auto copy = saved;
         ApplySavedProperties(component, copy);
     }
+
     auto vFields = component.EditorFields();
     auto vFlat = Flatten(vFields);
-    for (auto& flat : vFlat)
+    for (auto& flat : vFlat) {
         if (flat.info.sPath == name) {
             if (!FlatAssign(flat, value, error)) return false;
             auto vAfter = Flatten(vFields); // サイズを変えると要素が増減するので展開し直す
             StoreProperties(vAfter, saved);
             return true;
         }
+    }
+
     error = "The component field no longer exists.";
     return false;
 }
@@ -1176,10 +1372,12 @@ Camera ActiveGameCamera(Scene& scene) {
             auto active = props->second.find("Active");
             if (active != props->second.end() && (active->second == "false" || active->second == "0")) continue;
         }
+
         const auto world = WorldDraw(scene, static_cast<int>(i));
         Camera result;
         result.fYaw = world.rotation.y;
         result.fPitch = world.rotation.x;
+
         // 向いている方向の前方に注視点を置く
         result.fDistance = 10.0f;
         const float cp = std::cos(result.fPitch);
@@ -1190,6 +1388,7 @@ Camera ActiveGameCamera(Scene& scene) {
             auto ortho = props->second.find("Orthographic");
             result.bOrthographic = ortho != props->second.end() && (ortho->second == "true" || ortho->second == "1");
         }
+
         if (props != entity.componentProperties.end()) {
             // 数値の保存値（読めなければ既定値）
             auto number = [&](const char* name, float fallback) {
@@ -1205,8 +1404,10 @@ Camera ActiveGameCamera(Scene& scene) {
             result.fNearClip = std::max(number("Near Clip", 0.1f), 0.001f);
             result.fFarClip = std::max(number("Far Clip", 1000.0f), result.fNearClip + 0.001f);
         }
+
         return result;
     }
+
     return scene.camera;
 }
 
@@ -1228,24 +1429,28 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
             state[index] = 2;
             return;
         }
+
         state[index] = 1;
         const auto& entity = scene.vEntities[index];
+
         // レンダラーの種類ごとに描画情報を作る
         auto world = entity.draw;
-        if (entity.renderer == Entity::RendererKind::None)
+        if (entity.renderer == Entity::RendererKind::None) {
             world.bVisible = false;
-        else if (entity.renderer == Entity::RendererKind::Polygon)
+        } else if (entity.renderer == Entity::RendererKind::Polygon) {
             world = PolygonRenderer{}.BuildDrawItem(entity);
-        else if (entity.renderer == Entity::RendererKind::Mesh)
+        } else if (entity.renderer == Entity::RendererKind::Mesh) {
             world = MeshRenderer(scene.projectRoot / std::filesystem::u8path(entity.sModelAsset), entity.fAnimationTime,
                                  entity.nAnimationIndex)
                         .BuildDrawItem(entity);
-        else if (entity.renderer == Entity::RendererKind::Model)
+        } else if (entity.renderer == Entity::RendererKind::Model) {
             world = ModelRenderer(scene.projectRoot / std::filesystem::u8path(entity.sModelAsset), entity.fAnimationTime,
                                   entity.nAnimationIndex)
                         .BuildDrawItem(entity);
-        else
+        } else {
             world = Image{}.BuildDrawItem(entity);
+        }
+
         // マテリアルの基本色を掛ける
         if (!entity.sMaterialAsset.empty()) {
             Material material;
@@ -1257,6 +1462,7 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
                 world.color.w *= material.baseColor.w;
             }
         }
+
         // 親のトランスフォームを適用する（拡大 → 回転 → 移動）
         if (entity.nParent >= 0 && static_cast<size_t>(entity.nParent) < scene.vEntities.size()) {
             resolve(entity.nParent);
@@ -1271,11 +1477,14 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
                               world.rotation.z + parent.rotation.z};
             world.scale = {world.scale.x * parent.scale.x, world.scale.y * parent.scale.y, world.scale.z * parent.scale.z};
         }
+
         result[index] = world;
         state[index] = 2;
     };
-    for (int i = 0; i < static_cast<int>(scene.vEntities.size()); ++i)
+    for (int i = 0; i < static_cast<int>(scene.vEntities.size()); ++i) {
         resolve(i);
+    }
+
     return result;
 }
 
@@ -1323,14 +1532,17 @@ bool SetEntityParent(Scene& scene, int child, int parent, std::string& error) {
         error = "Invalid parent selection.";
         return false;
     }
+
     // 新しい親が自分の子孫なら循環するので失敗
     for (int p = parent, steps = 0; p >= 0 && steps <= static_cast<int>(scene.vEntities.size()); ++steps) {
         if (p == child) {
             error = "An object cannot be parented to one of its descendants.";
             return false;
         }
+
         p = scene.vEntities[p].nParent;
     }
+
     // ワールドでの位置を保ったまま親を変える
     const auto world = WorldDraw(scene, child);
     const int old = scene.vEntities[child].nParent;
@@ -1341,6 +1553,7 @@ bool SetEntityParent(Scene& scene, int child, int parent, std::string& error) {
         error = "The parent relationship would be cyclic.";
         return false;
     }
+
     return true;
 }
 
@@ -1358,12 +1571,14 @@ bool LoadProjectSettings(const std::filesystem::path& path, ProjectSettings& set
         error = "Project settings were not found: " + PathText(path);
         return false;
     }
+
     std::string sMagic;
     unsigned uVersion = 0;
     if (!(file >> sMagic >> uVersion) || sMagic != "DXSETTINGS" || uVersion != 1) {
         error = "Invalid project settings header (expected DXSETTINGS 1).";
         return false;
     }
+
     ProjectSettings loaded;
     std::string sKey, sValue;
     while (file >> sKey >> std::quoted(sValue)) {
@@ -1371,8 +1586,10 @@ bool LoadProjectSettings(const std::filesystem::path& path, ProjectSettings& set
             error = "Unknown GraphicsApi in project settings: " + sValue;
             return false;
         }
+
         // 知らないキーは無視する（新しい版の設定ファイルも読めるように）
     }
+
     settings = loaded;
     return true;
 }
@@ -1390,6 +1607,7 @@ bool SaveProjectSettings(const std::filesystem::path& path, const ProjectSetting
             error = "Cannot write project settings: " + PathText(temp);
             return false;
         }
+
         file << "DXSETTINGS 1\n";
         file << "GraphicsApi " << std::quoted(GraphicsApiToken(settings.graphicsApi)) << '\n';
         file.close();
@@ -1398,12 +1616,14 @@ bool SaveProjectSettings(const std::filesystem::path& path, const ProjectSetting
             return false;
         }
     }
+
     if (!MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         error = "Cannot replace project settings (Windows error " + std::to_string(GetLastError()) + ").";
         std::error_code ignored;
         std::filesystem::remove(temp, ignored);
         return false;
     }
+
     return true;
 }
 
@@ -1434,13 +1654,16 @@ void ExportOptionalFiles(const std::filesystem::path& projectDir, const std::fil
         Debug::LogWarning(
             "Export: Default.hlsl does not compile for Shader Model 3; Direct3D 9 players use the built-in shader.");
     }
+
     // プロジェクトの設定をコピーする
     std::error_code ec;
     const auto settings = projectDir / PROJECT_SETTINGS_FILE_NAME;
     if (std::filesystem::is_regular_file(settings, ec)) {
         std::filesystem::copy_file(settings, dest / PROJECT_SETTINGS_FILE_NAME, std::filesystem::copy_options::overwrite_existing,
                                    ec);
-        if (ec) Debug::LogWarning("Export: could not copy project settings: " + ec.message());
+        if (ec) {
+            Debug::LogWarning("Export: could not copy project settings: " + ec.message());
+        }
     }
 }
 } // namespace
@@ -1459,35 +1682,42 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
                 const Scene& scene, std::string& error) {
     error.clear();
     std::error_code ec;
+
     // パスを正規化する
     const auto root = std::filesystem::weakly_canonical(baseDir, ec);
     if (ec) {
         error = "Cannot resolve application directory: " + ec.message();
         return false;
     }
+
     const auto target = std::filesystem::weakly_canonical(dest, ec);
     if (ec) {
         error = "Cannot resolve export directory: " + ec.message();
         return false;
     }
+
     const auto project = std::filesystem::weakly_canonical(projectDir, ec);
     if (ec) {
         error = "Cannot resolve project directory: " + ec.message();
         return false;
     }
+
     // child が parent の中（または同じ）か
     auto inside = [](const std::filesystem::path& parent, const std::filesystem::path& child) {
         auto a = parent.begin(), b = child.begin();
         for (; a != parent.end(); ++a, ++b) {
             if (b == child.end() || _wcsicmp(a->c_str(), b->c_str()) != 0) return false;
         }
+
         return true;
     };
+
     // アプリのフォルダーそのものやプロジェクトの中には書き出さない
     if ((inside(root, target) && inside(target, root)) || inside(project, target)) {
         error = "Choose an export directory outside the application root and project folder.";
         return false;
     }
+
     // 必要なファイルとシーンの検証
     const auto game = baseDir / "Game.exe";
     const auto shader = projectDir / "Default.hlsl";
@@ -1495,24 +1725,29 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         error = "Game.exe was not found next to the editor. Build the Game target first.";
         return false;
     }
+
     if (!std::filesystem::is_regular_file(shader, ec) || ec) {
         error = "Project shader was not found: " + PathText(shader);
         return false;
     }
+
     if (scene.vEntities.size() > 10000) {
         error = "Too many entities (maximum 10000).";
         return false;
     }
+
     if (!ValidParents(scene)) {
         error = "Invalid or cyclic entity parent relationship.";
         return false;
     }
+
     for (const auto& entity : scene.vEntities) {
         if (!Valid(entity)) {
             error = "Invalid entity name or non-finite transform/color.";
             return false;
         }
     }
+
     // 書き出し先のファイルを作る / 上書きする前にコンパイルする。インクルードも
     // ここで解決するため、プレイヤーには HLSL のソースが要らない。
     using Microsoft::WRL::ComPtr;
@@ -1527,6 +1762,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
                         : "Failed to compile project shader (HRESULT " + std::to_string(static_cast<unsigned long>(hr)) + ").";
             return false;
         }
+
         return true;
     };
     if (!compile("VSMain", "vs_5_0", vs) || !compile("PSMain", "ps_5_0", ps)) return false;
@@ -1535,6 +1771,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         error = "Cannot create export directory: " + ec.message();
         return false;
     }
+
     // 書き出すファイル。既にある場合は通常のファイルであること
     const std::array<const wchar_t*, 4> names = {L"Game.exe", L"scene.dxs", L"Default.vs.cso", L"Default.ps.cso"};
     for (const auto* name : names) {
@@ -1543,11 +1780,13 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
             error = "The export output is not a regular file: " + PathText(output);
             return false;
         }
+
         if (ec) {
             error = "Cannot inspect export output: " + ec.message();
             return false;
         }
     }
+
     // 既存のファイルを置き換える前に、4 つのファイルを別のフォルダーに用意する。
     // 専用のフォルダーにすることで、関係のない .tmp ファイルを壊さない。
     std::filesystem::path stage;
@@ -1558,12 +1797,15 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
             error = "Cannot create export staging directory: " + ec.message();
             return false;
         }
+
         stage.clear();
     }
+
     if (stage.empty()) {
         error = "Cannot reserve a unique export staging directory.";
         return false;
     }
+
     // 準備用のフォルダーの後片付け
     auto cleanup = [&]() {
         std::error_code ignored;
@@ -1571,9 +1813,11 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
             std::filesystem::remove(stage / names[i], ignored);
             std::filesystem::remove(stage / (L"backup-" + std::to_wstring(i)), ignored);
         }
+
         std::filesystem::remove(stage / L"scene.dxs.tmp", ignored);
         std::filesystem::remove(stage, ignored);
     };
+
     // シェーダーのバイトコードの書き込み
     auto writeBlob = [&](const std::filesystem::path& name, ID3DBlob* blob) {
         std::ofstream out(name, std::ios::binary | std::ios::trunc);
@@ -1581,14 +1825,17 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
             error = "Cannot write shader data: " + PathText(name);
             return false;
         }
+
         out.write(static_cast<const char*>(blob->GetBufferPointer()), static_cast<std::streamsize>(blob->GetBufferSize()));
         out.close();
         if (!out) {
             error = "Failed to write shader data: " + PathText(name);
             return false;
         }
+
         return true;
     };
+
     // 準備用のフォルダーに 4 つのファイルを用意する
     std::filesystem::copy_file(game, stage / L"Game.exe", ec);
     if (ec) {
@@ -1596,6 +1843,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         cleanup();
         return false;
     }
+
     if (!writeBlob(stage / L"Default.vs.cso", vs.Get()) || !writeBlob(stage / L"Default.ps.cso", ps.Get()) ||
         !SaveScene(stage / L"scene.dxs", scene, error)) {
         cleanup();
@@ -1611,6 +1859,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
             cleanup();
             return false;
         }
+
         if (hadOriginal[i]) {
             std::filesystem::copy_file(dest / names[i], stage / (L"backup-" + std::to_wstring(i)), ec);
             if (ec) {
@@ -1620,6 +1869,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
             }
         }
     }
+
     // 置き換える。途中で失敗したら、置き換え済みのファイルをバックアップから戻す
     for (size_t i = 0; i < names.size(); ++i) {
         if (!MoveFileExW((stage / names[i]).c_str(), (dest / names[i]).c_str(),
@@ -1628,39 +1878,47 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
                 "Cannot replace export file (Windows error " + std::to_string(GetLastError()) + "): " + PathText(dest / names[i]);
             bool rollbackFailed = false;
             for (size_t j = 0; j < i; ++j) {
-                if (hadOriginal[j])
+                if (hadOriginal[j]) {
                     std::filesystem::copy_file(stage / (L"backup-" + std::to_wstring(j)), dest / names[j],
                                                std::filesystem::copy_options::overwrite_existing, ec);
-                else
+                } else {
                     std::filesystem::remove(dest / names[j], ec);
+                }
+
                 if (ec) {
                     rollbackFailed = true;
                     ec.clear();
                 }
             }
+
             if (rollbackFailed) {
                 error += " Rollback failed; backups were retained in " + PathText(stage);
                 return false;
             }
+
             cleanup();
             return false;
         }
     }
+
     // プロジェクトの Assets をコピーする
     const auto projectAssets = projectDir / L"Assets";
     if (std::filesystem::is_directory(projectAssets, ec)) {
         ec.clear();
         std::filesystem::create_directories(dest / L"Assets", ec);
-        if (!ec)
+        if (!ec) {
             std::filesystem::copy(projectAssets, dest / L"Assets",
                                   std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
                                   ec);
+        }
+
         if (ec) {
             error = "The game was exported, but project Assets could not be copied: " + ec.message();
             cleanup();
             return false;
         }
     }
+
     cleanup();
     ExportOptionalFiles(projectDir, dest); // 追加ファイル（失敗しても続行）
     Debug::Log("Exported game to " + PathText(dest));

@@ -26,8 +26,7 @@ HWND CreateProjectPanel(HWND parent, HINSTANCE instance, const std::filesystem::
                         const std::filesystem::path& engineRoot = {});
 
 // スクリプトを編集するための Visual Studio のプロジェクトを生成する
-bool GenerateVisualStudioProject(const std::filesystem::path& projectRoot,
-                                 const std::filesystem::path& engineRoot,
+bool GenerateVisualStudioProject(const std::filesystem::path& projectRoot, const std::filesystem::path& engineRoot,
                                  std::wstring& error);
 
 // Project の右クリックメニューとエディターの Settings メニューで共通のコマンド
@@ -38,14 +37,11 @@ void NewProjectComponent(HWND panel);             // 新しいコンポーネン
 
 // project/Scripts に、登録済みの C++ コンポーネントとヘッダーを作る。
 // 名前は ASCII の識別子であること。既にあるファイルは置き換えない。
-bool CreateProjectComponent(const std::filesystem::path& projectRoot,
-                            const std::wstring& name, std::wstring& error);
+bool CreateProjectComponent(const std::filesystem::path& projectRoot, const std::wstring& name, std::wstring& error);
 
 // ユーザーが選んだファイルを、既存のファイルを置き換えずにプロジェクトへコピーする。
 // コピー先がプロジェクトの外に出る場合、リパースポイントを使う場合、コピーに
 // 失敗した場合は false。error にはユーザー向けの説明が入る。
-bool ImportProjectFile(const std::filesystem::path& projectRoot,
-                       const std::filesystem::path& destinationFolder,
-                       const std::filesystem::path& source,
-                       std::wstring& error);
-}
+bool ImportProjectFile(const std::filesystem::path& projectRoot, const std::filesystem::path& destinationFolder,
+                       const std::filesystem::path& source, std::wstring& error);
+} // namespace dxs

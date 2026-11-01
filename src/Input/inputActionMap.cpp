@@ -12,6 +12,7 @@
 namespace dxs {
 
 CInputActionMap::CInputActionMap() {}
+
 CInputActionMap::~CInputActionMap() {}
 
 //==================================================================================
@@ -27,8 +28,12 @@ HRESULT CInputActionMap::Init(std::string_view sName) {
 // --- 終了処理 ---
 //==================================================================================
 void CInputActionMap::Uninit(void) {
-    for (auto& pAction : m_vpAction)
-        if (pAction) pAction->Uninit();
+    for (auto& pAction : m_vpAction) {
+        if (pAction) {
+            pAction->Uninit();
+        }
+    }
+
     m_vpAction.clear();
 }
 
@@ -37,8 +42,11 @@ void CInputActionMap::Uninit(void) {
 //==================================================================================
 void CInputActionMap::Update(const CInputSystem& inputSystem) {
     if (!m_bEnable) return; // 無効ならスキップ
-    for (auto& pAction : m_vpAction)
-        if (pAction) pAction->Update(inputSystem);
+    for (auto& pAction : m_vpAction) {
+        if (pAction) {
+            pAction->Update(inputSystem);
+        }
+    }
 }
 
 //==================================================================================
@@ -46,6 +54,7 @@ void CInputActionMap::Update(const CInputSystem& inputSystem) {
 //==================================================================================
 CInputAction* CInputActionMap::Add(std::string_view sName, const CInputAction::ACTION_TYPE type, const float fPressPoint) {
     if (sName.empty() || !(type > CInputAction::ACTION_TYPE::NONE && type < CInputAction::ACTION_TYPE::MAX)) return nullptr;
+
     // 追加: 同じ名前で 2 回追加した場合は既存のアクションを返す
     // （CInputSystem::CreateActionMap のマップの扱いと同じ）
     if (auto* pExisting = Find(sName)) return pExisting;
@@ -59,8 +68,10 @@ CInputAction* CInputActionMap::Add(std::string_view sName, const CInputAction::A
 //==================================================================================
 CInputAction* CInputActionMap::Find(std::string_view sName) const {
     if (sName.empty()) return nullptr;
-    for (const auto& pAction : m_vpAction)
+    for (const auto& pAction : m_vpAction) {
         if (pAction && pAction->IsEqualName(sName)) return pAction.get();
+    }
+
     return nullptr;
 }
 
@@ -72,8 +83,11 @@ void CInputActionMap::SetEnable(const bool bEnable) {
     m_bEnable = bEnable;
     if (bEnablePrev == bEnable || bEnable) return; // 既に設定済み、または有効にした場合はスキップ
     // 更新されなくなるため、押下状態をリセット
-    for (auto& pAction : m_vpAction)
-        if (pAction) pAction->Reset();
+    for (auto& pAction : m_vpAction) {
+        if (pAction) {
+            pAction->Reset();
+        }
+    }
 }
 
 } // namespace dxs

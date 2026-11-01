@@ -15,8 +15,13 @@
 namespace dxs {
 namespace {
 // --- パッド番号 / ボタン番号が範囲内か ---
-bool ValidPad(int nPadID) { return nPadID >= 0 && nPadID < MAX_JOYPAD; }
-bool ValidKey(int nKey) { return nKey >= 0 && nKey < CJoypad::KEY_MAX; }
+bool ValidPad(int nPadID) {
+    return nPadID >= 0 && nPadID < MAX_JOYPAD;
+}
+
+bool ValidKey(int nKey) {
+    return nKey >= 0 && nKey < CJoypad::KEY_MAX;
+}
 
 // --- スティックの値を -1..1 にし、デッドゾーン内は 0 にする ---
 float Thumb(SHORT sValue) {
@@ -26,18 +31,25 @@ float Thumb(SHORT sValue) {
 } // namespace
 
 CJoypad::CJoypad() {}
+
 CJoypad::~CJoypad() {}
 
 //==================================================================================
 // --- 初期化 / 終了処理 ---
 //==================================================================================
 void CJoypad::Init(void) {
-    for (auto& pad : m_aJoypad) pad = {};
+    for (auto& pad : m_aJoypad) {
+        pad = {};
+    }
 }
 
 void CJoypad::Uninit(void) {
-    for (int nPadID = 0; nPadID < MAX_JOYPAD; ++nPadID)
-        if (m_aJoypad[nPadID].nCounterVibration > 0) CInput::Source().SetJoypadVibration(nPadID, XINPUT_VIBRATION{}); // 振動中なら止める
+    for (int nPadID = 0; nPadID < MAX_JOYPAD; ++nPadID) {
+        if (m_aJoypad[nPadID].nCounterVibration > 0) {
+            CInput::Source().SetJoypadVibration(nPadID, XINPUT_VIBRATION{}); // 振動中なら止める
+        }
+    }
+
     Init();
 }
 
@@ -51,14 +63,23 @@ void CJoypad::Update(void) {
         auto& pad = m_aJoypad[nPadID];
         XINPUT_STATE state{};
         pad.bConnected = source.ReadJoypad(nPadID, state);
-        if (!bFocus) state.Gamepad = {}; // キーボードと同じく、フォーカスが無ければ入力なし
+        if (!bFocus) {
+            state.Gamepad = {}; // キーボードと同じく、フォーカスが無ければ入力なし
+        }
+
         const WORD wOld = pad.joykeyState.Gamepad.wButtons, wNew = state.Gamepad.wButtons;
+
         // ボタンのトリガー / リリース（ビット演算でまとめて求める）
         pad.joykeyStateTrigger.Gamepad.wButtons = static_cast<WORD>((wOld ^ wNew) & wNew);
         pad.joykeyStateRelease.Gamepad.wButtons = static_cast<WORD>(wOld & (wOld ^ wNew));
-        for (int nKey = 0; nKey < KEY_MAX; ++nKey)
-            if (((wOld ^ wNew) >> nKey) & 1) pad.nJoykeyStateRepeat[nKey] = 0;
+        for (int nKey = 0; nKey < KEY_MAX; ++nKey) {
+            if (((wOld ^ wNew) >> nKey) & 1) {
+                pad.nJoykeyStateRepeat[nKey] = 0;
+            }
+        }
+
         pad.joykeyState = state;
+
         // 振動の時間を数え、0 になったら止める
         if (pad.nCounterVibration > 0 && --pad.nCounterVibration == 0) {
             pad.vibration = {};
@@ -115,10 +136,14 @@ float CJoypad::StickDirection(const STICK stick, const int nPadID) {
     const float fX = GetAxis(bLeft ? AXIS_LEFT_X : AXIS_RIGHT_X, nPadID);
     const float fY = GetAxis(bLeft ? AXIS_LEFT_Y : AXIS_RIGHT_Y, nPadID);
     switch (stick) {
-    case STICK_LEFT_UP: case STICK_RIGHT_UP: return std::max(fY, 0.0f);
-    case STICK_LEFT_DOWN: case STICK_RIGHT_DOWN: return std::max(-fY, 0.0f);
-    case STICK_LEFT_LEFT: case STICK_RIGHT_LEFT: return std::max(-fX, 0.0f);
-    case STICK_LEFT_RIGHT: case STICK_RIGHT_RIGHT: return std::max(fX, 0.0f);
+    case STICK_LEFT_UP:
+    case STICK_RIGHT_UP: return std::max(fY, 0.0f);
+    case STICK_LEFT_DOWN:
+    case STICK_RIGHT_DOWN: return std::max(-fY, 0.0f);
+    case STICK_LEFT_LEFT:
+    case STICK_RIGHT_LEFT: return std::max(-fX, 0.0f);
+    case STICK_LEFT_RIGHT:
+    case STICK_RIGHT_RIGHT: return std::max(fX, 0.0f);
     default: return std::sqrt(fX * fX + fY * fY);
     }
 }
@@ -139,10 +164,13 @@ bool CJoypad::GetStick(const STICK stick, Vector3* pOut, const int nPadID) {
         pOut->x = GetAxis(bLeft ? AXIS_LEFT_X : AXIS_RIGHT_X, nPadID);
         pOut->y = GetAxis(bLeft ? AXIS_LEFT_Y : AXIS_RIGHT_Y, nPadID);
         const float fLength = std::sqrt(pOut->x * pOut->x + pOut->y * pOut->y);
-        if (fLength > 1.0f) *pOut = {pOut->x / fLength, pOut->y / fLength, 0.0f}; // 斜めが 1 を超えないようにする
+        if (fLength > 1.0f) {
+            *pOut = {pOut->x / fLength, pOut->y / fLength, 0.0f}; // 斜めが 1 を超えないようにする
+        }
     } else {
         pOut->x = StickDirection(stick, nPadID);
     }
+
     return pOut->x != 0.0f || pOut->y != 0.0f;
 }
 
@@ -156,6 +184,7 @@ bool CJoypad::GetStickRepeat(const STICK stick, const float fRange, const int nW
         nRepeat = 0;
         return false;
     }
+
     const bool bFirst = nRepeat == 0;
     nRepeat++;
     if (bFirst) return true;
@@ -174,6 +203,8 @@ void CJoypad::SetVibration(const int nLPower, const int nRPower, const int nTime
     CInput::Source().SetJoypadVibration(nPadID, pad.vibration);
 }
 
-bool CJoypad::IsConnected(const int nPadID) const { return ValidPad(nPadID) && m_aJoypad[nPadID].bConnected; }
+bool CJoypad::IsConnected(const int nPadID) const {
+    return ValidPad(nPadID) && m_aJoypad[nPadID].bConnected;
+}
 
 } // namespace dxs

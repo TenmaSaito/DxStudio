@@ -12,7 +12,9 @@ void Editor::AddTooltip(HWND control, const wchar_t* text) {
     info.uId = reinterpret_cast<UINT_PTR>(control);
     info.lpszText = const_cast<wchar_t*>(Tr(text));
     SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&info));
-    if (text && *text) vLocalizedTips.emplace_back(control, text); // 言語切り替え用
+    if (text && *text) {
+        vLocalizedTips.emplace_back(control, text); // 言語切り替え用
+    }
 }
 
 void Editor::ApplyTheme() {
@@ -41,29 +43,42 @@ void Editor::ApplyTheme() {
                          spec(ButtonRole::DROPDOWN, Icon::GRAPHICS, theme::COLOR_ICON_CUBE, theme::COLOR_TOOLBAR));
     theme::SetButtonSpec(layoutButton, spec(ButtonRole::DROPDOWN, Icon::LAYOUT, CLR_INVALID, theme::COLOR_TOOLBAR));
     const Icon tools[] = {Icon::MOVE, Icon::ROTATE, Icon::SCALE};
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 3; ++i) {
         theme::SetButtonSpec(gizmoButtons[i], spec(ButtonRole::ICON, tools[i], CLR_INVALID, sceneBar));
+    }
+
     theme::SetButtonSpec(projectionButtons[0], spec(ButtonRole::TOOL, Icon::PERSPECTIVE, CLR_INVALID, sceneBar));
     theme::SetButtonSpec(projectionButtons[1], spec(ButtonRole::TOOL, Icon::ORTHOGRAPHIC, CLR_INVALID, sceneBar));
     theme::SetButtonSpec(inspectorEnabled, spec(ButtonRole::CHECKBOX, Icon::NONE));
     theme::SetButtonSpec(componentAdd, spec(ButtonRole::PRIMARY, Icon::PLUS));
     theme::SetButtonSpec(componentRemove, spec(ButtonRole::PUSH, Icon::TRASH));
     theme::SetButtonSpec(componentValueApply, spec(ButtonRole::PUSH, Icon::NONE));
-    for (HWND control : {hierarchy, componentList, componentFields})
+    for (HWND control : {hierarchy, componentList, componentFields}) {
         theme::ApplyDarkControl(control);
+    }
+
     theme::ApplyDarkInput(componentChoice);
-    for (HWND edit : edits)
-        if (edit) SendMessageW(edit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(2, 2));
+    for (HWND edit : edits) {
+        if (edit) {
+            SendMessageW(edit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(2, 2));
+        }
+    }
+
     // Unreal: drag inside a numeric field (or use the wheel) to change it.
-    for (int field = 2; field < FIELD_COUNT; ++field)
-        if (edits[field])
-            SetWindowSubclass(edits[field], NumericFieldSubclassProc, static_cast<UINT_PTR>(field), reinterpret_cast<DWORD_PTR>(this));
+    for (int field = 2; field < FIELD_COUNT; ++field) {
+        if (edits[field]) {
+            SetWindowSubclass(edits[field], NumericFieldSubclassProc, static_cast<UINT_PTR>(field),
+                              reinterpret_cast<DWORD_PTR>(this));
+        }
+    }
+
     // Unity: drag a field's label left/right to scrub its value.
     for (int field = 2; field < FIELD_COUNT; ++field) {
         if (!labels[field]) continue;
         SetWindowLongPtrW(labels[field], GWL_STYLE, GetWindowLongPtrW(labels[field], GWL_STYLE) | SS_NOTIFY);
         SetWindowSubclass(labels[field], LabelDragSubclassProc, static_cast<UINT_PTR>(field), reinterpret_cast<DWORD_PTR>(this));
     }
+
     AddTooltip(drawModeButton, L"Scene draw mode");
     AddTooltip(aspectButton, L"Game view aspect ratio");
     AddTooltip(controls[9], L"Play (Ctrl+P)");
@@ -87,10 +102,15 @@ void Editor::ApplyTheme() {
 RECT Editor::BoxInset(HWND control) const {
     if (!control) return {};
     if (control == hierarchySearch) return {20, 2, 4, 2};
-    for (HWND edit : edits)
+    for (HWND edit : edits) {
         if (edit == control) return {4, 1, 4, 1};
+    }
+
     if (IsComponentFieldEdit(control)) return {4, 1, 4, 1};
-    if (control == materialEdit || control == textureEdit || control == meshEdit || control == componentValue) return {4, 1, 4, 1};
+    if (control == materialEdit || control == textureEdit || control == meshEdit || control == componentValue) {
+        return {4, 1, 4, 1};
+    }
+
     if (control == componentList || control == componentFields) return {1, 1, 1, 1};
     return {};
 }
@@ -116,23 +136,34 @@ void Editor::PaintInputBoxes(HDC dc, HWND panel) {
         }
     };
     paintBox(hierarchySearch);
-    for (HWND edit : edits)
+    for (HWND edit : edits) {
         paintBox(edit);
-    for (HWND control : {materialEdit, textureEdit, meshEdit, componentValue, componentList, componentFields})
+    }
+
+    for (HWND control : {materialEdit, textureEdit, meshEdit, componentValue, componentList, componentFields}) {
         paintBox(control);
+    }
+
     for (const auto& view : vComponentViews) {
         paintBox(view.hScriptValue);
         for (const auto& row : view.vRows) {
             if (row.bBoolean || row.bEnum || row.bHeader) continue;
-            if (row.vParts.empty()) paintBox(row.hValue);
-            for (HWND part : row.vParts) paintBox(part);
+            if (row.vParts.empty()) {
+                paintBox(row.hValue);
+            }
+
+            for (HWND part : row.vParts) {
+                paintBox(part);
+            }
         }
     }
 }
 
 theme::Icon Editor::EntityIcon(const Entity& entity) const {
-    if (std::find(entity.vComponents.begin(), entity.vComponents.end(), "Camera") != entity.vComponents.end())
+    if (std::find(entity.vComponents.begin(), entity.vComponents.end(), "Camera") != entity.vComponents.end()) {
         return theme::Icon::CAMERA;
+    }
+
     switch (entity.renderer) {
     case Entity::RendererKind::None: return theme::Icon::GAME_OBJECT;
     case Entity::RendererKind::Model: return theme::Icon::MODEL;
@@ -150,22 +181,28 @@ void Editor::DrawHierarchyRow(const DRAWITEMSTRUCT& item) {
         theme::Fill(dc, rect, theme::COLOR_PANEL);
         return;
     }
+
     const int entityIndex = vHierarchyRows[row];
     const auto& entity = scene.vEntities[entityIndex];
     const bool selectedRow = (item.itemState & ODS_SELECTED) != 0;
     const bool focused = GetFocus() == hierarchy;
     const bool hot = row == nHierarchyHot;
-    theme::Fill(dc, rect, selectedRow ? (focused ? theme::COLOR_SELECTION : theme::COLOR_SELECTION_INACTIVE)
-                                      : hot ? theme::COLOR_ROW_HOVER : theme::COLOR_PANEL);
-    if (hot && bHierarchyDragging && entityIndex != nHierarchyDrag) theme::Frame(dc, rect, theme::COLOR_TAB_ACCENT); // drop target
+    theme::Fill(dc, rect,
+                selectedRow ? (focused ? theme::COLOR_SELECTION : theme::COLOR_SELECTION_INACTIVE)
+                : hot       ? theme::COLOR_ROW_HOVER
+                            : theme::COLOR_PANEL);
+    if (hot && bHierarchyDragging && entityIndex != nHierarchyDrag) {
+        theme::Frame(dc, rect, theme::COLOR_TAB_ACCENT); // drop target
+    }
+
     const int mid = (rect.top + rect.bottom) / 2;
     int x = rect.left + 6 + vHierarchyDepths[row] * 14;
     if (vHierarchyHasChildren[row]) {
         const bool collapsed = entityIndex < static_cast<int>(vCollapsedEntities.size()) && vCollapsedEntities[entityIndex];
         RECT chevron{x, mid - 6, x + 12, mid + 6};
-        theme::DrawIcon(dc, collapsed ? theme::Icon::CHEVRON_RIGHT : theme::Icon::CHEVRON_DOWN, chevron,
-                        theme::COLOR_TEXT_DIM);
+        theme::DrawIcon(dc, collapsed ? theme::Icon::CHEVRON_RIGHT : theme::Icon::CHEVRON_DOWN, chevron, theme::COLOR_TEXT_DIM);
     }
+
     x += 14;
     const bool active = entity.draw.bVisible;
     const auto icon = EntityIcon(entity);
@@ -174,9 +211,7 @@ void Editor::DrawHierarchyRow(const DRAWITEMSTRUCT& item) {
         icon == theme::Icon::CUBE || icon == theme::Icon::MODEL ? theme::COLOR_ICON_CUBE : theme::COLOR_TEXT;
     theme::DrawIcon(dc, icon, iconBox, active ? iconColor : theme::COLOR_TEXT_DISABLED);
     RECT text{x + 22, rect.top, rect.right - 4, rect.bottom};
-    const COLORREF textColor = !active       ? theme::COLOR_TEXT_DISABLED
-                               : selectedRow ? theme::COLOR_TEXT_BRIGHT
-                                             : theme::COLOR_TEXT;
+    const COLORREF textColor = !active ? theme::COLOR_TEXT_DISABLED : selectedRow ? theme::COLOR_TEXT_BRIGHT : theme::COLOR_TEXT;
     theme::DrawLabel(dc, Wide(entity.sName), text, textColor, theme::GetFonts().hRegular,
                      DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     if (entity.vComponents.size() >
@@ -219,7 +254,10 @@ void Editor::DrawFieldRow(const DRAWITEMSTRUCT& item) {
     theme::RoundFill(dc, box, 2, theme::COLOR_INPUT, theme::COLOR_INPUT_BORDER);
     if (value == "true" || value == "false") {
         RECT check{box.left + 4, box.top + 1, box.left + 4 + (box.bottom - box.top) - 2, box.bottom - 1};
-        if (value == "true") theme::DrawIcon(dc, theme::Icon::CHECK, check, theme::COLOR_TEXT_BRIGHT);
+        if (value == "true") {
+            theme::DrawIcon(dc, theme::Icon::CHECK, check, theme::COLOR_TEXT_BRIGHT);
+        }
+
         RECT label{check.right + 4, box.top, box.right - 4, box.bottom};
         theme::DrawLabel(dc, Wide(value), label, theme::COLOR_TEXT_DIM, theme::GetFonts().hSmall,
                          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
@@ -241,6 +279,7 @@ void Editor::DrawInspectorStatic(const DRAWITEMSTRUCT& item) {
         theme::DrawIcon(dc, icon, rect, valid ? theme::COLOR_ICON_CUBE : theme::COLOR_TEXT_DISABLED);
         return;
     }
+
     theme::RoundFill(dc, rect, 3, theme::COLOR_BUTTON_PRESSED, theme::COLOR_INPUT_BORDER);
     wchar_t text[64]{};
     GetWindowTextW(item.hwndItem, text, 64);
@@ -263,9 +302,12 @@ void Editor::CreatePanels() {
         p.editor = this;
         p.index = i;
         p.window = CreateWindowExW(WS_EX_CONTROLPARENT, wc.lpszClassName, PANEL_NAMES[i],
-                                   WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | (i == 2 ? WS_VSCROLL : 0), 0, 0, 100, 100,
-                                   window, nullptr, instance, &p);
-        if (i == 2) theme::ApplyDarkControl(p.window); // dark Inspector scrollbar
+                                   WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | (i == 2 ? WS_VSCROLL : 0), 0, 0, 100, 100, window,
+                                   nullptr, instance, &p);
+        if (i == 2) {
+            theme::ApplyDarkControl(p.window); // dark Inspector scrollbar
+        }
+
         // Unity-style tab strip chrome: float / minimize / close icons.
         const theme::Icon icons[] = {theme::Icon::FLOAT, theme::Icon::MINIMIZE, theme::Icon::CLOSE};
         const wchar_t* labels[] = {L"Float", L"Minimize", L"Close"};
@@ -278,6 +320,7 @@ void Editor::CreatePanels() {
             theme::SetButtonSpec(p.buttons[b], spec);
         }
     }
+
     const wchar_t* viewNames[] = {L"Scene", L"Game"};
     const theme::Icon viewIcons[] = {theme::Icon::SCENE, theme::Icon::CAMERA};
     for (int t = 0; t < 2; ++t) {
@@ -285,6 +328,7 @@ void Editor::CreatePanels() {
         SetParent(viewTabs[t], panels[1].window);
         theme::SetButtonSpec(viewTabs[t], {theme::ButtonRole::TAB, viewIcons[t]});
     }
+
     {
         drawModeButton = Make(L"BUTTON", DRAW_MODE_NAMES[0], BS_OWNERDRAW, ID_DRAW_MODE_MENU);
         aspectButton = Make(L"BUTTON", ASPECT_NAMES[0], BS_OWNERDRAW, ID_ASPECT_MENU);
@@ -296,11 +340,13 @@ void Editor::CreatePanels() {
         SetParent(aspectButton, panels[1].window);
         theme::SetButtonSpec(aspectButton, dropdown);
     }
+
     for (int t = 0; t < BOTTOM_TAB_COUNT; ++t) {
         bottomTabs[t] = Make(L"BUTTON", BOTTOM_TAB_NAMES[t], BS_OWNERDRAW, ID_PANEL_TAB_FIRST + t);
         SetParent(bottomTabs[t], panels[3].window);
         theme::SetButtonSpec(bottomTabs[t], {theme::ButtonRole::TAB, BOTTOM_TAB_ICONS[t]});
     }
+
     CreateMainMenu();
 }
 
@@ -338,6 +384,7 @@ void Editor::CreateMainMenu() {
     AppendMenuL(settings, MF_STRING, ID_RELOAD_SHADER, L"Reload shader");
     AppendMenuL(settings, MF_STRING, ID_FRONT_VIEW, L"Front orthographic view");
     AppendMenuL(edit, MF_POPUP, reinterpret_cast<UINT_PTR>(settings), L"Project Settings");
+
     // Edit > Preferences > Language（Unity と同じ場所）
     HMENU preferences = CreatePopupMenu(), language = CreatePopupMenu();
     AppendMenuW(language, MF_STRING, ID_LANGUAGE_ENGLISH, L"English");
@@ -353,12 +400,13 @@ void Editor::CreateMainMenu() {
     AppendMenuL(objects, MF_STRING, ID_FRAME_SELECTION, L"Frame selection\tF");
     AppendMenuL(objects, MF_STRING, ID_DUPLICATE, L"Duplicate\tCtrl+D");
     AppendMenuL(objects, MF_STRING, ID_DELETE, L"Delete selection");
+
     // Component menu: every registered class, like Unity's Component menu.
     const auto names = RegisteredComponentNames();
-    for (size_t i = 0; i < names.size() && ID_ADD_COMPONENT_MENU_FIRST + static_cast<int>(i) <= ID_ADD_COMPONENT_MENU_LAST;
-         ++i)
-        AppendMenuL(components, MF_STRING, ID_ADD_COMPONENT_MENU_FIRST + static_cast<int>(i),
-                    Wide("Add " + names[i]).c_str());
+    for (size_t i = 0; i < names.size() && ID_ADD_COMPONENT_MENU_FIRST + static_cast<int>(i) <= ID_ADD_COMPONENT_MENU_LAST; ++i) {
+        AppendMenuL(components, MF_STRING, ID_ADD_COMPONENT_MENU_FIRST + static_cast<int>(i), Wide("Add " + names[i]).c_str());
+    }
+
     AppendMenuL(build, MF_STRING, ID_EXPORT, L"Export Windows game...");
     AppendMenuL(build, MF_STRING, ID_BUILD_DEBUG, L"Play in Editor\tCtrl+P");
     AppendMenuL(build, MF_STRING, ID_BUILD_ANDROID, L"Build Android Debug APK");
@@ -372,6 +420,7 @@ void Editor::CreateMainMenu() {
         AppendMenuL(submenu, MF_STRING, ID_PANEL_HIDE + i, L"Hide");
         AppendMenuL(windows, MF_POPUP, reinterpret_cast<UINT_PTR>(submenu), PANEL_NAMES[i]);
     }
+
     AppendMenuL(windows, MF_STRING, ID_SHOW_CONSOLE, L"Console\tCtrl+Shift+C");
     AppendMenuL(windows, MF_SEPARATOR, 0, nullptr);
     AppendMenuL(windows, MF_STRING, ID_SAVE_LAYOUT, L"Save current layout");
@@ -393,13 +442,17 @@ void Editor::CreateMainMenu() {
 // --- 表示言語の切り替え処理 ---
 //==================================================================================
 void Editor::ApplyLanguage(EditorLanguage language) {
-    if (!SetLanguage(language)) Debug::LogWarning("The language setting could not be saved; it applies to this session only.");
+    if (!SetLanguage(language)) {
+        Debug::LogWarning("The language setting could not be saved; it applies to this session only.");
+    }
+
     // 起動時に作ったボタン・ラベル・ツールチップを訳し直す
     for (const auto& [hControl, sEnglish] : vLocalizedControls) {
         if (!IsWindow(hControl)) continue;
         SetWindowTextW(hControl, Tr(sEnglish.c_str()));
         InvalidateRect(hControl, nullptr, TRUE);
     }
+
     for (const auto& [hControl, sEnglish] : vLocalizedTips) {
         TTTOOLINFOW info{sizeof(info)};
         info.hwnd = GetParent(hControl);
@@ -407,24 +460,44 @@ void Editor::ApplyLanguage(EditorLanguage language) {
         info.lpszText = const_cast<wchar_t*>(Tr(sEnglish.c_str()));
         SendMessageW(tooltip, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&info));
     }
+
     SendMessageW(hierarchySearch, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(Tr(L"Search Hierarchy")));
+
     // メニューを作り直す
     for (int m = 0; m < MENU_COUNT; ++m) {
-        if (menuButtons[m]) DestroyWindow(menuButtons[m]);
-        if (menuPopups[m]) DestroyMenu(menuPopups[m]);
+        if (menuButtons[m]) {
+            DestroyWindow(menuButtons[m]);
+        }
+
+        if (menuPopups[m]) {
+            DestroyMenu(menuPopups[m]);
+        }
+
         menuButtons[m] = nullptr;
         menuPopups[m] = nullptr;
     }
+
     CreateMainMenu();
+
     // Project / Console パネルは作り直す（ログはコンソールが履歴から復元する）
-    if (projectPanel) DestroyWindow(projectPanel);
+    if (projectPanel) {
+        DestroyWindow(projectPanel);
+    }
+
     projectPanel = CreateProjectPanel(panels[3].window, instance, projectRoot, base);
-    if (consolePanel) DestroyWindow(consolePanel);
+    if (consolePanel) {
+        DestroyWindow(consolePanel);
+    }
+
     consolePanel = CreateConsolePanel(panels[3].window, instance);
+
     // 見出し・インスペクター・レイアウトを更新
     RebuildInspectorNow();
     Layout();
-    for (auto& panel : panels) InvalidateRect(panel.window, nullptr, TRUE);
+    for (auto& panel : panels) {
+        InvalidateRect(panel.window, nullptr, TRUE);
+    }
+
     UpdateMenuChecks();
     RefreshTransport();
     SetStatus(L"Language changed.");
@@ -439,7 +512,9 @@ void Editor::OpenMainMenu(int index) {
     const int command =
         TrackPopupMenu(menuPopups[index], TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN, r.left, r.bottom, 0, window, nullptr);
     SendMessageW(menuButtons[index], BM_SETSTATE, FALSE, 0);
-    if (command) SendMessageW(window, WM_COMMAND, MAKEWPARAM(command, BN_CLICKED), 0);
+    if (command) {
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(command, BN_CLICKED), 0);
+    }
 }
 
 void Editor::UpdateMenuChecks() {
@@ -465,13 +540,19 @@ void Editor::ShowViewDropdown(int id) {
     GetWindowRect(button, &r);
     HMENU menu = CreatePopupMenu();
     const int count = drawModes ? 3 : ASPECT_COUNT;
-    for (int i = 0; i < count; ++i)
-        AppendMenuL(menu, MF_STRING, (drawModes ? ID_DRAW_MODE_FIRST : ID_ASPECT_FIRST) + i, drawModes ? DRAW_MODE_NAMES[i] : ASPECT_NAMES[i]);
+    for (int i = 0; i < count; ++i) {
+        AppendMenuL(menu, MF_STRING, (drawModes ? ID_DRAW_MODE_FIRST : ID_ASPECT_FIRST) + i,
+                    drawModes ? DRAW_MODE_NAMES[i] : ASPECT_NAMES[i]);
+    }
+
     const int first = drawModes ? ID_DRAW_MODE_FIRST : ID_ASPECT_FIRST;
-    CheckMenuRadioItem(menu, first, first + count - 1, first + (drawModes ? static_cast<int>(drawMode) : nGameAspect), MF_BYCOMMAND);
+    CheckMenuRadioItem(menu, first, first + count - 1, first + (drawModes ? static_cast<int>(drawMode) : nGameAspect),
+                       MF_BYCOMMAND);
     const int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN, r.left, r.bottom, 0, window, nullptr);
     DestroyMenu(menu);
-    if (command) SendMessageW(window, WM_COMMAND, MAKEWPARAM(command, BN_CLICKED), 0);
+    if (command) {
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(command, BN_CLICKED), 0);
+    }
 }
 
 void Editor::ShowToolbarDropdown(int id) {
@@ -495,10 +576,13 @@ void Editor::ShowToolbarDropdown(int id) {
         AppendMenuL(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuL(menu, MF_STRING, ID_RESET_LAYOUT, L"Revert Factory Settings");
     }
+
     const int command =
         TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_TOPALIGN, r.right, r.bottom, 0, window, nullptr);
     DestroyMenu(menu);
-    if (command) SendMessageW(window, WM_COMMAND, MAKEWPARAM(command, BN_CLICKED), 0);
+    if (command) {
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(command, BN_CLICKED), 0);
+    }
 }
 
 } // namespace dxs::editor

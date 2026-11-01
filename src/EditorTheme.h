@@ -47,9 +47,9 @@ inline constexpr COLORREF COLOR_BUTTON_HOVER = RGB(103, 103, 103);
 inline constexpr COLORREF COLOR_BUTTON_PRESSED = RGB(70, 70, 70);
 inline constexpr COLORREF COLOR_BUTTON_BORDER = RGB(36, 36, 36);
 inline constexpr COLORREF COLOR_TOOL_HOVER = RGB(53, 53, 53);
-inline constexpr COLORREF COLOR_ACCENT = RGB(0, 112, 224);        // UE5 active tool blue
+inline constexpr COLORREF COLOR_ACCENT = RGB(0, 112, 224); // UE5 active tool blue
 inline constexpr COLORREF COLOR_ACCENT_HOVER = RGB(24, 132, 240);
-inline constexpr COLORREF COLOR_PLAY = RGB(83, 186, 98);          // play triangle while idle
+inline constexpr COLORREF COLOR_PLAY = RGB(83, 186, 98); // play triangle while idle
 inline constexpr COLORREF COLOR_SELECTION = RGB(44, 93, 135);
 inline constexpr COLORREF COLOR_SELECTION_INACTIVE = RGB(77, 77, 77);
 inline constexpr COLORREF COLOR_ROW_HOVER = RGB(69, 69, 69);
@@ -78,16 +78,58 @@ inline constexpr int ROW_HEIGHT = 20;
 enum class Icon : unsigned char {
     NONE,
     // tools / transport
-    HAND, MOVE, ROTATE, SCALE, PLAY, STOP, PAUSE, STEP,
+    HAND,
+    MOVE,
+    ROTATE,
+    SCALE,
+    PLAY,
+    STOP,
+    PAUSE,
+    STEP,
     // toolbar actions
-    SAVE, LOAD, EXPORT, SHADER, ANDROID, GRAPHICS, LAYOUT, PLUS, SEARCH,
+    SAVE,
+    LOAD,
+    EXPORT,
+    SHADER,
+    ANDROID,
+    GRAPHICS,
+    LAYOUT,
+    PLUS,
+    SEARCH,
     // panel & window chrome
-    HIERARCHY, SCENE, INSPECTOR, PROJECT, CONSOLE, KEBAB, CLOSE, MINIMIZE, FLOAT, DOCK,
-    CHEVRON_RIGHT, CHEVRON_DOWN, DROPDOWN, CHECK,
+    HIERARCHY,
+    SCENE,
+    INSPECTOR,
+    PROJECT,
+    CONSOLE,
+    KEBAB,
+    CLOSE,
+    MINIMIZE,
+    FLOAT,
+    DOCK,
+    CHEVRON_RIGHT,
+    CHEVRON_DOWN,
+    DROPDOWN,
+    CHECK,
     // objects & components
-    CUBE, QUAD, GAME_OBJECT, CAMERA, MODEL, IMAGE, TRANSFORM, RENDERER, SCRIPT, FOLDER, FILE,
+    CUBE,
+    QUAD,
+    GAME_OBJECT,
+    CAMERA,
+    MODEL,
+    IMAGE,
+    TRANSFORM,
+    RENDERER,
+    SCRIPT,
+    FOLDER,
+    FILE,
     // log levels
-    INFO, WARNING, ERROR_ICON, TRASH, PERSPECTIVE, ORTHOGRAPHIC,
+    INFO,
+    WARNING,
+    ERROR_ICON,
+    TRASH,
+    PERSPECTIVE,
+    ORTHOGRAPHIC,
 };
 
 // Draws `icon` centred in `box`. Vector icons scale with the box size.
@@ -95,26 +137,29 @@ void DrawIcon(HDC hDc, Icon icon, const RECT& box, COLORREF color);
 
 // ---- Owner-drawn buttons -----------------------------------------------------------
 enum class ButtonRole : unsigned char {
-    PUSH,        // Unity grey push button
-    PRIMARY,     // accent push button (Apply, Add Component)
-    TOOL,        // flat toolbar button, accent fill when active
-    TRANSPORT,   // Play / Pause / Step segmented group
-    MENU_BAR,    // menu bar item ("File", "Edit", ...)
-    TAB,         // dock tab
-    HEADER,      // Inspector component header (foldout)
-    ICON,        // small flat icon-only button (panel chrome)
-    DROPDOWN,    // toolbar dropdown with a trailing chevron
-    CHECKBOX,    // square check box
-    FOLDOUT,     // Inspector array foldout: chevron + label, no background
+    PUSH,      // Unity grey push button
+    PRIMARY,   // accent push button (Apply, Add Component)
+    TOOL,      // flat toolbar button, accent fill when active
+    TRANSPORT, // Play / Pause / Step segmented group
+    MENU_BAR,  // menu bar item ("File", "Edit", ...)
+    TAB,       // dock tab
+    HEADER,    // Inspector component header (foldout)
+    ICON,      // small flat icon-only button (panel chrome)
+    DROPDOWN,  // toolbar dropdown with a trailing chevron
+    CHECKBOX,  // square check box
+    FOLDOUT,   // Inspector array foldout: chevron + label, no background
 };
 
 struct ButtonSpec {
     ButtonRole role = ButtonRole::PUSH;
     Icon icon = Icon::NONE;
+
     // Optional icon tint; CLR_INVALID uses the role's text colour.
     COLORREF iconColor = CLR_INVALID;
+
     // Fill behind the button; CLR_INVALID derives it from the role.
     COLORREF background = CLR_INVALID;
+
     // HEADER: draw the foldout chevron expanded.
     bool bExpanded = true;
 };
@@ -145,6 +190,7 @@ struct Fonts {
     HFONT hSmall = nullptr;
     HFONT hTitle = nullptr;
 };
+
 void InitializeFonts(UINT uDpi);
 const Fonts& GetFonts();
 void ReleaseResources();

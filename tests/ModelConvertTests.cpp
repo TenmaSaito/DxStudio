@@ -127,6 +127,7 @@ void TestMaterialsFromX(const fs::path& root) {
         std::ofstream out(plain, std::ios::binary);
         out << "xof 0303txt 0032\nMesh Tri {\n 3;\n 0;0;0;,\n 1;0;0;,\n 0;1;0;;\n 1;\n 3;0,1,2;;\n}\n";
     }
+
     assert(dxs::CreateMaterialsFromX(root, plain, vCreated, error));
     assert(vCreated.size() == 1 && vCreated[0] == "Assets/Models/Plain.dxmat");
 
@@ -136,6 +137,7 @@ void TestMaterialsFromX(const fs::path& root) {
         std::ofstream out(binary, std::ios::binary);
         out << "xof 0303bin 0032" << std::string(32, '\0');
     }
+
     assert(!dxs::ReadXMaterials(binary, vMaterials, error));
     assert(!error.empty());
 }

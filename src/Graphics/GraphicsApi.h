@@ -22,8 +22,8 @@ namespace dxs {
 enum class GraphicsApi : unsigned char { DIRECT3D12, DIRECT3D11, DIRECT3D9 };
 
 // すべての API（優先度の高い順。初期化に失敗したら次を試す）
-inline constexpr std::array<GraphicsApi, 3> ALL_GRAPHICS_APIS = {
-    GraphicsApi::DIRECT3D12, GraphicsApi::DIRECT3D11, GraphicsApi::DIRECT3D9};
+inline constexpr std::array<GraphicsApi, 3> ALL_GRAPHICS_APIS = {GraphicsApi::DIRECT3D12, GraphicsApi::DIRECT3D11,
+                                                                 GraphicsApi::DIRECT3D9};
 
 //==================================================================================
 // --- 短い表示名の取得処理（ツールバーの表示用。例: "DX12"） ---
@@ -64,7 +64,10 @@ constexpr const char* GraphicsApiToken(GraphicsApi api) {
 // 保存用の文字列とよく使う書き方を受け付ける: D3D11, DX11, dx11, 11, -dx11, --dx11
 // （大文字小文字は区別しない）。読めたら true。
 inline bool ParseGraphicsApi(std::string_view text, GraphicsApi& api) {
-    while (!text.empty() && text.front() == '-') text.remove_prefix(1); // コマンドライン用の先頭の '-' を除く
+    while (!text.empty() && text.front() == '-') {
+        text.remove_prefix(1); // コマンドライン用の先頭の '-' を除く
+    }
+
     // 大文字小文字を区別しない比較
     auto equalsIgnoreCase = [](std::string_view a, std::string_view b) {
         if (a.size() != b.size()) return false;
@@ -73,11 +76,15 @@ inline bool ParseGraphicsApi(std::string_view text, GraphicsApi& api) {
             const char cB = (b[nIndex] >= 'A' && b[nIndex] <= 'Z') ? static_cast<char>(b[nIndex] - 'A' + 'a') : b[nIndex];
             if (cA != cB) return false;
         }
+
         return true;
     };
+
     // 「接頭辞 + 番号」のすべての組み合わせと比べる
     for (const auto candidate : ALL_GRAPHICS_APIS) {
-        const std::string_view number = candidate == GraphicsApi::DIRECT3D12 ? "12" : candidate == GraphicsApi::DIRECT3D11 ? "11" : "9";
+        const std::string_view number = candidate == GraphicsApi::DIRECT3D12   ? "12"
+                                        : candidate == GraphicsApi::DIRECT3D11 ? "11"
+                                                                               : "9";
         for (const std::string_view prefix : {"d3d", "dx", "direct3d", ""}) {
             const std::size_t nLength = prefix.size();
             if (text.size() == nLength + number.size() && equalsIgnoreCase(text.substr(0, nLength), prefix) &&
@@ -87,6 +94,7 @@ inline bool ParseGraphicsApi(std::string_view text, GraphicsApi& api) {
             }
         }
     }
+
     return false;
 }
 

@@ -10,20 +10,28 @@ class HitCounter final : public dxs::Component {
 public:
     int m_nEnter = 0, m_nStay = 0, m_nExit = 0, m_nTriggerEnter = 0, m_nTriggerExit = 0, m_nFixed = 0;
     float m_fNormalY = 0.0f;
+
     void Update(dxs::Entity&, float) override {}
+
     void FixedUpdate(dxs::Entity&, float) override { ++m_nFixed; }
+
     void OnCollisionEnter(dxs::Entity&, const dxs::Collision& collision) override {
         ++m_nEnter;
         m_fNormalY = collision.normal.y;
     }
+
     void OnCollisionStay(dxs::Entity&, const dxs::Collision&) override { ++m_nStay; }
+
     void OnCollisionExit(dxs::Entity&, const dxs::Collision&) override { ++m_nExit; }
+
     void OnTriggerEnter(dxs::Entity&, dxs::Entity&) override { ++m_nTriggerEnter; }
+
     void OnTriggerExit(dxs::Entity&, dxs::Entity&) override { ++m_nTriggerExit; }
 };
 DXS_REGISTER_COMPONENT(HitCounter)
 
 int g_nFailures = 0;
+
 void Check(bool bCondition, const char* pWhat) {
     if (bCondition) return;
     std::cerr << "FAILED: " << pWhat << '\n';
@@ -45,12 +53,15 @@ dxs::Entity Floor() {
 }
 
 void Run(dxs::Scene& scene, float fSeconds) {
-    for (float fTime = 0; fTime < fSeconds; fTime += 1.0f / 60.0f) dxs::UpdateUserComponents(scene, 1.0f / 60.0f);
+    for (float fTime = 0; fTime < fSeconds; fTime += 1.0f / 60.0f) {
+        dxs::UpdateUserComponents(scene, 1.0f / 60.0f);
+    }
 }
 } // namespace
 
 int main() {
     using dxs::Entity;
+
     // 1. A sphere falls onto a static floor and comes to rest on it.
     {
         dxs::Scene scene;
@@ -70,11 +81,13 @@ int main() {
         Check(pCounter && pCounter->m_fNormalY > 0.9f, "collision normal points up, away from the floor");
         Check(pCounter && pCounter->m_nFixed >= 150 && pCounter->m_nFixed <= 180, "FixedUpdate runs at 50 Hz");
         Check(scene.vEntities[0].draw.position.y == 0.0f, "static floor never moves");
+
         // Lifting the ball off the floor reports OnCollisionExit.
         pBody->AddForce({0, 8, 0}, dxs::ForceMode::VELOCITY_CHANGE);
         Run(scene, 0.2f);
         Check(pCounter->m_nExit == 1, "jumping off the floor reports OnCollisionExit");
     }
+
     // 2. A box lands flat; a box rotated 45 degrees around Y lands too (OBB).
     {
         dxs::Scene scene;
@@ -92,6 +105,7 @@ int main() {
         Check(std::abs(scene.vEntities[3].draw.position.y - (0.5f + 0.7071f)) < 0.04f, "Z-rotated box rests on its edge");
         Check(std::abs(scene.vEntities[1].draw.position.x + 2.0f) < 0.01f, "box does not slide sideways");
     }
+
     // 3. Bounciness 1 bounces back up; a kinematic body ignores gravity.
     {
         dxs::Scene scene;
@@ -108,9 +122,11 @@ int main() {
             Run(scene, 1.0f / 60.0f);
             fHighest = std::max(fHighest, scene.vEntities[1].draw.position.y);
         }
+
         Check(fHighest > 2.0f, "bounciness 1 bounces the ball back up");
         Check(scene.vEntities[2].draw.position.y == 4.0f, "kinematic body is not moved by gravity");
     }
+
     // 4. Triggers report enter / exit and do not block.
     {
         dxs::Scene scene;
@@ -121,9 +137,11 @@ int main() {
         Run(scene, 2.0f);
         auto* pCounter = dxs::GetComponent<HitCounter>(scene.vEntities[1]);
         Check(scene.vEntities[1].draw.position.y < 0.0f, "trigger does not block the ball");
-        Check(pCounter && pCounter->m_nTriggerEnter == 1 && pCounter->m_nTriggerExit == 1, "OnTriggerEnter and OnTriggerExit once each");
+        Check(pCounter && pCounter->m_nTriggerEnter == 1 && pCounter->m_nTriggerExit == 1,
+              "OnTriggerEnter and OnTriggerExit once each");
         Check(pCounter && pCounter->m_nEnter == 0, "triggers do not send OnCollisionEnter");
     }
+
     // 5. A dynamic box pushes another (momentum is shared by mass).
     {
         dxs::Scene scene;
@@ -140,6 +158,7 @@ int main() {
         Check(scene.vEntities[1].draw.position.x - scene.vEntities[0].draw.position.x >= 0.99f, "boxes do not overlap");
         dxs::physics::SetGravity({0, -9.81f, 0});
     }
+
     // 6. Collider outlines for the Scene view (edit mode uses saved values).
     {
         dxs::Scene scene;
@@ -150,9 +169,13 @@ int main() {
         const auto vLines = dxs::ColliderOutlineSegments(scene);
         Check(vLines.size() == 24 + 3 * 32 * 2, "box (12 edges) and sphere (3 circles) outlines");
         float fMaxX = 0;
-        for (size_t n = 0; n < 24; ++n) fMaxX = std::max(fMaxX, vLines[n].x);
+        for (size_t n = 0; n < 24; ++n) {
+            fMaxX = std::max(fMaxX, vLines[n].x);
+        }
+
         Check(std::abs(fMaxX - 2.0f) < 1e-4f, "box outline uses the saved Size X");
     }
+
     // 7. MeshCollider: a static concave mesh floor, and a convex mesh body.
     {
         dxs::Scene scene;
@@ -181,6 +204,7 @@ int main() {
         Check(std::abs(scene.vEntities[4].draw.position.y - 1.0f) < 0.03f, "convex pyramid mesh rests on its base");
         Check(!dxs::ColliderOutlineSegments(scene).empty(), "mesh collider outline");
     }
+
     // 8. Combining colliders: two shapes on one object, and a compound body
     //    whose child collider (no Rigidbody) belongs to the parent.
     {
@@ -196,14 +220,18 @@ int main() {
         Run(scene, 3.0f);
         Check(std::abs(scene.vEntities[1].draw.position.y - 2.0f) < 0.03f, "box + sphere foot on one object rests on the foot");
         Check(std::abs(scene.vEntities[2].draw.position.y - 1.0f) < 0.03f, "compound body rests on the floor");
-        Check(std::abs(scene.vEntities[2].draw.position.x - 3.0f) < 0.01f, "overlapping parts of one body do not push each other");
-        Check(scene.vEntities[3].draw.position.x == 0.8f && scene.vEntities[3].draw.position.y == 0.0f, "child keeps its local transform");
+        Check(std::abs(scene.vEntities[2].draw.position.x - 3.0f) < 0.01f,
+              "overlapping parts of one body do not push each other");
+        Check(scene.vEntities[3].draw.position.x == 0.8f && scene.vEntities[3].draw.position.y == 0.0f,
+              "child keeps its local transform");
         const auto vWorld = dxs::ResolveWorldDraws(scene);
         Check(std::abs(vWorld[3].position.y - 1.0f) < 0.03f, "child collider moved with its parent body");
         auto* pParentHits = dxs::GetComponent<HitCounter>(scene.vEntities[2]);
         Check(pParentHits && pParentHits->m_nEnter == 1, "compound body gets one OnCollisionEnter for the floor");
     }
+
     if (g_nFailures) return 1;
-    std::cout << "Physics (gravity, resting contact, OBB, bounce, kinematic, triggers, momentum, outlines, mesh / convex / compound colliders) tests passed.\n";
+    std::cout << "Physics (gravity, resting contact, OBB, bounce, kinematic, triggers, momentum, outlines, mesh / convex / "
+                 "compound colliders) tests passed.\n";
     return 0;
 }

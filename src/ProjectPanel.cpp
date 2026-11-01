@@ -52,6 +52,7 @@ fs::path AutomaticEditor() {
             }
         }
     }
+
     return {};
 }
 
@@ -65,6 +66,7 @@ std::wstring Lower(std::wstring value) {
     std::transform(value.begin(), value.end(), value.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
     return value;
 }
+
 std::wstring Text(HWND h) {
     const int size = GetWindowTextLengthW(h);
     std::wstring result(static_cast<size_t>(size) + 1, L'\0');
@@ -72,19 +74,27 @@ std::wstring Text(HWND h) {
     result.resize(size);
     return result;
 }
+
 struct ModalRoot {
     HWND owner{}, main{};
     bool reenable = false;
+
     explicit ModalRoot(HWND panel) : owner(GetAncestor(panel, GA_ROOT)), main(GetAncestor(panel, GA_ROOTOWNER)) {
         // A detached Project window is owned by the editor. Disable that editor
         // too, so it cannot destroy the panel during a nested modal loop.
         reenable = main && main != owner && IsWindowEnabled(main);
-        if (reenable) EnableWindow(main, FALSE);
+        if (reenable) {
+            EnableWindow(main, FALSE);
+        }
     }
+
     ~ModalRoot() {
-        if (reenable && IsWindow(main)) EnableWindow(main, TRUE);
+        if (reenable && IsWindow(main)) {
+            EnableWindow(main, TRUE);
+        }
     }
 };
+
 void Error(HWND h, const std::wstring& msg) {
     ModalRoot modal(h);
     editor::MessageBoxL(modal.owner ? modal.owner : h, msg.c_str(), L"Project", MB_OK | MB_ICONERROR);
@@ -94,12 +104,16 @@ bool Reparse(const fs::path& path) {
     const DWORD attributes = GetFileAttributesW(path.c_str());
     return attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
 }
+
 bool Within(const fs::path& parent, const fs::path& child) {
     auto p = parent.begin(), c = child.begin();
-    for (; p != parent.end(); ++p, ++c)
+    for (; p != parent.end(); ++p, ++c) {
         if (c == child.end() || _wcsicmp(p->c_str(), c->c_str()) != 0) return false;
+    }
+
     return true;
 }
+
 bool AllowedPath(const fs::path& root, const fs::path& path) {
     std::error_code ec;
     fs::path absolute = fs::absolute(path, ec).lexically_normal();
@@ -112,13 +126,16 @@ bool AllowedPath(const fs::path& root, const fs::path& path) {
         check /= part;
         if (Reparse(check)) return false;
     }
+
     fs::path resolved = fs::weakly_canonical(absolute, ec);
     return !ec && Within(root, resolved);
 }
+
 struct Entry {
     fs::path path;
     bool folder;
 };
+
 struct Node {
     fs::path path;
 };
@@ -128,18 +145,20 @@ struct NamePrompt {
     std::wstring value;
     bool accepted = false;
 };
+
 LRESULT CALLBACK NamePromptProc(HWND window, UINT message, WPARAM wp, LPARAM lp) {
     auto* prompt = reinterpret_cast<NamePrompt*>(GetWindowLongPtrW(window, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
         prompt = static_cast<NamePrompt*>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams);
         SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(prompt));
     }
+
     if (!prompt) return DefWindowProcW(window, message, wp, lp);
     if (message == WM_CREATE) {
         auto instance = reinterpret_cast<CREATESTRUCTW*>(lp)->hInstance;
         auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id) {
-            auto control = CreateWindowExW(0, cls, editor::LocalizedControlText(cls, text), WS_CHILD | WS_VISIBLE | style, x, y, w, h, window,
-                                           reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
+            auto control = CreateWindowExW(0, cls, editor::LocalizedControlText(cls, text), WS_CHILD | WS_VISIBLE | style, x, y,
+                                           w, h, window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
             return control;
         };
@@ -151,16 +170,19 @@ LRESULT CALLBACK NamePromptProc(HWND window, UINT message, WPARAM wp, LPARAM lp)
         make(L"BUTTON", L"Cancel", BS_PUSHBUTTON | WS_TABSTOP, 288, 118, 88, 27, IDCANCEL);
         return 0;
     }
+
     if (message == WM_COMMAND && LOWORD(wp) == IDOK) {
         prompt->value = Text(prompt->edit);
         prompt->accepted = true;
         DestroyWindow(window);
         return 0;
     }
+
     if ((message == WM_COMMAND && LOWORD(wp) == IDCANCEL) || message == WM_CLOSE) {
         DestroyWindow(window);
         return 0;
     }
+
     return DefWindowProcW(window, message, wp, lp);
 }
 
@@ -178,14 +200,21 @@ bool PromptComponentName(HWND panel, HINSTANCE instance, std::wstring& value) {
     RECT size{0, 0, 394, 162};
     AdjustWindowRectEx(&size, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
     NamePrompt prompt;
-    HWND dialog = CreateWindowExW(WS_EX_DLGMODALFRAME, wc.lpszClassName, editor::Tr(L"New C++ Component"), WS_CAPTION | WS_SYSMENU,
-                                  area.left + std::max(0L, (area.right - area.left - (size.right - size.left)) / 2),
-                                  area.top + std::max(0L, (area.bottom - area.top - (size.bottom - size.top)) / 2),
-                                  size.right - size.left, size.bottom - size.top, owner, nullptr, instance, &prompt);
+    HWND dialog =
+        CreateWindowExW(WS_EX_DLGMODALFRAME, wc.lpszClassName, editor::Tr(L"New C++ Component"), WS_CAPTION | WS_SYSMENU,
+                        area.left + std::max(0L, (area.right - area.left - (size.right - size.left)) / 2),
+                        area.top + std::max(0L, (area.bottom - area.top - (size.bottom - size.top)) / 2), size.right - size.left,
+                        size.bottom - size.top, owner, nullptr, instance, &prompt);
     if (!dialog) return false;
     const bool enableOwner = owner && IsWindowEnabled(owner), enableMain = main && main != owner && IsWindowEnabled(main);
-    if (enableOwner) EnableWindow(owner, FALSE);
-    if (enableMain) EnableWindow(main, FALSE);
+    if (enableOwner) {
+        EnableWindow(owner, FALSE);
+    }
+
+    if (enableMain) {
+        EnableWindow(main, FALSE);
+    }
+
     ShowWindow(dialog, SW_SHOW);
     SetFocus(prompt.edit);
     SendMessageW(prompt.edit, EM_SETSEL, 0, -1);
@@ -193,21 +222,36 @@ bool PromptComponentName(HWND panel, HINSTANCE instance, std::wstring& value) {
     while (IsWindow(dialog)) {
         const auto result = GetMessageW(&msg, nullptr, 0, 0);
         if (result <= 0) {
-            if (result == 0) PostQuitMessage(static_cast<int>(msg.wParam));
+            if (result == 0) {
+                PostQuitMessage(static_cast<int>(msg.wParam));
+            }
+
             break;
         }
+
         if (!IsDialogMessageW(dialog, &msg)) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
     }
-    if (IsWindow(dialog)) DestroyWindow(dialog);
-    if (enableMain && IsWindow(main)) EnableWindow(main, TRUE);
+
+    if (IsWindow(dialog)) {
+        DestroyWindow(dialog);
+    }
+
+    if (enableMain && IsWindow(main)) {
+        EnableWindow(main, TRUE);
+    }
+
     if (enableOwner && IsWindow(owner)) {
         EnableWindow(owner, TRUE);
         SetActiveWindow(owner);
     }
-    if (prompt.accepted) value = prompt.value;
+
+    if (prompt.accepted) {
+        value = prompt.value;
+    }
+
     return prompt.accepted;
 }
 
@@ -222,14 +266,16 @@ struct Panel {
     HTREEITEM currentNode{};
 
     HWND Make(const wchar_t* cls, const wchar_t* text, DWORD style, int id = 0, DWORD ex = 0) {
-        HWND h = CreateWindowExW(ex, cls, editor::LocalizedControlText(cls, text), WS_CHILD | WS_VISIBLE | style, 0, 0, 1, 1, window,
-                                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
+        HWND h = CreateWindowExW(ex, cls, editor::LocalizedControlText(cls, text), WS_CHILD | WS_VISIBLE | style, 0, 0, 1, 1,
+                                 window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
         SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         return h;
     }
+
     // Reject reparse points in every component, including a path that was
     // replaced after it was shown in the tree, then check the resolved path.
     bool Allowed(const fs::path& path) const { return AllowedPath(root, path); }
+
     std::vector<Entry> Enumerate(const fs::path& folder) const {
         std::vector<Entry> out;
         if (!Allowed(folder)) return out;
@@ -239,18 +285,22 @@ struct Panel {
             const fs::path path = it->path();
             if (!Reparse(path)) {
                 const auto status = it->symlink_status(ec);
-                if (!ec && (fs::is_directory(status) || fs::is_regular_file(status)))
+                if (!ec && (fs::is_directory(status) || fs::is_regular_file(status))) {
                     out.push_back({path, fs::is_directory(status)});
+                }
             }
+
             ec.clear();
             it.increment(ec);
         }
+
         std::sort(out.begin(), out.end(), [](const Entry& a, const Entry& b) {
             if (a.folder != b.folder) return a.folder > b.folder;
             return Lower(a.path.filename().wstring()) < Lower(b.path.filename().wstring());
         });
         return out;
     }
+
     HTREEITEM AddNode(HTREEITEM parent, const fs::path& path, const std::wstring& label) {
         auto node = std::make_unique<Node>();
         node->path = path;
@@ -261,19 +311,27 @@ struct Panel {
         insert.item.pszText = const_cast<wchar_t*>(label.c_str());
         insert.item.lParam = reinterpret_cast<LPARAM>(node.get());
         HTREEITEM item = TreeView_InsertItem(tree, &insert);
-        if (item) nodes.push_back(std::move(node));
+        if (item) {
+            nodes.push_back(std::move(node));
+        }
+
         return item;
     }
+
     void AddSubfolders(HTREEITEM parent, const fs::path& path, unsigned depth) {
         if (depth >= 16 || nodes.size() >= 2000) return;
         for (const auto& e : Enumerate(path)) {
             if (!e.folder || nodes.size() >= 2000) continue;
             HTREEITEM node = AddNode(parent, e.path, e.path.filename().wstring());
             if (!node) continue;
-            if (_wcsicmp(e.path.c_str(), current.c_str()) == 0) currentNode = node;
+            if (_wcsicmp(e.path.c_str(), current.c_str()) == 0) {
+                currentNode = node;
+            }
+
             AddSubfolders(node, e.path, depth + 1);
         }
     }
+
     void PopulateList() {
         ListView_DeleteAllItems(list);
         entries.clear();
@@ -281,9 +339,13 @@ struct Panel {
             SetWindowTextW(breadcrumb, editor::Tr(L"Project folder unavailable"));
             return;
         }
+
         std::wstring pathText = L"Project";
         fs::path rel = current.lexically_relative(root);
-        if (!rel.empty() && rel != L".") pathText += L" / " + rel.wstring();
+        if (!rel.empty() && rel != L".") {
+            pathText += L" / " + rel.wstring();
+        }
+
         SetWindowTextW(breadcrumb, pathText.c_str());
         const auto filter = Lower(Text(search));
         for (const auto& entry : Enumerate(current)) {
@@ -303,10 +365,14 @@ struct Panel {
             item.lParam = index;
             ListView_InsertItem(list, &item);
             std::wstring kind = entry.folder ? editor::Tr(L"Folder") : entry.path.extension().wstring();
-            if (kind.empty()) kind = L"File";
+            if (kind.empty()) {
+                kind = L"File";
+            }
+
             ListView_SetItemText(list, index, 1, kind.data());
         }
     }
+
     void Refresh() {
         TreeView_DeleteAllItems(tree);
         nodes.clear();
@@ -315,22 +381,29 @@ struct Panel {
             PopulateList();
             return;
         }
+
         HTREEITEM rootItem = AddNode(TVI_ROOT, root, L"Project");
         if (!rootItem) return;
-        if (_wcsicmp(root.c_str(), current.c_str()) == 0) currentNode = rootItem;
+        if (_wcsicmp(root.c_str(), current.c_str()) == 0) {
+            currentNode = rootItem;
+        }
+
         AddSubfolders(rootItem, root, 0);
         TreeView_Expand(tree, rootItem, TVE_EXPAND);
         if (!currentNode) {
             current = root;
             currentNode = rootItem;
         }
+
         TreeView_SelectItem(tree, currentNode);
         TreeView_EnsureVisible(tree, currentNode);
         PopulateList();
     }
+
     void LoadEditor() {
         const auto folder = EditorSettingsFolder();
         const auto settings = folder / L"script-editor.txt";
+
         // External-editor preferences belong to this Windows user, not to an
         // imported project that could otherwise nominate an executable.
         if (folder.empty() || Reparse(folder) || !AllowedPath(folder, settings)) return;
@@ -341,19 +414,27 @@ struct Panel {
         if (!std::getline(in, path) || path.empty()) return;
         try {
             auto candidate = fs::u8path(path);
-            if (candidate.is_absolute() && Lower(candidate.extension().wstring()) == L".exe") scriptEditor = candidate;
+            if (candidate.is_absolute() && Lower(candidate.extension().wstring()) == L".exe") {
+                scriptEditor = candidate;
+            }
         } catch (...) { /* An invalid optional setting falls back to automatic. */
         }
     }
+
     bool SaveEditor(const fs::path& path) {
         const auto folder = EditorSettingsFolder();
         std::error_code ec;
-        if (!folder.empty()) fs::create_directories(folder, ec);
+        if (!folder.empty()) {
+            fs::create_directories(folder, ec);
+        }
+
         if (folder.empty() || ec || Reparse(folder)) {
             Error(window, L"The editor preferences folder is unavailable.");
             return false;
         }
+
         const auto settings = folder / L"script-editor.txt";
+
         // OPEN_ALWAYS plus OPEN_REPARSE_POINT lets us inspect the actual entry
         // before truncation, without following an existing symbolic link.
         HANDLE file = CreateFileW(settings.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
@@ -362,23 +443,28 @@ struct Panel {
             Error(window, L"Could not save the script editor setting.");
             return false;
         }
+
         BY_HANDLE_FILE_INFORMATION info{};
         bool okay = GetFileInformationByHandle(file, &info) && !(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
         DWORD written{};
         const auto utf8 = path.u8string();
         std::string content(reinterpret_cast<const char*>(utf8.data()), utf8.size());
         content += '\n';
-        if (okay)
+        if (okay) {
             okay = SetEndOfFile(file) && WriteFile(file, content.data(), static_cast<DWORD>(content.size()), &written, nullptr) &&
                    written == content.size();
+        }
+
         CloseHandle(file);
         if (!okay) {
             Error(window, L"Could not save the script editor setting. Reparse points are not supported.");
             return false;
         }
+
         scriptEditor = path;
         return true;
     }
+
     void ChooseEditor() {
         HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
         const bool uninit = SUCCEEDED(init);
@@ -386,6 +472,7 @@ struct Panel {
             Error(window, L"Could not initialize the file dialog.");
             return;
         }
+
         fs::path chosen;
         {
             ComPtr<IFileOpenDialog> dialog;
@@ -396,28 +483,49 @@ struct Panel {
                 dialog->SetTitle(L"Choose an editor (Visual Studio, VS Code, or another editor)");
                 DWORD options{};
                 hr = dialog->GetOptions(&options);
-                if (SUCCEEDED(hr)) hr = dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_PATHMUSTEXIST);
+                if (SUCCEEDED(hr)) {
+                    hr = dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_PATHMUSTEXIST);
+                }
+
                 ModalRoot modal(window);
-                if (SUCCEEDED(hr)) hr = dialog->Show(modal.owner ? modal.owner : window);
+                if (SUCCEEDED(hr)) {
+                    hr = dialog->Show(modal.owner ? modal.owner : window);
+                }
+
                 if (SUCCEEDED(hr)) {
                     ComPtr<IShellItem> item;
                     PWSTR path = nullptr;
                     hr = dialog->GetResult(&item);
-                    if (SUCCEEDED(hr)) hr = item->GetDisplayName(SIGDN_FILESYSPATH, &path);
-                    if (SUCCEEDED(hr)) chosen = path;
+                    if (SUCCEEDED(hr)) {
+                        hr = item->GetDisplayName(SIGDN_FILESYSPATH, &path);
+                    }
+
+                    if (SUCCEEDED(hr)) {
+                        chosen = path;
+                    }
+
                     CoTaskMemFree(path);
                 }
             }
-            if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) Error(window, L"Could not select an editor.");
+
+            if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+                Error(window, L"Could not select an editor.");
+            }
         }
-        if (uninit) CoUninitialize();
+
+        if (uninit) {
+            CoUninitialize();
+        }
+
         if (chosen.empty()) return;
         if (Lower(chosen.extension().wstring()) != L".exe") {
             Error(window, L"Choose an editor executable (.exe).");
             return;
         }
+
         SaveEditor(chosen);
     }
+
     void NewComponent() {
         std::wstring name, error;
         if (!PromptComponentName(window, instance, name)) return;
@@ -425,10 +533,12 @@ struct Panel {
             Error(window, error);
             return;
         }
+
         if (!GenerateVisualStudioProject(root, engineRoot, error)) {
             Error(window, error);
             return;
         }
+
         current = root / L"Scripts";
         SetWindowTextW(search, L"");
         Refresh();
@@ -439,12 +549,15 @@ struct Panel {
                 break;
             }
         }
+
         ModalRoot modal(window);
-        editor::MessageBoxL(modal.owner,
-                    L"Created the header and registered C++ component in project/Scripts.\n\nDouble-click the source to edit it. "
-                    L"Run build.cmd and restart the editor to attach the new component.",
-                    L"Component created", MB_OK | MB_ICONINFORMATION);
+        editor::MessageBoxL(
+            modal.owner,
+            L"Created the header and registered C++ component in project/Scripts.\n\nDouble-click the source to edit it. "
+            L"Run build.cmd and restart the editor to attach the new component.",
+            L"Component created", MB_OK | MB_ICONINFORMATION);
     }
+
     void ContextMenu(HWND origin, POINT screen) {
         if (screen.x == -1 && screen.y == -1) {
             RECT bounds{};
@@ -454,15 +567,20 @@ struct Panel {
             TVHITTESTINFO hit{};
             hit.pt = screen;
             ScreenToClient(tree, &hit.pt);
-            if (auto item = TreeView_HitTest(tree, &hit)) TreeView_SelectItem(tree, item);
+            if (auto item = TreeView_HitTest(tree, &hit)) {
+                TreeView_SelectItem(tree, item);
+            }
         } else if (origin == list) {
             LVHITTESTINFO hit{};
             hit.pt = screen;
             ScreenToClient(list, &hit.pt);
             const int item = ListView_HitTest(list, &hit);
             ListView_SetItemState(list, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
-            if (item >= 0) ListView_SetItemState(list, item, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+            if (item >= 0) {
+                ListView_SetItemState(list, item, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+            }
         }
+
         HMENU menu = CreatePopupMenu();
         const int selected = ListView_GetNextItem(list, -1, LVNI_SELECTED);
         editor::AppendMenuL(menu, MF_STRING | (selected < 0 ? MF_GRAYED : 0), OpenId, L"Open");
@@ -472,6 +590,7 @@ struct Panel {
         if (selected >= 0 && static_cast<size_t>(selected) < entries.size() && !entries[static_cast<size_t>(selected)].folder) {
             selectedFile = entries[static_cast<size_t>(selected)].path;
         }
+
         const auto selectedExtension = Lower(selectedFile.extension().wstring());
         if (selectedExtension == L".x") {
             editor::AppendMenuL(menu, MF_STRING, CreateMaterialId, L"Create Material (Direct3D 11 / 12)");
@@ -486,28 +605,30 @@ struct Panel {
         editor::AppendMenuL(menu, MF_SEPARATOR, 0, nullptr);
         editor::AppendMenuL(menu, MF_STRING, ChooseEditorId, L"Choose script editor...");
         editor::AppendMenuL(menu, MF_STRING | (scriptEditor.empty() ? MF_CHECKED : 0), AutomaticEditorId,
-                    L"Automatic editor (Visual Studio / default app)");
+                            L"Automatic editor (Visual Studio / default app)");
         const auto command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, 0, window, nullptr);
         DestroyMenu(menu);
-        if (command == OpenId)
+        if (command == OpenId) {
             OpenEntry(selected);
-        else if (command == NewComponentId)
+        } else if (command == NewComponentId) {
             NewComponent();
-        else if (command == ImportId)
+        } else if (command == ImportId) {
             ImportFile();
-        else if (command == RefreshId)
+        } else if (command == RefreshId) {
             Refresh();
-        else if (command == ChooseEditorId)
+        } else if (command == ChooseEditorId) {
             ChooseEditor();
-        else if (command == AutomaticEditorId)
+        } else if (command == AutomaticEditorId) {
             SaveEditor({});
-        else if (command == CreateMaterialId || command == ConvertToXId) {
+        } else if (command == CreateMaterialId || command == ConvertToXId) {
             // 変換はエンジンの機能なので、エディターのウィンドウに任せる
             const WPARAM action = command == CreateMaterialId ? PROJECT_ASSET_CREATE_MATERIAL : PROJECT_ASSET_CONVERT_TO_X;
-            SendMessageW(GetAncestor(window, GA_ROOT), WM_DXS_PROJECT_ASSET_COMMAND, action, reinterpret_cast<LPARAM>(&selectedFile));
+            SendMessageW(GetAncestor(window, GA_ROOT), WM_DXS_PROJECT_ASSET_COMMAND, action,
+                         reinterpret_cast<LPARAM>(&selectedFile));
             Refresh();
         }
     }
+
     void OpenEntry(int index) {
         if (index < 0 || static_cast<size_t>(index) >= entries.size()) return;
         const auto entry = entries[static_cast<size_t>(index)];
@@ -516,12 +637,14 @@ struct Panel {
             Refresh();
             return;
         }
+
         if (entry.folder) {
             current = entry.path;
             SetWindowTextW(search, L"");
             Refresh();
             return;
         }
+
         const auto ext = Lower(entry.path.extension().wstring());
         const wchar_t* permitted[] = {L".cpp", L".c",     L".h",   L".hpp", L".hlsl", L".hlsli",
                                       L".dxs", L".dxmat", L".txt", L".md",  L".json"};
@@ -530,6 +653,7 @@ struct Panel {
             Error(window, L"This file type is not opened by the project browser.");
             return;
         }
+
         const bool source =
             ext == L".cpp" || ext == L".c" || ext == L".h" || ext == L".hpp" || ext == L".hlsl" || ext == L".hlsli";
         auto editor = source ? (scriptEditor.empty() ? AutomaticEditor() : scriptEditor) : fs::path{};
@@ -541,30 +665,41 @@ struct Panel {
                     Error(window, generationError);
                     return;
                 }
+
                 args = L"\"" + (root / L"DxStudioProject.sln").wstring() + L"\" /Edit \"" + entry.path.wstring() + L"\"";
-            } else
+            } else {
                 args = L"\"" + entry.path.wstring() + L"\"";
+            }
+
             if (reinterpret_cast<INT_PTR>(
-                    ShellExecuteW(window, L"open", editor.c_str(), args.c_str(), root.c_str(), SW_SHOWNORMAL)) <= 32)
+                    ShellExecuteW(window, L"open", editor.c_str(), args.c_str(), root.c_str(), SW_SHOWNORMAL)) <= 32) {
                 Error(
                     window,
                     L"The script editor could not be started. Use Choose script editor or Automatic editor in the Project menu.");
+            }
+
             return;
         }
-        if (reinterpret_cast<INT_PTR>(ShellExecuteW(window, L"open", entry.path.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
+
+        if (reinterpret_cast<INT_PTR>(ShellExecuteW(window, L"open", entry.path.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <=
+            32) {
             Error(window, L"No application could open this file.");
+        }
     }
+
     void ImportFile() {
         if (!Allowed(current)) {
             Error(window, L"The destination folder is unavailable or outside the project.");
             return;
         }
+
         HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
         const bool uninit = SUCCEEDED(init);
         if (FAILED(init) && init != RPC_E_CHANGED_MODE) {
             Error(window, L"Could not initialize the file dialog.");
             return;
         }
+
         fs::path source;
         {
             ComPtr<IFileOpenDialog> dialog;
@@ -572,42 +707,67 @@ struct Panel {
             if (SUCCEEDED(hr)) {
                 DWORD options{};
                 hr = dialog->GetOptions(&options);
-                if (SUCCEEDED(hr)) hr = dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_PATHMUSTEXIST);
-                if (SUCCEEDED(hr)) hr = dialog->SetTitle(L"Import a file into the selected project folder");
+                if (SUCCEEDED(hr)) {
+                    hr = dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_PATHMUSTEXIST);
+                }
+
+                if (SUCCEEDED(hr)) {
+                    hr = dialog->SetTitle(L"Import a file into the selected project folder");
+                }
+
                 // The panel is a child window. Owning the dialog by that child
                 // leaves the editor's top-level window interactive, so closing
                 // it could destroy this Panel while Show's modal loop is active.
                 // Disable the whole editor until the file picker returns.
                 ModalRoot modal(window);
-                if (SUCCEEDED(hr)) hr = dialog->Show(modal.owner ? modal.owner : window);
+                if (SUCCEEDED(hr)) {
+                    hr = dialog->Show(modal.owner ? modal.owner : window);
+                }
+
                 if (SUCCEEDED(hr)) {
                     ComPtr<IShellItem> item;
                     PWSTR path = nullptr;
                     hr = dialog->GetResult(&item);
-                    if (SUCCEEDED(hr)) hr = item->GetDisplayName(SIGDN_FILESYSPATH, &path);
-                    if (SUCCEEDED(hr)) source = path;
+                    if (SUCCEEDED(hr)) {
+                        hr = item->GetDisplayName(SIGDN_FILESYSPATH, &path);
+                    }
+
+                    if (SUCCEEDED(hr)) {
+                        source = path;
+                    }
+
                     CoTaskMemFree(path);
                 }
             }
-            if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) Error(window, L"Could not select a file to import.");
+
+            if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+                Error(window, L"Could not select a file to import.");
+            }
         }
-        if (uninit) CoUninitialize();
+
+        if (uninit) {
+            CoUninitialize();
+        }
+
         if (source.empty()) return;
         std::wstring error;
         if (!ImportProjectFile(root, current, source, error)) {
             Error(window, error);
             return;
         }
+
         Refresh();
     }
+
     void Layout() {
         RECT r{};
         GetClientRect(window, &r);
         const int w = r.right, h = r.bottom;
+
         // Unity Project window: toolbar (actions left, search right), folder
         // tree on the left, breadcrumb + contents on the right.
         MoveWindow(title, 8, 5, 80, 22, TRUE);
-        MoveWindow(import, 4, 3, 112, 24, TRUE);  // 「インポート...」が収まる幅
+        MoveWindow(import, 4, 3, 112, 24, TRUE); // 「インポート...」が収まる幅
         MoveWindow(refresh, 120, 3, 86, 24, TRUE);
         const int searchWidth = std::clamp(w / 3, 140, 320);
         MoveWindow(search, w - searchWidth - 4 + SEARCH_INSET_LEFT, 5, searchWidth - SEARCH_INSET_LEFT - 4, 20, TRUE);
@@ -628,6 +788,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(p));
         p->window = hwnd;
     }
+
     if (!p) return DefWindowProcW(hwnd, message, wp, lp);
     switch (message) {
     case WM_CREATE: {
@@ -636,6 +797,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         p->bold = theme::GetFonts().hBold;
         p->background = theme::Brush(theme::COLOR_PANEL);
         p->input = theme::Brush(theme::COLOR_INPUT);
+
         // The dock tab already says "Project"; the old caption stays for
         // compatibility but is hidden.
         p->title = p->Make(L"STATIC", L"PROJECT", SS_LEFT);
@@ -667,7 +829,10 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         auto images =
             reinterpret_cast<HIMAGELIST>(SHGetFileInfoW(L"C:\\", FILE_ATTRIBUTE_DIRECTORY, &info, sizeof(info),
                                                         SHGFI_SYSICONINDEX | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES));
-        if (images) ListView_SetImageList(p->list, images, LVSIL_SMALL);
+        if (images) {
+            ListView_SetImageList(p->list, images, LVSIL_SMALL);
+        }
+
         LVCOLUMNW column{};
         column.mask = LVCF_TEXT | LVCF_WIDTH;
         column.pszText = const_cast<wchar_t*>(editor::Tr(L"Name"));
@@ -684,14 +849,18 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     case WM_SIZE: p->Layout(); return 0;
     case WM_CONTEXTMENU: p->ContextMenu(reinterpret_cast<HWND>(wp), {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)}); return 0;
     case WM_COMMAND:
-        if (LOWORD(wp) == SearchId && (HIWORD(wp) == EN_SETFOCUS || HIWORD(wp) == EN_KILLFOCUS))
+        if (LOWORD(wp) == SearchId && (HIWORD(wp) == EN_SETFOCUS || HIWORD(wp) == EN_KILLFOCUS)) {
             InvalidateRect(hwnd, nullptr, TRUE);
-        if (LOWORD(wp) == SearchId && HIWORD(wp) == EN_CHANGE)
+        }
+
+        if (LOWORD(wp) == SearchId && HIWORD(wp) == EN_CHANGE) {
             p->PopulateList();
-        else if (LOWORD(wp) == RefreshId && HIWORD(wp) == BN_CLICKED)
+        } else if (LOWORD(wp) == RefreshId && HIWORD(wp) == BN_CLICKED) {
             p->Refresh();
-        else if (LOWORD(wp) == ImportId && HIWORD(wp) == BN_CLICKED)
+        } else if (LOWORD(wp) == ImportId && HIWORD(wp) == BN_CLICKED) {
             p->ImportFile();
+        }
+
         return 0;
     case WM_NOTIFY: {
         auto* hdr = reinterpret_cast<NMHDR*>(lp);
@@ -708,8 +877,11 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             p->OpenEntry(action->iItem);
         } else if (hdr->idFrom == ListId && hdr->code == LVN_KEYDOWN) {
             auto* key = reinterpret_cast<NMLVKEYDOWN*>(lp);
-            if (key->wVKey == VK_RETURN) p->OpenEntry(ListView_GetNextItem(p->list, -1, LVNI_SELECTED));
+            if (key->wVKey == VK_RETURN) {
+                p->OpenEntry(ListView_GetNextItem(p->list, -1, LVNI_SELECTED));
+            }
         }
+
         return 0;
     }
     case WM_DRAWITEM: {
@@ -734,6 +906,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         RECT toolbar{0, 0, r.right, TOOLBAR_HEIGHT - 1};
         theme::Fill(dc, toolbar, theme::COLOR_TAB_ACTIVE);
         theme::Line(dc, 0, TOOLBAR_HEIGHT - 1, r.right, TOOLBAR_HEIGHT - 1, theme::COLOR_SEPARATOR);
+
         // Search box with magnifier, drawn around the borderless edit.
         RECT box{};
         GetWindowRect(p->search, &box);
@@ -754,6 +927,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         delete p;
         return DefWindowProcW(hwnd, message, wp, lp);
     }
+
     return DefWindowProcW(hwnd, message, wp, lp);
 }
 } // namespace
@@ -766,26 +940,31 @@ bool GenerateVisualStudioProject(const fs::path& projectRoot, const fs::path& en
         error = L"The project folder is unavailable.";
         return false;
     }
+
     auto engine = engineRoot.empty() ? project.parent_path() : fs::weakly_canonical(engineRoot, ec);
     if (ec || !fs::is_regular_file(engine / L"src" / L"Engine.h", ec)) {
         error = L"Engine.h could not be located for Visual Studio navigation.";
         return false;
     }
+
     std::vector<fs::path> sources, headers;
     const auto scripts = project / L"Scripts";
     for (fs::directory_iterator it(scripts, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end;
          it.increment(ec)) {
         if (!it->is_regular_file(ec)) continue;
         const auto ext = Lower(it->path().extension().wstring());
-        if (ext == L".cpp" || ext == L".c")
+        if (ext == L".cpp" || ext == L".c") {
             sources.push_back(it->path());
-        else if (ext == L".h" || ext == L".hpp")
+        } else if (ext == L".h" || ext == L".hpp") {
             headers.push_back(it->path());
+        }
     }
+
     if (ec) {
         error = L"The Scripts folder could not be enumerated.";
         return false;
     }
+
     std::sort(sources.begin(), sources.end());
     std::sort(headers.begin(), headers.end());
     auto xml = [](std::wstring value) {
@@ -794,9 +973,12 @@ bool GenerateVisualStudioProject(const fs::path& projectRoot, const fs::path& en
             const wchar_t* to;
         };
         constexpr Pair pairs[] = {{L"&", L"&amp;"}, {L"<", L"&lt;"}, {L">", L"&gt;"}, {L"\"", L"&quot;"}};
-        for (const auto& pair : pairs)
-            for (size_t at = 0; (at = value.find(pair.from, at)) != std::wstring::npos; at += wcslen(pair.to))
+        for (const auto& pair : pairs) {
+            for (size_t at = 0; (at = value.find(pair.from, at)) != std::wstring::npos; at += wcslen(pair.to)) {
                 value.replace(at, wcslen(pair.from), pair.to);
+            }
+        }
+
         return value;
     };
     std::wostringstream projectText;
@@ -824,11 +1006,15 @@ bool GenerateVisualStudioProject(const fs::path& projectRoot, const fs::path& en
                 << LR"(;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
 )";
-    for (const auto& path : sources)
+    for (const auto& path : sources) {
         projectText << L"    <ClCompile Include=\"" << xml(path.wstring()) << L"\" />\n";
+    }
+
     projectText << L"  </ItemGroup>\n  <ItemGroup>\n";
-    for (const auto& path : headers)
+    for (const auto& path : headers) {
         projectText << L"    <ClInclude Include=\"" << xml(path.wstring()) << L"\" />\n";
+    }
+
     projectText << L"    <ClInclude Include=\"" << xml((engine / L"src" / L"Engine.h").wstring())
                 << L"\"><Link>Engine API\\Engine.h</Link></ClInclude>\n";
     projectText << L"    <ClInclude Include=\"" << xml((engine / L"src" / L"Renderer.h").wstring())
@@ -853,10 +1039,12 @@ Global
 	EndGlobalSection
 EndGlobal
 )";
+
     // Write UTF-8 explicitly: a locale-dependent wofstream fails on systems
     // whose ANSI code page cannot encode the text (e.g. Japanese CP932).
     auto write = [&](const fs::path& path, const std::wstring& text) {
-        const int nBytes = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+        const int nBytes =
+            WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
         std::string utf8(static_cast<size_t>(std::max(nBytes, 0)), '\0');
         WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), utf8.data(), nBytes, nullptr, nullptr);
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -869,6 +1057,7 @@ EndGlobal
         error = L"Visual Studio project files could not be generated.";
         return false;
     }
+
     return true;
 }
 
@@ -882,6 +1071,7 @@ bool CreateProjectComponent(const fs::path& projectRoot, const std::wstring& nam
         error = L"Use 1 to 64 letters, digits or underscores, starting with a letter. Do not include an extension.";
         return false;
     }
+
     const auto lower = Lower(name);
     if (lower == L"con" || lower == L"prn" || lower == L"aux" || lower == L"nul" ||
         (lower.size() == 4 && (lower.substr(0, 3) == L"com" || lower.substr(0, 3) == L"lpt") && lower[3] >= L'1' &&
@@ -889,34 +1079,40 @@ bool CreateProjectComponent(const fs::path& projectRoot, const std::wstring& nam
         error = L"That name is reserved by Windows. Choose another component name.";
         return false;
     }
+
     std::error_code ec;
     const fs::path root = fs::canonical(projectRoot, ec);
     if (ec || Reparse(projectRoot) || !fs::is_directory(root, ec) || ec) {
         error = L"The project folder is unavailable.";
         return false;
     }
+
     const auto folder = root / L"Scripts";
     fs::create_directory(folder, ec);
     if (ec || !AllowedPath(root, folder) || !fs::is_directory(folder, ec) || ec) {
         error = L"The Scripts folder is unavailable or uses a reparse point.";
         return false;
     }
+
     std::string identifier;
     identifier.reserve(name.size());
-    for (wchar_t c : name)
+    for (wchar_t c : name) {
         identifier.push_back(static_cast<char>(c)); // Validated ASCII above.
+    }
+
     const std::string header = "#pragma once\n#include \"Engine.h\"\n\nclass " + identifier +
                                " final : public dxs::Component {\npublic:\n    void Start(dxs::Entity& entity) override;\n    "
                                "void Update(dxs::Entity& entity, float fDeltaSeconds) override;\n};\n";
-    const std::string source =
-        "#include \"" + identifier + ".h\"\n\nvoid " + identifier +
-        "::Start(dxs::Entity& entity) {\n    // Called once for each attachment.\n"
-        "    // Coroutines: StartCoroutine(MyRoutine(entity)); with\n"
-        "    //   dxs::Coroutine MyRoutine(dxs::Entity& e) { co_yield dxs::WaitForSeconds(1.0f); ... }\n"
-        "    (void)entity;\n}\n\nvoid " + identifier +
-        "::Update(dxs::Entity& entity, float fDeltaSeconds) {\n    // Put this component's behavior here.\n    (void)entity;\n    "
-        "(void)fDeltaSeconds;\n}\n\nDXS_REGISTER_COMPONENT(" +
-        identifier + ")\n";
+    const std::string source = "#include \"" + identifier + ".h\"\n\nvoid " + identifier +
+                               "::Start(dxs::Entity& entity) {\n    // Called once for each attachment.\n"
+                               "    // Coroutines: StartCoroutine(MyRoutine(entity)); with\n"
+                               "    //   dxs::Coroutine MyRoutine(dxs::Entity& e) { co_yield dxs::WaitForSeconds(1.0f); ... }\n"
+                               "    (void)entity;\n}\n\nvoid " +
+                               identifier +
+                               "::Update(dxs::Entity& entity, float fDeltaSeconds) {\n    // Put this component's behavior "
+                               "here.\n    (void)entity;\n    "
+                               "(void)fDeltaSeconds;\n}\n\nDXS_REGISTER_COMPONENT(" +
+                               identifier + ")\n";
     const auto headerPath = folder / (name + L".h"), sourcePath = folder / (name + L".cpp");
     HANDLE files[2]{INVALID_HANDLE_VALUE, INVALID_HANDLE_VALUE};
     const fs::path paths[]{headerPath, sourcePath};
@@ -934,44 +1130,64 @@ bool CreateProjectComponent(const fs::path& projectRoot, const std::wstring& nam
             break;
         }
     }
+
     for (int i = 0; success && i < 2; ++i) {
         DWORD written{};
         success = WriteFile(files[i], contents[i]->data(), static_cast<DWORD>(contents[i]->size()), &written, nullptr) &&
                   written == contents[i]->size() && FlushFileBuffers(files[i]);
-        if (!success) failure = GetLastError();
+        if (!success) {
+            failure = GetLastError();
+        }
     }
-    for (auto file : files)
+
+    for (auto file : files) {
         if (file != INVALID_HANDLE_VALUE) {
             if (!success) {
                 FILE_DISPOSITION_INFO discard{TRUE};
                 SetFileInformationByHandle(file, FileDispositionInfo, &discard, sizeof(discard));
             }
+
             CloseHandle(file);
         }
-    if (!success) {
-        if (failure == ERROR_FILE_EXISTS || failure == ERROR_ALREADY_EXISTS)
-            error = L"A header or source file with that name already exists. Existing files were not changed.";
-        else
-            error = L"Could not create the component (Windows error " + std::to_wstring(failure) + L").";
     }
+
+    if (!success) {
+        if (failure == ERROR_FILE_EXISTS || failure == ERROR_ALREADY_EXISTS) {
+            error = L"A header or source file with that name already exists. Existing files were not changed.";
+        } else {
+            error = L"Could not create the component (Windows error " + std::to_wstring(failure) + L").";
+        }
+    }
+
     return success;
 }
 
 void ChooseProjectScriptEditor(HWND panel) {
     auto* p = reinterpret_cast<Panel*>(GetWindowLongPtrW(panel, GWLP_USERDATA));
-    if (p) p->ChooseEditor();
+    if (p) {
+        p->ChooseEditor();
+    }
 }
+
 void UseAutomaticProjectScriptEditor(HWND panel) {
     auto* p = reinterpret_cast<Panel*>(GetWindowLongPtrW(panel, GWLP_USERDATA));
-    if (p) p->SaveEditor({});
+    if (p) {
+        p->SaveEditor({});
+    }
 }
+
 void RefreshProjectPanel(HWND panel) {
     auto* p = reinterpret_cast<Panel*>(GetWindowLongPtrW(panel, GWLP_USERDATA));
-    if (p) p->Refresh();
+    if (p) {
+        p->Refresh();
+    }
 }
+
 void NewProjectComponent(HWND panel) {
     auto* p = reinterpret_cast<Panel*>(GetWindowLongPtrW(panel, GWLP_USERDATA));
-    if (p) p->NewComponent();
+    if (p) {
+        p->NewComponent();
+    }
 }
 
 bool ImportProjectFile(const fs::path& projectRoot, const fs::path& destinationFolder, const fs::path& source,
@@ -983,25 +1199,31 @@ bool ImportProjectFile(const fs::path& projectRoot, const fs::path& destinationF
         error = L"The project folder is unavailable.";
         return false;
     }
+
     if (!AllowedPath(root, destinationFolder) || !fs::is_directory(destinationFolder, ec) || ec) {
         error = L"The destination folder is unavailable, outside the project, or uses a reparse point.";
         return false;
     }
+
     const fs::path filename = source.filename();
     if (filename.empty() || filename == L"." || filename == L"..") {
         error = L"Choose a file to import.";
         return false;
     }
+
     // CREATE_NEW semantics of CopyFileW(..., TRUE) prevent replacing existing
     // files, including a file created after the destination was checked.
     if (!CopyFileW(source.c_str(), (destinationFolder / filename).c_str(), TRUE)) {
         const DWORD code = GetLastError();
-        if (code == ERROR_FILE_EXISTS || code == ERROR_ALREADY_EXISTS)
+        if (code == ERROR_FILE_EXISTS || code == ERROR_ALREADY_EXISTS) {
             error = L"A file with that name already exists. Nothing was overwritten.";
-        else
+        } else {
             error = L"Import failed (Windows error " + std::to_wstring(code) + L").";
+        }
+
         return false;
     }
+
     return true;
 }
 
@@ -1016,7 +1238,10 @@ HWND CreateProjectPanel(HWND parent, HINSTANCE instance, const fs::path& project
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return nullptr;
     std::error_code ec;
     fs::path root = fs::weakly_canonical(projectRoot, ec);
-    if (ec) root = fs::absolute(projectRoot, ec).lexically_normal();
+    if (ec) {
+        root = fs::absolute(projectRoot, ec).lexically_normal();
+    }
+
     if (ec) return nullptr;
     std::wstring generationError;
     GenerateVisualStudioProject(root, engineRoot.empty() ? root.parent_path() : engineRoot, generationError);
@@ -1025,6 +1250,7 @@ HWND CreateProjectPanel(HWND parent, HINSTANCE instance, const fs::path& project
     panel->root = root;
     panel->current = root;
     panel->engineRoot = engineRoot.empty() ? root.parent_path() : engineRoot;
+
     // The window takes ownership during WM_NCCREATE.
     Panel* raw = panel.release();
     return CreateWindowExW(0, WindowClass, L"Project", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, 0, 1, 1, parent, nullptr,

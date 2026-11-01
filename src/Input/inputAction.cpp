@@ -17,10 +17,13 @@
 namespace dxs {
 namespace {
 // --- 3D の長さ ---
-float Length(const Vector3& value) { return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z); }
+float Length(const Vector3& value) {
+    return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+}
 } // namespace
 
 CInputAction::CInputAction() {}
+
 CInputAction::~CInputAction() {}
 
 //==================================================================================
@@ -42,7 +45,9 @@ HRESULT CInputAction::Init(std::string_view sName, const ACTION_TYPE type, const
 //==================================================================================
 // --- 終了処理 ---
 //==================================================================================
-void CInputAction::Uninit(void) { m_vpBinding.clear(); }
+void CInputAction::Uninit(void) {
+    m_vpBinding.clear();
+}
 
 //==================================================================================
 // --- 更新処理 ---
@@ -51,6 +56,7 @@ void CInputAction::Update(const CInputSystem& inputSystem) {
     const Vector3 previous = m_value;
     m_value = EvaluateBindings(inputSystem); // 全バインディングの中で最も大きい値
     const float fLength = Length(m_value);
+
     // しきい値で押下状態を判定し、前フレームの結果を保存
     m_bPressedPrev = m_bPressedCurrent;
     m_bPressedCurrent = (fLength >= m_fPressPoint);
@@ -88,17 +94,29 @@ void CInputAction::UpdatePhase(const Vector3& previous) {
             m_phase = PHASE::WAITING;
         }
     }
+
     // コールバック → デリゲートの順に通知
     if (m_bStartedThisFrame) {
-        if (m_callbackStarted) m_callbackStarted(*this);
+        if (m_callbackStarted) {
+            m_callbackStarted(*this);
+        }
+
         onStarted.Broadcast(*this);
     }
+
     if (m_bPerformedThisFrame) {
-        if (m_callback) m_callback(*this);
+        if (m_callback) {
+            m_callback(*this);
+        }
+
         onPerformed.Broadcast(*this);
     }
+
     if (m_bCanceledThisFrame) {
-        if (m_callbackCanceled) m_callbackCanceled(*this);
+        if (m_callbackCanceled) {
+            m_callbackCanceled(*this);
+        }
+
         onCanceled.Broadcast(*this);
     }
 }
@@ -118,7 +136,9 @@ void CInputAction::Reset(void) {
 // --- 入力の紐づけの登録処理 ---
 //==================================================================================
 void CInputAction::AddBinding(CInputBinding* pBinding) {
-    if (pBinding) m_vpBinding.push_back(std::unique_ptr<CInputBinding>(pBinding));
+    if (pBinding) {
+        m_vpBinding.push_back(std::unique_ptr<CInputBinding>(pBinding));
+    }
 }
 
 //==================================================================================
@@ -132,18 +152,25 @@ Vector3 CInputAction::EvaluateBindings(const CInputSystem& inputSystem) const {
         for (const auto& pBinding : m_vpBinding) {
             if (!pBinding) continue;
             const float fValue = pBinding->ReadValue1D(inputSystem);
-            if (std::fabs(fValue) > std::fabs(valueMax.x)) valueMax.x = fValue;
+            if (std::fabs(fValue) > std::fabs(valueMax.x)) {
+                valueMax.x = fValue;
+            }
         }
+
         break;
     case ACTION_TYPE::VALUE_2D:
         for (const auto& pBinding : m_vpBinding) {
             if (!pBinding) continue;
             const Vector3 value = pBinding->ReadValue2D(inputSystem);
-            if (Length(value) > Length(valueMax)) valueMax = value;
+            if (Length(value) > Length(valueMax)) {
+                valueMax = value;
+            }
         }
+
         break;
     default: break;
     }
+
     return valueMax;
 }
 

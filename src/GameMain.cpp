@@ -23,17 +23,21 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return TRUE;
     }
     case WM_SIZE:
-        if (game && game->ready && wparam != SIZE_MINIMIZED && LOWORD(lparam) && HIWORD(lparam))
+        if (game && game->ready && wparam != SIZE_MINIMIZED && LOWORD(lparam) && HIWORD(lparam)) {
             game->renderer.Resize(LOWORD(lparam), HIWORD(lparam));
+        }
+
         return 0;
     case WM_KEYDOWN:
         if (wparam == VK_ESCAPE) {
             DestroyWindow(window);
             return 0;
         }
+
         break;
     case WM_DESTROY: PostQuitMessage(0); return 0;
     }
+
     return DefWindowProcW(window, message, wparam, lparam);
 }
 
@@ -47,8 +51,10 @@ std::filesystem::path ExeDirectory() {
 
 std::wstring WideText(const char* pText) {
     std::wstring sResult;
-    for (; pText && *pText; ++pText)
+    for (; pText && *pText; ++pText) {
         sResult.push_back(static_cast<wchar_t>(*pText));
+    }
+
     return sResult;
 }
 
@@ -62,12 +68,20 @@ dxs::GraphicsApi ChooseGraphicsApi(const std::filesystem::path& base, const wcha
     LPWSTR* ppArguments = pCommandLine && *pCommandLine ? CommandLineToArgvW(pCommandLine, &nArgumentCount) : nullptr;
     for (int nIndex = 0; ppArguments && nIndex < nArgumentCount; ++nIndex) {
         std::string sArgument;
-        for (const wchar_t* pChar = ppArguments[nIndex]; *pChar; ++pChar)
+        for (const wchar_t* pChar = ppArguments[nIndex]; *pChar; ++pChar) {
             sArgument.push_back(static_cast<char>(*pChar & 0x7F));
+        }
+
         dxs::GraphicsApi api{};
-        if (dxs::ParseGraphicsApi(sArgument, api)) settings.graphicsApi = api;
+        if (dxs::ParseGraphicsApi(sArgument, api)) {
+            settings.graphicsApi = api;
+        }
     }
-    if (ppArguments) LocalFree(ppArguments);
+
+    if (ppArguments) {
+        LocalFree(ppArguments);
+    }
+
     return settings.graphicsApi;
 }
 } // namespace
@@ -79,12 +93,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
         MessageBoxA(nullptr, "Could not locate Game.exe.", "DxStudio Game", MB_OK | MB_ICONERROR);
         return 1;
     }
+
     dxs::Scene scene;
     std::string error;
     if (!dxs::LoadScene(base / "scene.dxs", scene, error)) {
         MessageBoxA(nullptr, error.c_str(), "DxStudio Game", MB_OK | MB_ICONERROR);
         return 1;
     }
+
     dxs::RegisterProjectComponents();
     for (const auto& entity : scene.vEntities) {
         for (const auto& component : entity.vComponents) {
@@ -95,6 +111,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
             }
         }
     }
+
     const wchar_t* className = L"DxStudioGameWindow";
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
@@ -106,6 +123,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
         MessageBoxW(nullptr, L"Could not register the game window.", L"DxStudio Game", MB_OK | MB_ICONERROR);
         return 1;
     }
+
     GameWindow game;
     RECT rect{0, 0, 1280, 720};
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
@@ -115,6 +133,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
         MessageBoxW(nullptr, L"Could not create the game window.", L"DxStudio Game", MB_OK | MB_ICONERROR);
         return 1;
     }
+
     RECT client{};
     GetClientRect(window, &client);
     const dxs::GraphicsApi preferredApi = ChooseGraphicsApi(base, commandLine);
@@ -125,6 +144,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
         DestroyWindow(window);
         return 1;
     }
+
     const std::wstring sTitle =
         std::wstring(L"DxStudio Game  [") + WideText(dxs::GraphicsApiDisplayName(game.renderer.Api())) + L"]";
     SetWindowTextW(window, sTitle.c_str());
@@ -143,15 +163,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
                 running = false;
                 break;
             }
+
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+
         if (!running) break;
         if (IsIconic(window)) {
             previous = Clock::now();
             Sleep(30);
             continue;
         }
+
         const auto now = Clock::now();
         const float dt = std::min(std::chrono::duration<float>(now - previous).count(), 0.1f);
         previous = now;
@@ -164,6 +187,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
             running = false;
         }
     }
+
     game.ready = false;
     game.renderer.Shutdown();
     return 0;

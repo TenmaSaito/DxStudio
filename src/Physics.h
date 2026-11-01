@@ -35,9 +35,10 @@ namespace dxs {
 //**********************************************************************************
 // *** 定数宣言 ***
 //**********************************************************************************
-inline constexpr float PHYSICS_FIXED_DELTA = 1.0f / 50.0f;  // 固定ステップの秒数（Unity の Fixed Timestep の既定値）
-inline constexpr int PHYSICS_MAX_STEPS_PER_FRAME = 8;       // 1 フレームの最大ステップ数（重いフレームの後に処理が雪だるま式に増えるのを防ぐ）
-inline constexpr int PHYSICS_SOLVER_ITERATIONS = 6;         // 接触の解決を繰り返す回数
+inline constexpr float PHYSICS_FIXED_DELTA = 1.0f / 50.0f; // 固定ステップの秒数（Unity の Fixed Timestep の既定値）
+inline constexpr int PHYSICS_MAX_STEPS_PER_FRAME =
+    8; // 1 フレームの最大ステップ数（重いフレームの後に処理が雪だるま式に増えるのを防ぐ）
+inline constexpr int PHYSICS_SOLVER_ITERATIONS = 6; // 接触の解決を繰り返す回数
 
 //**********************************************************************************
 // *** 力の加え方 ***
@@ -62,24 +63,31 @@ public:
     float m_fFriction = 0.6f;    // 摩擦係数
 
     void Update(Entity&, float) override {}
+
     // インスペクターに表示する項目
     std::vector<EditorField> EditorFields() override {
-        return {EditField("Mass", m_fMass),          EditField("Drag", m_fDrag),
-                EditField("Use Gravity", m_bUseGravity), EditField("Is Kinematic", m_bIsKinematic),
-                EditField("Bounciness", m_fBounciness),  EditField("Friction", m_fFriction)};
+        return {EditField("Mass", m_fMass),
+                EditField("Drag", m_fDrag),
+                EditField("Use Gravity", m_bUseGravity),
+                EditField("Is Kinematic", m_bIsKinematic),
+                EditField("Bounciness", m_fBounciness),
+                EditField("Friction", m_fFriction)};
     }
 
     // 力を加える（FORCE / ACCELERATION は次のステップの間だけ働く）
     void AddForce(const DirectX::XMFLOAT3& force, ForceMode mode = ForceMode::FORCE);
+
     [[nodiscard]] const DirectX::XMFLOAT3& Velocity() const noexcept { return m_velocity; } // 速度
-    void SetVelocity(const DirectX::XMFLOAT3& velocity) noexcept { m_velocity = velocity; }  // 速度を直接設定
+
+    void SetVelocity(const DirectX::XMFLOAT3& velocity) noexcept { m_velocity = velocity; } // 速度を直接設定
+
     // 質量の逆数（キネマティックや質量 0 以下は 0 = 動かない扱い）
     [[nodiscard]] float InverseMass() const noexcept { return m_bIsKinematic || m_fMass <= 0.0f ? 0.0f : 1.0f / m_fMass; }
 
 private:
     friend void StepPhysics(Scene& scene, float fFixedDelta); // 物理のステップが速度を直接更新する
-    DirectX::XMFLOAT3 m_velocity{0, 0, 0};     // 速度
-    DirectX::XMFLOAT3 m_acceleration{0, 0, 0}; // 次のステップまでに加えられた力による加速度
+    DirectX::XMFLOAT3 m_velocity{0, 0, 0};                    // 速度
+    DirectX::XMFLOAT3 m_acceleration{0, 0, 0};                // 次のステップまでに加えられた力による加速度
 };
 
 //**********************************************************************************
@@ -87,7 +95,7 @@ private:
 //**********************************************************************************
 class Collider : public Component {
 public:
-    bool m_bIsTrigger = false; // トリガー（押し返さずイベントだけ通知）
+    bool m_bIsTrigger = false;                                     // トリガー（押し返さずイベントだけ通知）
     float m_fCenterX = 0.0f, m_fCenterY = 0.0f, m_fCenterZ = 0.0f; // 形の中心のずれ（ローカル座標）
 
     void Update(Entity&, float) override {}
@@ -107,6 +115,7 @@ protected:
 class BoxCollider final : public Collider {
 public:
     float m_fSizeX = 1.0f, m_fSizeY = 1.0f, m_fSizeZ = 1.0f; // 箱の大きさ（物体の拡大率が掛かる）
+
     std::vector<EditorField> EditorFields() override {
         auto vFields = BaseFields();
         vFields.push_back(EditField("Size X", m_fSizeX));
@@ -124,6 +133,7 @@ public:
 class SphereCollider final : public Collider {
 public:
     float m_fRadius = 0.5f; // 半径
+
     std::vector<EditorField> EditorFields() override {
         auto vFields = BaseFields();
         vFields.push_back(EditField("Radius", m_fRadius));
@@ -142,6 +152,7 @@ public:
 class MeshCollider final : public Collider {
 public:
     bool m_bConvex = false; // 凸包で判定するか
+
     std::vector<EditorField> EditorFields() override {
         auto vFields = BaseFields();
         vFields.push_back(EditField("Convex", m_bConvex));

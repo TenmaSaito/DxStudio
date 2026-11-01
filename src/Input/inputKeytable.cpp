@@ -21,7 +21,8 @@ namespace {
 // --- 大文字への変換処理 ---
 std::string Upper(std::string_view sText) {
     std::string sResult(sText);
-    std::transform(sResult.begin(), sResult.end(), sResult.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    std::transform(sResult.begin(), sResult.end(), sResult.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
     return sResult;
 }
 
@@ -41,14 +42,22 @@ HRESULT CInputKeyTable::LoadFromFile(std::string_view sFilePath, const HWND hWnd
     std::ifstream file(std::filesystem::u8path(std::string(sFilePath)), std::ios::binary);
     if (!file.is_open()) {
         const std::string sError = "Cannot open the key table: " + std::string(sFilePath);
-        if (hWnd) MessageBoxA(hWnd, sError.c_str(), "Fileload Error", MB_ICONERROR);
-        else Debug::LogError(sError);
+        if (hWnd) {
+            MessageBoxA(hWnd, sError.c_str(), "Fileload Error", MB_ICONERROR);
+        } else {
+            Debug::LogError(sError);
+        }
+
         return E_FAIL;
     }
+
     std::string sRead;
     bool bFirstLine = true;
     while (std::getline(file, sRead)) {
-        if (bFirstLine && sRead.size() >= 3 && sRead.compare(0, 3, "\xEF\xBB\xBF") == 0) sRead.erase(0, 3); // UTF-8 の BOM を除く
+        if (bFirstLine && sRead.size() >= 3 && sRead.compare(0, 3, "\xEF\xBB\xBF") == 0) {
+            sRead.erase(0, 3); // UTF-8 の BOM を除く
+        }
+
         bFirstLine = false;
         sRead = Trim(sRead);
         if (sRead.empty() || sRead[0] == '#') continue; // 空行・コメント行は飛ばす
@@ -62,10 +71,12 @@ HRESULT CInputKeyTable::LoadFromFile(std::string_view sFilePath, const HWND hWnd
         } catch (...) {
             continue; // 書式が正しくない行は飛ばす
         }
+
         if (sName.empty()) continue;
         m_mapNameToCode[sName] = nCode;
         m_mapCodeToName.emplace(nCode, Trim(vsParse[0])); // 最初の名前（正式名）だけを登録する
     }
+
     return S_OK;
 }
 
@@ -108,6 +119,7 @@ void CInputKeyTable::Parse(std::string sString, std::vector<std::string>& rOut) 
             rOut.push_back(sString.substr(offset));
             break;
         }
+
         rOut.push_back(sString.substr(offset, pos - offset));
         offset = pos + SEPARATOR_LENGTH;
     }

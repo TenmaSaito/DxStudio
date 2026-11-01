@@ -27,8 +27,16 @@ namespace dxs {
 // *** 基本図形の種類 ***
 //**********************************************************************************
 enum class PrimitiveShape : unsigned char {
-    CUBE, SPHERE, CAPSULE, CYLINDER, CONE, PYRAMID, PLANE, // 3D
-    SQUARE, CIRCLE, TRIANGLE,                             // 2D（XY 平面上、-Z 方向を向く）
+    CUBE,
+    SPHERE,
+    CAPSULE,
+    CYLINDER,
+    CONE,
+    PYRAMID,
+    PLANE, // 3D
+    SQUARE,
+    CIRCLE,
+    TRIANGLE, // 2D（XY 平面上、-Z 方向を向く）
 };
 
 //**********************************************************************************
@@ -42,11 +50,16 @@ struct PrimitiveInfo {
 
 // 基本図形の一覧（メニューの並び順）
 inline constexpr std::array<PrimitiveInfo, 10> PRIMITIVES = {{
-    {PrimitiveShape::CUBE, "Cube", false},       {PrimitiveShape::SPHERE, "Sphere", false},
-    {PrimitiveShape::CAPSULE, "Capsule", false}, {PrimitiveShape::CYLINDER, "Cylinder", false},
-    {PrimitiveShape::CONE, "Cone", false},       {PrimitiveShape::PYRAMID, "Pyramid", false},
-    {PrimitiveShape::PLANE, "Plane", false},     {PrimitiveShape::SQUARE, "Square", true},
-    {PrimitiveShape::CIRCLE, "Circle", true},    {PrimitiveShape::TRIANGLE, "Triangle", true},
+    {PrimitiveShape::CUBE, "Cube", false},
+    {PrimitiveShape::SPHERE, "Sphere", false},
+    {PrimitiveShape::CAPSULE, "Capsule", false},
+    {PrimitiveShape::CYLINDER, "Cylinder", false},
+    {PrimitiveShape::CONE, "Cone", false},
+    {PrimitiveShape::PYRAMID, "Pyramid", false},
+    {PrimitiveShape::PLANE, "Plane", false},
+    {PrimitiveShape::SQUARE, "Square", true},
+    {PrimitiveShape::CIRCLE, "Circle", true},
+    {PrimitiveShape::TRIANGLE, "Triangle", true},
 }};
 
 // 基本図形のファイルを置くフォルダー（プロジェクトからの相対パス）

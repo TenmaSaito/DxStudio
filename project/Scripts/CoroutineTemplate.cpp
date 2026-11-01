@@ -7,13 +7,18 @@
 // ---------------------------------------------------------------------------
 void CoroutineTemplate::Start(dxs::Entity& entity) {
     // 戻り値のハンドルを保存しておくと、後で StopCoroutine で止められます。
-    if (m_bBlink) m_blinkHandle = StartCoroutine(BlinkForever(entity));
+    if (m_bBlink) {
+        m_blinkHandle = StartCoroutine(BlinkForever(entity));
+    }
+
     // ハンドルが不要なら、戻り値を使わなくて構いません。
     StartCoroutine(MainSequence(entity));
 }
 
 // Update は毎フレーム、コルーチンより先に呼ばれます。
-void CoroutineTemplate::Update(dxs::Entity&, float fDeltaSeconds) { m_fElapsed += fDeltaSeconds; }
+void CoroutineTemplate::Update(dxs::Entity&, float fDeltaSeconds) {
+    m_fElapsed += fDeltaSeconds;
+}
 
 // LateUpdate は Update とコルーチンの後に呼ばれます（カメラ追従などに使用）。
 void CoroutineTemplate::LateUpdate(dxs::Entity&, float) {}
@@ -39,14 +44,17 @@ dxs::Coroutine CoroutineTemplate::MainSequence(dxs::Entity& entity) {
 
     // 4. 条件を待つ。
     m_nStep = 4;
-    co_yield dxs::WaitUntil([this] { return m_fElapsed >= 3.0f; });    // 条件が true になるまで
+    co_yield dxs::WaitUntil([this] { return m_fElapsed >= 3.0f; });            // 条件が true になるまで
     co_yield dxs::WaitWhile([&entity] { return entity.draw.scale.x > 1.5f; }); // 条件が false になるまで
-    co_yield dxs::WaitForFrames(10);                                    // 10 フレーム待つ
-    co_yield dxs::WaitForSecondsRealtime(0.25f);                        // TimeScale の影響を受けない
+    co_yield dxs::WaitForFrames(10);                                           // 10 フレーム待つ
+    co_yield dxs::WaitForSecondsRealtime(0.25f);                               // TimeScale の影響を受けない
 
     // 5. 別のコルーチンを止める（Unity: StopCoroutine）。
     m_nStep = 5;
-    if (IsCoroutineRunning(m_blinkHandle)) StopCoroutine(m_blinkHandle);
+    if (IsCoroutineRunning(m_blinkHandle)) {
+        StopCoroutine(m_blinkHandle);
+    }
+
     entity.draw.bVisible = true;
 
     // ここで関数を抜けるとコルーチンは終了します。途中で終える場合は co_return;

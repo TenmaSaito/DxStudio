@@ -55,15 +55,15 @@ public:
 
 private:
     // ---- コルーチン本体 ----
-    dxs::Coroutine MainSequence(dxs::Entity& entity); // 手順 1〜5 を順に実行
+    dxs::Coroutine MainSequence(dxs::Entity& entity);                            // 手順 1〜5 を順に実行
     dxs::Coroutine MoveBy(dxs::Entity& entity, float fDistance, float fSeconds); // 子コルーチン
-    dxs::Coroutine BlinkForever(dxs::Entity& entity); // 止めるまで続くコルーチン
+    dxs::Coroutine BlinkForever(dxs::Entity& entity);                            // 止めるまで続くコルーチン
 
     float m_fMoveDistance = 2.0f;
     float m_fMoveSeconds = 1.0f;
     int m_nSpinFrames = 60;
     bool m_bBlink = true;
-    int m_nStep = 0;          // いま何番目の手順か（Inspector で確認用）
-    float m_fElapsed = 0.0f;  // Update で数える経過時間（WaitUntil の例で使用）
+    int m_nStep = 0;                    // いま何番目の手順か（Inspector で確認用）
+    float m_fElapsed = 0.0f;            // Update で数える経過時間（WaitUntil の例で使用）
     dxs::CoroutineHandle m_blinkHandle; // StopCoroutine 用に保持するハンドル
 };

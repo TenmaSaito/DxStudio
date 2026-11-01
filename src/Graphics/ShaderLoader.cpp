@@ -62,6 +62,7 @@ std::string DiagnosticText(ID3DBlob* pDiagnostics, const char* pFallback, HRESUL
     if (pDiagnostics && pDiagnostics->GetBufferSize()) {
         return std::string(static_cast<const char*>(pDiagnostics->GetBufferPointer()), pDiagnostics->GetBufferSize());
     }
+
     return FormatHResult(pFallback, hr);
 }
 } // namespace
@@ -83,19 +84,25 @@ bool LoadShaderPair(const std::wstring& sPath, const ShaderProfile& profile, Sha
             error = FormatHResult("Read compiled vertex shader failed", hr);
             return false;
         }
+
         hr = D3DReadFileToBlob(pixelFile.c_str(), &shaders.pPixelShader);
         if (FAILED(hr)) {
             error = FormatHResult("Read compiled pixel shader failed", hr);
             return false;
         }
+
         return true;
     }
+
     // HLSL ソース: エントリポイントごとにコンパイル（#include は標準の方法で解決）
     auto compile = [&](const char* pEntry, const char* pTarget, ComPtr<ID3DBlob>& pOutput) {
         ComPtr<ID3DBlob> pDiagnostics;
         const HRESULT hr = D3DCompileFromFile(sPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, pEntry, pTarget,
                                               CompileFlags(profile), 0, &pOutput, &pDiagnostics);
-        if (FAILED(hr)) error = DiagnosticText(pDiagnostics.Get(), "Compile shader failed", hr);
+        if (FAILED(hr)) {
+            error = DiagnosticText(pDiagnostics.Get(), "Compile shader failed", hr);
+        }
+
         return SUCCEEDED(hr);
     };
     return compile("VSMain", profile.pVertexTarget, shaders.pVertexShader) &&
@@ -110,7 +117,10 @@ bool CompileShaderSource(const char* pSource, const ShaderProfile& profile, Shad
         ComPtr<ID3DBlob> pDiagnostics;
         const HRESULT hr = D3DCompile(pSource, std::strlen(pSource), "DxStudioBuiltin", nullptr, nullptr, pEntry, pTarget,
                                       CompileFlags(profile), 0, &pOutput, &pDiagnostics);
-        if (FAILED(hr)) error = DiagnosticText(pDiagnostics.Get(), "Compile built-in shader failed", hr);
+        if (FAILED(hr)) {
+            error = DiagnosticText(pDiagnostics.Get(), "Compile built-in shader failed", hr);
+        }
+
         return SUCCEEDED(hr);
     };
     return compile("VSMain", profile.pVertexTarget, shaders.pVertexShader) &&

@@ -11,6 +11,7 @@
 
 namespace {
 int g_nFailures = 0;
+
 void Check(bool bCondition, const char* pWhat) {
     if (bCondition) return;
     std::cerr << "FAILED: " << pWhat << '\n';
@@ -26,17 +27,23 @@ public:
     XINPUT_STATE pad{};
     bool bPadConnected = true;
     int nVibrationCalls = 0;
+
     bool HasFocus() override { return bFocus; }
+
     void ReadKeyboard(BYTE aState[dxs::NUM_KEY_MAX]) override { std::copy(std::begin(aKeys), std::end(aKeys), aState); }
+
     void ReadMouse(BYTE aState[3], POINT& point) override {
         std::copy(std::begin(aButtons), std::end(aButtons), aState);
         point = cursor;
     }
+
     bool ReadJoypad(int nPadID, XINPUT_STATE& state) override {
         state = nPadID == 0 ? pad : XINPUT_STATE{};
         return nPadID == 0 && bPadConnected;
     }
+
     void SetJoypadVibration(int, const XINPUT_VIBRATION&) override { ++nVibrationCalls; }
+
     void Key(int nCode, bool bDown) { aKeys[nCode] = bDown ? 0x80 : 0; }
 };
 
@@ -45,11 +52,21 @@ constexpr int DIK_W = 0x11, DIK_D = 0x20, DIK_SPACE = 0x39, DIK_Q = 0x10, DIK_UP
 class Receiver final : public dxs::Component, public dxs::IInputReceiver {
 public:
     int m_nJumpPerformed = 0, m_nJumpCanceled = 0, m_nMoveEvents = 0;
+
     void Update(dxs::Entity&, float) override {}
+
     void OnInputAction(dxs::Entity&, const dxs::CInputAction& action) override {
-        if (action.IsEqualName("Jump") && action.WasPerformedThisFrame()) ++m_nJumpPerformed;
-        if (action.IsEqualName("Jump") && action.GetPhase() == dxs::CInputAction::PHASE::CANCELED) ++m_nJumpCanceled;
-        if (action.IsEqualName("Move")) ++m_nMoveEvents;
+        if (action.IsEqualName("Jump") && action.WasPerformedThisFrame()) {
+            ++m_nJumpPerformed;
+        }
+
+        if (action.IsEqualName("Jump") && action.GetPhase() == dxs::CInputAction::PHASE::CANCELED) {
+            ++m_nJumpCanceled;
+        }
+
+        if (action.IsEqualName("Move")) {
+            ++m_nMoveEvents;
+        }
     }
 };
 DXS_REGISTER_COMPONENT(Receiver)
@@ -72,7 +89,8 @@ int main() {
     Check(pTable->FindCode("ESC", nCode) && nCode == 0x01, "aliases resolve to the same code");
     Check(pTable->FindName(0x01) && *pTable->FindName(0x01) == "ESCAPE", "FindName returns the first (official) name");
     Check(dxs::ScanCodeToVirtualKey(DIK_SPACE) == VK_SPACE && dxs::ScanCodeToVirtualKey(DIK_UP) == VK_UP &&
-              dxs::ScanCodeToVirtualKey(DIK_W) == 'W', "DIK scan codes map to virtual keys");
+              dxs::ScanCodeToVirtualKey(DIK_W) == 'W',
+          "DIK scan codes map to virtual keys");
 
     // 2. Default actions file.
     std::string error;
@@ -115,9 +133,11 @@ int main() {
     fake.Key(DIK_SPACE, true);
     pSystem->Update();
     Check(pJump->WasPressedThisFrame() && pJump->IsPressed(), "Space presses Jump");
-    Check(pSystem->GetKeyboard()->GetTrigger(DIK_SPACE) && pSystem->GetKeyboard()->GetPress(DIK_SPACE), "keyboard trigger + press");
+    Check(pSystem->GetKeyboard()->GetTrigger(DIK_SPACE) && pSystem->GetKeyboard()->GetPress(DIK_SPACE),
+          "keyboard trigger + press");
     pSystem->Update();
-    Check(!pJump->WasPressedThisFrame() && pJump->IsPressed() && !pSystem->GetKeyboard()->GetTrigger(DIK_SPACE), "held: no new press");
+    Check(!pJump->WasPressedThisFrame() && pJump->IsPressed() && !pSystem->GetKeyboard()->GetTrigger(DIK_SPACE),
+          "held: no new press");
     fake.Key(DIK_SPACE, false);
     pSystem->Update();
     Check(pJump->WasReleasedThisFrame() && pSystem->GetKeyboard()->GetRelease(DIK_SPACE), "released this frame");
@@ -185,12 +205,14 @@ int main() {
         fake.Key(DIK_SPACE, false);
         dxs::UpdateUserComponents(scene, 1.0f / 60.0f);
         Check(pReceiver && pReceiver->m_nJumpCanceled == 1, "release is delivered as CANCELED");
-        Check(pInput && pInput->FindAction("NoSuchAction") == nullptr && pInput->ReadValue1D("NoSuchAction") == 0.0f, "missing action is safe");
+        Check(pInput && pInput->FindAction("NoSuchAction") == nullptr && pInput->ReadValue1D("NoSuchAction") == 0.0f,
+              "missing action is safe");
     }
 
     pSystem->Uninit();
     pSystem->SetSource(nullptr);
     if (g_nFailures) return 1;
-    std::cout << "Input system (key table, actions file, phases, callbacks, joypad, processors, focus, PlayerInput) tests passed.\n";
+    std::cout
+        << "Input system (key table, actions file, phases, callbacks, joypad, processors, focus, PlayerInput) tests passed.\n";
     return 0;
 }

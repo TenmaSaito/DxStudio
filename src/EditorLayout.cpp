@@ -9,12 +9,14 @@ void Editor::ResizeDock(LayoutDrag drag, POINT point) {
     GetClientRect(window, &client);
     const int width = static_cast<int>(client.right), height = static_cast<int>(client.bottom);
     const int x = static_cast<int>(point.x), y = static_cast<int>(point.y);
-    if (drag == LayoutDrag::Left)
+    if (drag == LayoutDrag::Left) {
         nDockLeft = std::clamp(x, 160, std::max(160, width - 500));
-    else if (drag == LayoutDrag::Right)
+    } else if (drag == LayoutDrag::Right) {
         nDockRight = std::clamp(width - x, 240, std::max(240, width - 400));
-    else if (drag == LayoutDrag::Project)
+    } else if (drag == LayoutDrag::Project) {
         nDockProject = std::clamp(height - theme::STATUS_BAR_HEIGHT - y, 120, std::max(120, height - 220));
+    }
+
     Layout();
 }
 
@@ -41,24 +43,31 @@ void Editor::FloatPanel(int index) {
         SetParent(p.window, window);
         SetWindowPos(p.window, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
     }
+
     SetWindowTextW(p.buttons[0], Tr(p.floating ? L"Dock" : L"Float"));
     theme::SetButtonIcon(p.buttons[0], p.floating ? theme::Icon::DOCK : theme::Icon::FLOAT);
     Layout();
+
     // Areas a floating panel passed over must repaint, including owner-drawn children.
     RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
 }
 
 void Editor::SelectViewTab(bool game) {
     bGameView = game;
-    for (HWND tab : viewTabs) InvalidateRect(tab, nullptr, FALSE);
+    for (HWND tab : viewTabs) {
+        InvalidateRect(tab, nullptr, FALSE);
+    }
+
     LayoutPanel(1);
     SetStatus(bGameView ? L"Game view: rendered through the first active Camera component."
-                       : L"Scene view: RMB + WASD/QE fly | Alt + RMB orbit | MMB pan | W/E/R tools");
+                        : L"Scene view: RMB + WASD/QE fly | Alt + RMB orbit | MMB pan | W/E/R tools");
 }
 
 int Editor::PanelSlot(int panelIndex) const {
-    for (int slot = 0; slot < SLOT_COUNT; ++slot)
+    for (int slot = 0; slot < SLOT_COUNT; ++slot) {
         if (aSlotPanel[slot] == panelIndex) return slot;
+    }
+
     return panelIndex;
 }
 
@@ -77,6 +86,7 @@ RECT Editor::DockSlotRect(int slot) const {
     case SLOT_BOTTOM: rect = {0, lower, right, bottom}; break;
     default: rect = {left, top, right, lower}; break;
     }
+
     MapWindowPoints(window, nullptr, reinterpret_cast<POINT*>(&rect), 2);
     return rect;
 }
@@ -86,15 +96,20 @@ int Editor::DockSlotAt(POINT screen) const {
         const RECT rect = DockSlotRect(slot);
         if (PtInRect(&rect, screen)) return slot;
     }
+
     return -1;
 }
 
 // Unity / UE style drop preview: a translucent accent rectangle over the slot.
 void Editor::ShowDockPreview(int slot) {
     if (slot < 0) {
-        if (dockPreview) ShowWindow(dockPreview, SW_HIDE);
+        if (dockPreview) {
+            ShowWindow(dockPreview, SW_HIDE);
+        }
+
         return;
     }
+
     if (!dockPreview) {
         WNDCLASSEXW previewClass{sizeof(previewClass)};
         previewClass.lpfnWndProc = DefWindowProcW;
@@ -106,6 +121,7 @@ void Editor::ShowDockPreview(int slot) {
                                       previewClass.lpszClassName, L"", WS_POPUP, 0, 0, 1, 1, window, nullptr, instance, nullptr);
         SetLayeredWindowAttributes(dockPreview, 0, 90, LWA_ALPHA);
     }
+
     const RECT rect = DockSlotRect(slot);
     SetWindowPos(dockPreview, HWND_TOPMOST, rect.left + 4, rect.top + 4, rect.right - rect.left - 8, rect.bottom - rect.top - 8,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -118,12 +134,21 @@ void Editor::DockPanelInSlot(int panelIndex, int slot) {
     const int fromSlot = PanelSlot(panelIndex);
     if (slot >= 0 && slot != fromSlot) {
         std::swap(aSlotPanel[slot], aSlotPanel[fromSlot]);
+
         // Side columns keep their content width when panels trade sides.
-        if ((slot == SLOT_LEFT && fromSlot == SLOT_RIGHT) || (slot == SLOT_RIGHT && fromSlot == SLOT_LEFT)) std::swap(nDockLeft, nDockRight);
+        if ((slot == SLOT_LEFT && fromSlot == SLOT_RIGHT) || (slot == SLOT_RIGHT && fromSlot == SLOT_LEFT)) {
+            std::swap(nDockLeft, nDockRight);
+        }
     }
-    if (panels[panelIndex].floating) FloatPanel(panelIndex); // toggles back to docked
-    else Layout();
-    const std::wstring message = std::wstring(PANEL_NAMES[panelIndex]) + L" docked to the " + DOCK_SLOT_NAMES[PanelSlot(panelIndex)] + L" slot.";
+
+    if (panels[panelIndex].floating) {
+        FloatPanel(panelIndex); // toggles back to docked
+    } else {
+        Layout();
+    }
+
+    const std::wstring message =
+        std::wstring(PANEL_NAMES[panelIndex]) + L" docked to the " + DOCK_SLOT_NAMES[PanelSlot(panelIndex)] + L" slot.";
     SetStatus(message.c_str());
 }
 
@@ -145,8 +170,10 @@ void Editor::SetGameAspect(int index) {
 
 void Editor::SelectBottomTab(int tab) {
     nBottomTab = std::clamp(tab, 0, BOTTOM_TAB_COUNT - 1);
-    for (HWND t : bottomTabs)
+    for (HWND t : bottomTabs) {
         InvalidateRect(t, nullptr, FALSE);
+    }
+
     LayoutPanel(3);
 }
 
@@ -157,6 +184,7 @@ void Editor::Layout() {
     GetClientRect(window, &r);
     const int w = r.right, h = r.bottom, top = TOP_CHROME_HEIGHT + 3, bottom = theme::STATUS_BAR_HEIGHT, gap = 3;
     const int header = theme::PANEL_HEADER_HEIGHT;
+
     // Geometry is computed per dock slot; aSlotPanel decides which panel fills it.
     auto docked = [&](int slot) {
         const auto& panel = SlotPanel(slot);
@@ -165,19 +193,29 @@ void Editor::Layout() {
     const int left = docked(SLOT_LEFT) ? std::clamp(nDockLeft, 160, std::max(160, w / 2)) : 0;
     const int right = docked(SLOT_RIGHT) ? std::clamp(nDockRight, 240, std::max(240, w / 2)) : 0;
     const int projectHeight =
-        docked(SLOT_BOTTOM) ? (SlotPanel(SLOT_BOTTOM).collapsed ? header : std::clamp(nDockProject, 120, std::max(120, h - top - bottom - 140))) : 0;
+        docked(SLOT_BOTTOM)
+            ? (SlotPanel(SLOT_BOTTOM).collapsed ? header : std::clamp(nDockProject, 120, std::max(120, h - top - bottom - 140)))
+            : 0;
     const int lower = h - bottom - projectHeight;
-    if (docked(SLOT_LEFT))
+    if (docked(SLOT_LEFT)) {
         MoveWindow(SlotPanel(SLOT_LEFT).window, gap, top, left - gap,
                    SlotPanel(SLOT_LEFT).collapsed ? header : std::max(header, lower - top - gap), TRUE);
-    if (docked(SLOT_RIGHT))
+    }
+
+    if (docked(SLOT_RIGHT)) {
         MoveWindow(SlotPanel(SLOT_RIGHT).window, w - right, top, right - gap,
                    SlotPanel(SLOT_RIGHT).collapsed ? header : std::max(header, h - top - bottom), TRUE);
-    if (docked(SLOT_CENTER))
+    }
+
+    if (docked(SLOT_CENTER)) {
         MoveWindow(SlotPanel(SLOT_CENTER).window, left + gap, top, std::max(1, w - left - right - gap * 2),
                    SlotPanel(SLOT_CENTER).collapsed ? header : std::max(header, lower - top - gap), TRUE);
-    if (docked(SLOT_BOTTOM))
+    }
+
+    if (docked(SLOT_BOTTOM)) {
         MoveWindow(SlotPanel(SLOT_BOTTOM).window, gap, lower, std::max(1, w - right - gap * 2), projectHeight, TRUE);
+    }
+
     const bool showLeft = docked(SLOT_LEFT) && docked(SLOT_CENTER),
                showRight = docked(SLOT_RIGHT) && (docked(SLOT_CENTER) || docked(SLOT_BOTTOM)),
                showProject = docked(SLOT_BOTTOM) && (docked(SLOT_LEFT) || docked(SLOT_CENTER));
@@ -185,6 +223,7 @@ void Editor::Layout() {
         ShowWindow(panels[i].window, panels[i].hidden ? SW_HIDE : SW_SHOWNA);
         LayoutPanel(i);
     }
+
     SetWindowPos(splitters[0], HWND_TOP, left - 3, top, 6, std::max(1, lower - top), SWP_NOACTIVATE);
     SetWindowPos(splitters[1], HWND_TOP, w - right - 4, top, 6, std::max(1, h - top - bottom), SWP_NOACTIVATE);
     SetWindowPos(splitters[2], HWND_TOP, gap, lower - 4, std::max(1, w - right - gap * 2), 6, SWP_NOACTIVATE);
@@ -203,6 +242,7 @@ void Editor::Layout() {
         MoveWindow(menuButtons[m], x, 1, width, theme::MENU_BAR_HEIGHT - 2, TRUE);
         x += width;
     }
+
     // Toolbar buttons are as wide as icon + label (+ chevron) at the current DPI.
     auto measure = [&](HWND button, int extra) {
         wchar_t text[64]{};
@@ -246,6 +286,7 @@ void Editor::Layout() {
         MoveWindow(progressGauge, w - 336 - gaugeW, h - bottom + 5, std::max(1, gaugeW - 12), std::max(1, bottom - 9), TRUE);
         ShowWindow(progressGauge, gaugeW ? SW_SHOWNA : SW_HIDE);
     }
+
     MoveWindow(statusRight, w - 330, h - bottom + 3, 320, bottom - 5, TRUE); // 「一時停止中」なども収まる幅
     InvalidateRect(window, nullptr, TRUE);
     bArranging = false;
@@ -255,23 +296,33 @@ void Editor::LayoutPanel(int index) {
     if (!bShellReady) return;
     auto& p = panels[index];
     if (IsIconic(p.window)) return;
+
     // The Inspector moves dozens of controls (every scroll step). Moving them
     // one by one with redraw left trails of half-painted rows, so redraw is
     // frozen for the whole relayout and the panel repaints once at the end.
     struct RedrawFreeze {
         HWND hWindow = nullptr;
+
         ~RedrawFreeze() {
             if (!hWindow) return;
             SendMessageW(hWindow, WM_SETREDRAW, TRUE, 0);
             RedrawWindow(hWindow, nullptr, nullptr, RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
         }
     } freeze;
+
     static int s_nInspectorDepth = 0; // LayoutPanel(2) re-enters itself after clamping the scroll
+
     struct DepthCount {
         int& nDepth;
         bool bCounted;
-        ~DepthCount() { if (bCounted) --nDepth; }
+
+        ~DepthCount() {
+            if (bCounted) {
+                --nDepth;
+            }
+        }
     } depth{s_nInspectorDepth, index == 2};
+
     if (index == 2) {
         // Only the outermost call freezes, and never a hidden panel
         // (WM_SETREDRAW TRUE would make it visible again).
@@ -280,10 +331,12 @@ void Editor::LayoutPanel(int index) {
             freeze.hWindow = p.window;
         }
     }
+
     RECT r{};
     GetClientRect(p.window, &r);
     const int w = r.right, h = r.bottom;
     const int header = theme::PANEL_HEADER_HEIGHT;
+
     // Tab strip chrome (right aligned icons).
     const int closeX = std::max(4, w - 24), minimizeX = std::max(4, closeX - 22), floatX = std::max(4, minimizeX - 22);
     MoveWindow(p.buttons[0], floatX, 4, 20, 20, TRUE);
@@ -297,6 +350,7 @@ void Editor::LayoutPanel(int index) {
         MoveWindow(control, x + inset.left, y - scrollOffset + inset.top,
                    std::max(1, width - static_cast<int>(inset.left + inset.right)),
                    std::max(1, height - static_cast<int>(inset.top + inset.bottom)), TRUE);
+
         // Scrolled Inspector rows must not cover the panel's tab strip.
         const bool bUnderHeader = scrollOffset > 0 && y - scrollOffset < theme::PANEL_HEADER_HEIGHT;
         ShowWindow(control, expanded && visible && !bUnderHeader ? SW_SHOWNA : SW_HIDE);
@@ -315,13 +369,19 @@ void Editor::LayoutPanel(int index) {
             MoveWindow(viewTabs[t], t * 100, 2, 100, header - 2, TRUE);
             ShowWindow(viewTabs[t], SW_SHOWNA);
         }
-        for (int i = 0; i < 3; ++i)
+
+        for (int i = 0; i < 3; ++i) {
             place(gizmoButtons[i], 6 + i * 31, header + 3, 30, 24, !bGameView);
-        for (int i = 0; i < 2; ++i)
+        }
+
+        for (int i = 0; i < 2; ++i) {
             place(projectionButtons[i], std::max(110, w - 6 - (2 - i) * 84), header + 3, 82, 24, !bGameView);
+        }
+
         const int viewTop = header + 30;
         place(drawModeButton, 104, header + 3, 190, 24, !bGameView);
         place(aspectButton, 6, header + 3, 130, 24, bGameView);
+
         // Game view: letterbox the viewport to the chosen aspect ratio.
         RECT view{0, viewTop, w, std::max(viewTop + 1, h)};
         const float ratio = bGameView ? ASPECT_RATIOS[nGameAspect] : 0.0f;
@@ -332,9 +392,13 @@ void Editor::LayoutPanel(int index) {
                 viewH = areaH;
                 viewW = static_cast<int>(areaH * ratio);
             }
-            view = {(areaW - viewW) / 2, viewTop + (areaH - viewH) / 2, (areaW - viewW) / 2 + viewW, viewTop + (areaH - viewH) / 2 + viewH};
+
+            view = {(areaW - viewW) / 2, viewTop + (areaH - viewH) / 2, (areaW - viewW) / 2 + viewW,
+                    viewTop + (areaH - viewH) / 2 + viewH};
         }
-        place(viewport, view.left, view.top, std::max<LONG>(1, view.right - view.left), std::max<LONG>(1, view.bottom - view.top));
+
+        place(viewport, view.left, view.top, std::max<LONG>(1, view.right - view.left),
+              std::max<LONG>(1, view.bottom - view.top));
         if (bRendererReady && expanded && !p.hidden && w > 2 && h > viewTop + 1) {
             RECT actual{};
             GetClientRect(viewport, &actual);
@@ -347,6 +411,7 @@ void Editor::LayoutPanel(int index) {
             ShowWindow(bottomTabs[t], SW_SHOWNA);
             tabX += 124;
         }
+
         place(projectPanel, 0, header, w, std::max(1, h - header), nBottomTab == 0);
         place(consolePanel, 0, header, w, std::max(1, h - header), nBottomTab == 1);
     } else {
@@ -354,11 +419,14 @@ void Editor::LayoutPanel(int index) {
         // line 20, vertical spacing 2, indent 15 (+3 padding), label width
         // max(width * 0.45 - 40, 120), sub-label spacing 4, header icon 24.
         const int dpi = static_cast<int>(GetDpiForWindow(p.window));
-        auto S = [dpi](int value) { return MulDiv(value, dpi, 96); };
+        auto S = [dpi](int value) {
+            return MulDiv(value, dpi, 96);
+        };
         const int line = S(20), gap = S(2), box = S(19), indent = S(18), padRight = S(6);
         const int labelWidth = std::max(static_cast<int>(w * 0.45f) - S(40), S(120));
         const int fieldX = indent + labelWidth, fieldW = std::max(S(40), w - fieldX - padRight);
         const int titlebar = S(22);
+
         // GameObject header: [icon] [x] [name.....]  /  Tag [Untagged v]  Layer [Default v]
         const int y0 = header + S(6);
         place(inspectorIcon, S(6), y0, S(24), S(24));
@@ -374,7 +442,10 @@ void Editor::LayoutPanel(int index) {
         place(inspectorHint, 0, 0, 1, 1, false); // Unity has no hint line; values apply on Enter
         nInspectorHeaderBottom = tagY + line + S(6);
         int y = nInspectorHeaderBottom + S(2);
-        auto rowLabel = [&](HWND label, int rowY, bool visible) { place(label, indent, rowY, labelWidth - S(4), line, visible); };
+        auto rowLabel = [&](HWND label, int rowY, bool visible) {
+            place(label, indent, rowY, labelWidth - S(4), line, visible);
+        };
+
         // A Vector3 / Color row: sub-labels and fields share the field column.
         auto multiField = [&](int firstField, int count, int rowY, bool visible) {
             const int subGap = S(4), miniLabel = S(13);
@@ -385,6 +456,7 @@ void Editor::LayoutPanel(int index) {
                 place(edits[firstField + a], x + miniLabel, rowY, cell - miniLabel, box, visible);
             }
         };
+
         // Transform
         SetWindowTextW(groupLabels[0], Tr(L"Transform"));
         theme::SetButtonExpanded(groupLabels[0], aSectionOpen[0]);
@@ -393,34 +465,47 @@ void Editor::LayoutPanel(int index) {
         for (int row = 0; row < 3; ++row) {
             rowLabel(rowLabels[row], y, aSectionOpen[0]);
             multiField(2 + row * 3, 3, y, aSectionOpen[0]);
-            if (aSectionOpen[0]) y += line + gap;
+            if (aSectionOpen[0]) {
+                y += line + gap;
+            }
         }
+
         y += S(4);
+
         // Renderer component (IRender): colour, material and texture.
         const bool validEntity = nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size();
-        const auto rendererKind = validEntity && vSelectedIndices.size() == 1 ? scene.vEntities[nSelected].renderer : Entity::RendererKind::None;
+        const auto rendererKind =
+            validEntity && vSelectedIndices.size() == 1 ? scene.vEntities[nSelected].renderer : Entity::RendererKind::None;
         const bool hasRenderer = rendererKind != Entity::RendererKind::None;
         SetWindowTextW(groupLabels[1], Tr(rendererKind == Entity::RendererKind::Mesh    ? L"Mesh Renderer"
-                                       : rendererKind == Entity::RendererKind::Model ? L"Model Renderer"
-                                       : rendererKind == Entity::RendererKind::Image ? L"Image"
-                                                                                     : L"Polygon Renderer"));
+                                          : rendererKind == Entity::RendererKind::Model ? L"Model Renderer"
+                                          : rendererKind == Entity::RendererKind::Image ? L"Image"
+                                                                                        : L"Polygon Renderer"));
         theme::SetButtonExpanded(groupLabels[1], aSectionOpen[1]);
         place(groupLabels[1], 0, y, w, titlebar, hasRenderer);
         const bool showRenderer = hasRenderer && aSectionOpen[1];
-        if (hasRenderer) y += titlebar + gap;
+        if (hasRenderer) {
+            y += titlebar + gap;
+        }
+
         // Mesh (Unity: Mesh Filter > Mesh) with an object-picker button.
-        const bool showMesh = showRenderer && (rendererKind == Entity::RendererKind::Mesh || rendererKind == Entity::RendererKind::Model);
+        const bool showMesh =
+            showRenderer && (rendererKind == Entity::RendererKind::Mesh || rendererKind == Entity::RendererKind::Model);
         rowLabel(meshLabel, y, showMesh);
         place(meshEdit, fieldX, y, std::max(S(20), fieldW - box - S(2)), box, showMesh);
         place(meshPick, fieldX + fieldW - box, y, box, box, showMesh);
-        if (showMesh) y += line + gap;
+        if (showMesh) {
+            y += line + gap;
+        }
 
         // メッシュが X なら「マテリアルの作成」、FBX なら「X に変換」のボタンを出す
         const std::wstring meshExtension = showMesh ? SelectedMeshExtension() : std::wstring();
         const bool showConvert = meshExtension == L".x" || meshExtension == L".fbx";
         if (showConvert) {
-            SetWindowTextW(meshConvert, Tr(meshExtension == L".x" ? L"Create Material (Direct3D 11 / 12)" : L"Convert to X File"));
+            SetWindowTextW(meshConvert,
+                           Tr(meshExtension == L".x" ? L"Create Material (Direct3D 11 / 12)" : L"Convert to X File"));
         }
+
         place(meshConvert, fieldX, y, fieldW, box, showConvert);
         if (showConvert) {
             y += line + gap;
@@ -428,14 +513,26 @@ void Editor::LayoutPanel(int index) {
 
         place(colorLabel, indent, y, labelWidth - S(4), line, showRenderer);
         multiField(11, 4, y, showRenderer);
-        if (showRenderer) y += line + gap;
+        if (showRenderer) {
+            y += line + gap;
+        }
+
         rowLabel(materialLabel, y, showRenderer);
         place(materialEdit, fieldX, y, fieldW, box, showRenderer);
-        if (showRenderer) y += line + gap;
+        if (showRenderer) {
+            y += line + gap;
+        }
+
         rowLabel(textureLabel, y, showRenderer);
         place(textureEdit, fieldX, y, fieldW, box, showRenderer);
-        if (showRenderer) y += line + gap;
-        if (hasRenderer) y += S(4);
+        if (showRenderer) {
+            y += line + gap;
+        }
+
+        if (hasRenderer) {
+            y += S(4);
+        }
+
         // Script / Camera components: one titlebar and property rows each.
         place(groupLabels[2], 0, 0, 1, 1, false);
         for (auto& view : vComponentViews) {
@@ -446,22 +543,33 @@ void Editor::LayoutPanel(int index) {
             if (view.hScriptLabel) {
                 rowLabel(view.hScriptLabel, y, open);
                 place(view.hScriptValue, fieldX, y, fieldW, box, open);
-                if (open) y += line + gap;
+                if (open) {
+                    y += line + gap;
+                }
             }
+
             for (auto& row : view.vRows) {
                 // Rows of a folded array are hidden.
                 const bool rowOpen = open && (row.sArrayPath.empty() || !collapsedArrays[view.sName + "/" + row.sArrayPath]);
                 const int rowIndent = indent + row.nIndent * S(15);
                 if (row.bHeader) {
                     place(row.hLabel, rowIndent - S(2), y, w - rowIndent - padRight, line, rowOpen);
-                    if (rowOpen) y += line + gap;
+                    if (rowOpen) {
+                        y += line + gap;
+                    }
+
                     continue;
                 }
+
                 if (!row.hValue) {
                     place(row.hLabel, indent, y, w - indent - padRight, line * 2, rowOpen); // warning text
-                    if (rowOpen) y += line * 2 + gap;
+                    if (rowOpen) {
+                        y += line * 2 + gap;
+                    }
+
                     continue;
                 }
+
                 place(row.hLabel, rowIndent, y, std::max(S(20), fieldX - rowIndent - S(4)), line, rowOpen);
                 if (row.bBoolean) {
                     place(row.hValue, fieldX, y + S(1), S(18), S(18), rowOpen);
@@ -485,18 +593,27 @@ void Editor::LayoutPanel(int index) {
                 } else {
                     place(row.hValue, fieldX, y, fieldW, box, rowOpen);
                 }
-                if (rowOpen) y += line + gap;
+
+                if (rowOpen) {
+                    y += line + gap;
+                }
             }
+
             y += S(4);
         }
+
         // The legacy list / value editors stay as the hidden model behind the views.
-        for (HWND hidden : {componentList, componentFields, componentValue, componentValueApply, componentChoice, componentRemove})
+        for (HWND hidden :
+             {componentList, componentFields, componentValue, componentValueApply, componentChoice, componentRemove}) {
             place(hidden, 0, 0, 1, 1, false);
+        }
+
         // Separator + centred "Add Component" button (Unity: 230 x 25).
         nAddComponentSeparator = y + S(6);
         const int addWidth = std::min(S(230), w - S(20));
         place(componentAdd, (w - addWidth) / 2, y + S(16), addWidth, S(25), validEntity && vSelectedIndices.size() == 1);
         y += S(16) + S(25) + S(12);
+
         // Keep Apply in a fixed footer instead of letting it disappear
         // below the scrollable component content.
         // Unity has no Apply button: edits apply on Enter or focus loss
@@ -510,6 +627,7 @@ void Editor::LayoutPanel(int index) {
             LayoutPanel(index);
             return;
         }
+
         SCROLLINFO info{sizeof(info),
                         SIF_RANGE | SIF_PAGE | SIF_POS,
                         0,
@@ -519,6 +637,7 @@ void Editor::LayoutPanel(int index) {
                         0};
         SetScrollInfo(p.window, SB_VERT, &info, TRUE);
     }
+
     InvalidateRect(p.window, nullptr, TRUE);
 }
 

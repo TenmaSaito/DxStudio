@@ -45,7 +45,9 @@ class Component;
 class ISceneCallbacks {
 public:
     virtual ~ISceneCallbacks() = default;
-    virtual void OnSceneLoaded(Scene& /*scene*/) {}     // 読み込み後
+
+    virtual void OnSceneLoaded(Scene& /*scene*/) {} // 読み込み後
+
     virtual void OnSceneSaved(const Scene& /*scene*/) {} // 保存後
 };
 
@@ -53,8 +55,10 @@ public:
 class IFrameCallbacks {
 public:
     virtual ~IFrameCallbacks() = default;
+
     // そのフレームのどの Component::Update よりも前
     virtual void OnPreUpdate(Scene& /*scene*/, float /*fDeltaSeconds*/) {}
+
     // そのフレームのすべての Component::Update とコルーチンの後
     virtual void OnPostUpdate(Scene& /*scene*/, float /*fDeltaSeconds*/) {}
 };
@@ -63,8 +67,11 @@ public:
 class IComponentCallbacks {
 public:
     virtual ~IComponentCallbacks() = default;
+
     virtual void OnComponentStarted(Entity& /*entity*/, Component& /*component*/, const std::string& /*sName*/) {} // Start() の後
+
     virtual void OnComponentAttached(Entity& /*entity*/, const std::string& /*sName*/) {} // 追加された
+
     virtual void OnComponentDetached(Entity& /*entity*/, const std::string& /*sName*/) {} // 外された
 };
 
@@ -72,22 +79,28 @@ public:
 class IPlayModeCallbacks {
 public:
     virtual ~IPlayModeCallbacks() = default;
+
     virtual void OnEnterPlayMode(Scene& /*scene*/) {} // 再生開始
-    virtual void OnExitPlayMode(Scene& /*scene*/) {}  // 再生停止
-    virtual void OnPauseChanged(bool /*bPaused*/) {}  // 一時停止の切り替え
+
+    virtual void OnExitPlayMode(Scene& /*scene*/) {} // 再生停止
+
+    virtual void OnPauseChanged(bool /*bPaused*/) {} // 一時停止の切り替え
 };
 
 // エディターの選択
 class ISelectionCallbacks {
 public:
     virtual ~ISelectionCallbacks() = default;
-    virtual void OnSelectionChanged(const std::vector<int>& /*vSelection*/, int /*nActive*/) {} // 選択中の番号一覧と、主に選択中の番号
+
+    virtual void OnSelectionChanged(const std::vector<int>& /*vSelection*/, int /*nActive*/) {
+    } // 選択中の番号一覧と、主に選択中の番号
 };
 
 // グラフィックス API の切り替え
 class IGraphicsCallbacks {
 public:
     virtual ~IGraphicsCallbacks() = default;
+
     virtual void OnGraphicsApiChanged(GraphicsApi /*api*/) {}
 };
 
@@ -98,18 +111,18 @@ class EngineEvents {
 public:
     static EngineEvents& Get(); // プログラム全体で 1 つ
 
-    MulticastDelegate<Scene&> onSceneLoaded;                                         // シーン読み込み後
-    MulticastDelegate<const Scene&> onSceneSaved;                                    // シーン保存後
-    MulticastDelegate<Scene&, float> onPreUpdate;                                    // 更新の前（経過秒）
-    MulticastDelegate<Scene&, float> onPostUpdate;                                   // 更新の後（経過秒）
-    MulticastDelegate<Entity&, Component&, const std::string&> onComponentStarted;   // コンポーネント開始
-    MulticastDelegate<Entity&, const std::string&> onComponentAttached;              // コンポーネント追加
-    MulticastDelegate<Entity&, const std::string&> onComponentDetached;              // コンポーネント削除
-    MulticastDelegate<Scene&> onEnterPlayMode;                                       // 再生開始
-    MulticastDelegate<Scene&> onExitPlayMode;                                        // 再生停止
-    MulticastDelegate<bool> onPauseChanged;                                          // 一時停止の切り替え
-    MulticastDelegate<const std::vector<int>&, int> onSelectionChanged;              // 選択の変更
-    MulticastDelegate<GraphicsApi> onGraphicsApiChanged;                             // グラフィックス API の変更
+    MulticastDelegate<Scene&> onSceneLoaded;                                       // シーン読み込み後
+    MulticastDelegate<const Scene&> onSceneSaved;                                  // シーン保存後
+    MulticastDelegate<Scene&, float> onPreUpdate;                                  // 更新の前（経過秒）
+    MulticastDelegate<Scene&, float> onPostUpdate;                                 // 更新の後（経過秒）
+    MulticastDelegate<Entity&, Component&, const std::string&> onComponentStarted; // コンポーネント開始
+    MulticastDelegate<Entity&, const std::string&> onComponentAttached;            // コンポーネント追加
+    MulticastDelegate<Entity&, const std::string&> onComponentDetached;            // コンポーネント削除
+    MulticastDelegate<Scene&> onEnterPlayMode;                                     // 再生開始
+    MulticastDelegate<Scene&> onExitPlayMode;                                      // 再生停止
+    MulticastDelegate<bool> onPauseChanged;                                        // 一時停止の切り替え
+    MulticastDelegate<const std::vector<int>&, int> onSelectionChanged;            // 選択の変更
+    MulticastDelegate<GraphicsApi> onGraphicsApiChanged;                           // グラフィックス API の変更
 
 private:
     EngineEvents() = default; // Get() 以外からの生成を禁止
@@ -127,17 +140,20 @@ template<class T>
 [[nodiscard]] CallbackRegistration RegisterCallbacks(T& listener) {
     CallbackRegistration registration;
     auto& events = EngineEvents::Get();
+
     // 継承しているインターフェースだけをコンパイル時に選んで登録する
     if constexpr (std::derived_from<T, ISceneCallbacks>) {
         ISceneCallbacks* pListener = &listener;
         registration.Add(events.onSceneLoaded, events.onSceneLoaded.AddRaw(pListener, &ISceneCallbacks::OnSceneLoaded));
         registration.Add(events.onSceneSaved, events.onSceneSaved.AddRaw(pListener, &ISceneCallbacks::OnSceneSaved));
     }
+
     if constexpr (std::derived_from<T, IFrameCallbacks>) {
         IFrameCallbacks* pListener = &listener;
         registration.Add(events.onPreUpdate, events.onPreUpdate.AddRaw(pListener, &IFrameCallbacks::OnPreUpdate));
         registration.Add(events.onPostUpdate, events.onPostUpdate.AddRaw(pListener, &IFrameCallbacks::OnPostUpdate));
     }
+
     if constexpr (std::derived_from<T, IComponentCallbacks>) {
         IComponentCallbacks* pListener = &listener;
         registration.Add(events.onComponentStarted,
@@ -147,22 +163,26 @@ template<class T>
         registration.Add(events.onComponentDetached,
                          events.onComponentDetached.AddRaw(pListener, &IComponentCallbacks::OnComponentDetached));
     }
+
     if constexpr (std::derived_from<T, IPlayModeCallbacks>) {
         IPlayModeCallbacks* pListener = &listener;
         registration.Add(events.onEnterPlayMode, events.onEnterPlayMode.AddRaw(pListener, &IPlayModeCallbacks::OnEnterPlayMode));
         registration.Add(events.onExitPlayMode, events.onExitPlayMode.AddRaw(pListener, &IPlayModeCallbacks::OnExitPlayMode));
         registration.Add(events.onPauseChanged, events.onPauseChanged.AddRaw(pListener, &IPlayModeCallbacks::OnPauseChanged));
     }
+
     if constexpr (std::derived_from<T, ISelectionCallbacks>) {
         ISelectionCallbacks* pListener = &listener;
         registration.Add(events.onSelectionChanged,
                          events.onSelectionChanged.AddRaw(pListener, &ISelectionCallbacks::OnSelectionChanged));
     }
+
     if constexpr (std::derived_from<T, IGraphicsCallbacks>) {
         IGraphicsCallbacks* pListener = &listener;
         registration.Add(events.onGraphicsApiChanged,
                          events.onGraphicsApiChanged.AddRaw(pListener, &IGraphicsCallbacks::OnGraphicsApiChanged));
     }
+
     return registration;
 }
 

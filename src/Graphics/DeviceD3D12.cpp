@@ -32,10 +32,10 @@ using Microsoft::WRL::ComPtr;
 //**********************************************************************************
 // *** 定数宣言 ***
 //**********************************************************************************
-constexpr UINT BUFFER_COUNT = 2;                               // バックバッファの枚数
+constexpr UINT BUFFER_COUNT = 2;                                 // バックバッファの枚数
 constexpr DXGI_FORMAT COLOR_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM; // 画面の色の形式
 constexpr DXGI_FORMAT DEPTH_FORMAT = DXGI_FORMAT_D32_FLOAT;      // 深度バッファの形式
-constexpr UINT CONSTANT_COUNT = sizeof(ObjectConstants) / 4;    // ルート定数の個数（32bit 単位）
+constexpr UINT CONSTANT_COUNT = sizeof(ObjectConstants) / 4;     // ルート定数の個数（32bit 単位）
 
 //==================================================================================
 // --- リソースの状態遷移バリアの作成処理 ---
@@ -65,6 +65,7 @@ public:
     bool Initialize(const DeviceCreateInfo& info, std::string& error) override {
         m_uWidth = info.uWidth;
         m_uHeight = info.uHeight;
+
         // DXGI ファクトリ → デバイス → コマンドキュー
         HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&m_pFactory));
         if (FAILED(hr)) return Fail(error, "Create DXGI factory failed", hr);
@@ -124,6 +125,7 @@ public:
             error = "Create fence event failed";
             return false;
         }
+
         return true;
     }
 
@@ -133,7 +135,10 @@ public:
     bool Resize(unsigned uWidth, unsigned uHeight, std::string& error) override {
         if (!m_pSwapChain) return true;
         if (!WaitForGpu(error)) return false; // 使用中のバッファは作り直せないので完了を待つ
-        for (auto& pTarget : m_apTargets) pTarget.Reset();
+        for (auto& pTarget : m_apTargets) {
+            pTarget.Reset();
+        }
+
         m_pDepth.Reset();
         const HRESULT hr = m_pSwapChain->ResizeBuffers(BUFFER_COUNT, uWidth, uHeight, COLOR_FORMAT, 0);
         if (FAILED(hr)) return Fail(error, "Resize swap chain failed", hr);
@@ -166,10 +171,12 @@ public:
         if (FAILED(hr)) return Fail(error, "Reset command allocator failed", hr);
         hr = m_pCommands->Reset(m_pAllocator.Get(), m_pScenePipeline.Get());
         if (FAILED(hr)) return Fail(error, "Reset command list failed", hr);
+
         // バックバッファを「表示用」→「描画先」へ
-        const auto barrier = Transition(m_apTargets[m_uFrameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT,
-                                        D3D12_RESOURCE_STATE_RENDER_TARGET);
+        const auto barrier =
+            Transition(m_apTargets[m_uFrameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
         m_pCommands->ResourceBarrier(1, &barrier);
+
         // 描画先の設定とクリア
         D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_pRtvHeap->GetCPUDescriptorHandleForHeapStart();
         rtv.ptr += static_cast<SIZE_T>(m_uFrameIndex) * m_uRtvStride;
@@ -177,6 +184,7 @@ public:
         m_pCommands->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
         m_pCommands->ClearRenderTargetView(rtv, aClearColor, 0, nullptr);
         m_pCommands->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
         // ビューポート・ルートシグネチャ・頂点バッファ
         const D3D12_VIEWPORT viewport{0, 0, static_cast<float>(m_uWidth), static_cast<float>(m_uHeight), 0, 1};
         const D3D12_RECT scissor{0, 0, static_cast<LONG>(m_uWidth), static_cast<LONG>(m_uHeight)};
@@ -192,16 +200,17 @@ public:
     // --- 描画状態の切り替え処理 ---
     //==============================================================================
     void SetPipeline(PipelineKind kind) override {
-        ID3D12PipelineState* pState = kind == PipelineKind::SCENE           ? m_pScenePipeline.Get()
-                                      : kind == PipelineKind::SCENE_WIREFRAME ? m_pWireframePipeline.Get()
+        ID3D12PipelineState* pState = kind == PipelineKind::SCENE               ? m_pScenePipeline.Get()
+                                      : kind == PipelineKind::SCENE_WIREFRAME   ? m_pWireframePipeline.Get()
                                       : kind == PipelineKind::SCENE_TRANSPARENT ? m_pTransparentPipeline.Get()
-                                      : kind == PipelineKind::GRID ? m_pGridPipeline.Get()
-                                                                   : m_pOverlayPipeline.Get();
+                                      : kind == PipelineKind::GRID              ? m_pGridPipeline.Get()
+                                                                                : m_pOverlayPipeline.Get();
         m_pCommands->SetPipelineState(pState);
+
         // シーンは三角形、グリッドと補助線は線
-        const bool bTriangles = kind == PipelineKind::SCENE || kind == PipelineKind::SCENE_WIREFRAME || kind == PipelineKind::SCENE_TRANSPARENT;
-        m_pCommands->IASetPrimitiveTopology(bTriangles ? D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
-                                                                        : D3D_PRIMITIVE_TOPOLOGY_LINELIST);
+        const bool bTriangles =
+            kind == PipelineKind::SCENE || kind == PipelineKind::SCENE_WIREFRAME || kind == PipelineKind::SCENE_TRANSPARENT;
+        m_pCommands->IASetPrimitiveTopology(bTriangles ? D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST : D3D_PRIMITIVE_TOPOLOGY_LINELIST);
     }
 
     //==============================================================================
@@ -217,11 +226,12 @@ public:
     //==============================================================================
     bool EndFrame(std::string& error) override {
         // バックバッファを「描画先」→「表示用」へ戻して記録を閉じる
-        const auto barrier = Transition(m_apTargets[m_uFrameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
-                                        D3D12_RESOURCE_STATE_PRESENT);
+        const auto barrier =
+            Transition(m_apTargets[m_uFrameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
         m_pCommands->ResourceBarrier(1, &barrier);
         HRESULT hr = m_pCommands->Close();
         if (FAILED(hr)) return Fail(error, "Close command list failed", hr);
+
         // 実行 → 表示（垂直同期あり）→ 完了待ち
         ID3D12CommandList* apLists[] = {m_pCommands.Get()};
         m_pQueue->ExecuteCommandLists(1, apLists);
@@ -238,7 +248,10 @@ public:
     void Shutdown() override {
         std::string ignored;
         WaitForGpu(ignored); // GPU が使っている間は解放しない
-        if (m_hFenceEvent) CloseHandle(m_hFenceEvent);
+        if (m_hFenceEvent) {
+            CloseHandle(m_hFenceEvent);
+        }
+
         m_hFenceEvent = nullptr;
         m_pCommands.Reset();
         m_pAllocator.Reset();
@@ -251,7 +264,10 @@ public:
         m_pOverlayPipeline.Reset();
         m_pRootSignature.Reset();
         m_pDepth.Reset();
-        for (auto& pTarget : m_apTargets) pTarget.Reset();
+        for (auto& pTarget : m_apTargets) {
+            pTarget.Reset();
+        }
+
         m_pRtvHeap.Reset();
         m_pDsvHeap.Reset();
         m_pSwapChain.Reset();
@@ -283,6 +299,7 @@ private:
                 return false;
             }
         }
+
         return true;
     }
 
@@ -298,6 +315,7 @@ private:
             m_pDevice->CreateRenderTargetView(m_apTargets[uIndex].Get(), nullptr, handle);
             handle.ptr += m_uRtvStride;
         }
+
         // 深度バッファ（GPU 専用のメモリ）
         D3D12_HEAP_PROPERTIES heap{};
         heap.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -343,10 +361,12 @@ private:
         ComPtr<ID3DBlob> pSignature, pDiagnostics;
         HRESULT hr = D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pDiagnostics);
         if (FAILED(hr)) {
-            error = pDiagnostics ? std::string(static_cast<const char*>(pDiagnostics->GetBufferPointer()), pDiagnostics->GetBufferSize())
-                                 : FormatHResult("Serialize root signature failed", hr);
+            error = pDiagnostics
+                        ? std::string(static_cast<const char*>(pDiagnostics->GetBufferPointer()), pDiagnostics->GetBufferSize())
+                        : FormatHResult("Serialize root signature failed", hr);
             return false;
         }
+
         hr = m_pDevice->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(),
                                             IID_PPV_ARGS(&m_pRootSignature));
         if (FAILED(hr)) return Fail(error, "Create root signature failed", hr);
@@ -392,11 +412,13 @@ private:
         state.SampleDesc.Count = 1;
         hr = m_pDevice->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&m_pScenePipeline));
         if (FAILED(hr)) return Fail(error, "Create graphics pipeline failed", hr);
+
         // ワイヤーフレーム版（塗りつぶしだけ変更）
         state.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
         hr = m_pDevice->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&m_pWireframePipeline));
         if (FAILED(hr)) return Fail(error, "Create wireframe pipeline failed", hr);
         state.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+
         // 半透明版: 一般的なアルファブレンド。深度はテストするが書き込まない
         blend.BlendEnable = TRUE;
         blend.SrcBlend = D3D12_BLEND_SRC_ALPHA;
@@ -406,6 +428,7 @@ private:
         depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
         hr = m_pDevice->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&m_pTransparentPipeline));
         if (FAILED(hr)) return Fail(error, "Create transparent pipeline failed", hr);
+
         // 不透明の設定へ戻す
         blend.BlendEnable = FALSE;
         blend.SrcBlend = D3D12_BLEND_ONE;
@@ -421,9 +444,11 @@ private:
         state.PS = {g_overlayPS, sizeof(g_overlayPS)};
         state.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
         depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+
         // グリッド: 深度テストあり（物体の奥に隠れる）
         hr = m_pDevice->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&m_pGridPipeline));
         if (FAILED(hr)) return Fail(error, "Create grid pipeline failed", hr);
+
         // オーバーレイ: 深度テストなし（常に手前に描く）
         depth.DepthEnable = FALSE;
         hr = m_pDevice->CreateGraphicsPipelineState(&state, IID_PPV_ARGS(&m_pOverlayPipeline));
@@ -490,6 +515,8 @@ private:
 //==================================================================================
 // --- Direct3D 12 デバイスの生成処理 ---
 //==================================================================================
-std::unique_ptr<IGraphicsDevice> CreateDeviceD3D12() { return std::make_unique<DeviceD3D12>(); }
+std::unique_ptr<IGraphicsDevice> CreateDeviceD3D12() {
+    return std::make_unique<DeviceD3D12>();
+}
 
 } // namespace dxs::graphics

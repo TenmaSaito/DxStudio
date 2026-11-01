@@ -33,7 +33,8 @@
 
 namespace dxs {
 
-template<class Signature> class Delegate;
+template<class Signature>
+class Delegate;
 
 //**********************************************************************************
 // *** シングルキャストデリゲート（関数 1 つ） ***
@@ -70,16 +71,21 @@ public:
         std::weak_ptr<T> pWeak = pObject;
         return Delegate([pWeak, pMethod](Args... args) -> R {
             if (auto pLocked = pWeak.lock()) return ((*pLocked).*pMethod)(std::forward<Args>(args)...);
-            if constexpr (!std::is_void_v<R>) return R{};
+            if constexpr (!std::is_void_v<R>) {
+                return R{};
+            }
         });
     }
 
     [[nodiscard]] bool IsBound() const noexcept { return static_cast<bool>(m_function); } // 関数が登録されているか
+
     explicit operator bool() const noexcept { return IsBound(); }
+
     void Unbind() noexcept { m_function = nullptr; } // 登録を解除
 
     // 呼び出し（未登録で呼ぶと std::bad_function_call 例外）
     R Execute(Args... args) const { return m_function(std::forward<Args>(args)...); }
+
     R operator()(Args... args) const { return m_function(std::forward<Args>(args)...); }
 
     // 登録が無くても安全な呼び出し（戻り値 void 用）。未登録なら false を返す。
@@ -101,8 +107,11 @@ private:
 // MulticastDelegate への登録 1 件を表す。既定値（0）は無効。
 struct DelegateHandle {
     std::uint64_t nId = 0; // 登録番号（1 から）
+
     [[nodiscard]] bool IsValid() const noexcept { return nId != 0; }
+
     void Reset() noexcept { nId = 0; }
+
     friend bool operator==(const DelegateHandle&, const DelegateHandle&) = default;
 };
 
@@ -127,6 +136,7 @@ public:
     using Callback = std::function<void(Args...)>; // 登録する関数の型
 
     MulticastDelegate() : m_pState(std::make_shared<State>()) {}
+
     // 登録リストのコピーはほぼ確実に不具合の元になる（解除した相手をコピー側が
     // 呼び続けてしまう）ため禁止する。ムーブは可。
     MulticastDelegate(const MulticastDelegate&) = delete;
@@ -161,7 +171,9 @@ public:
     DelegateHandle AddWeak(const std::shared_ptr<T>& pObject, void (T::*pMethod)(Args...)) {
         std::weak_ptr<T> pWeak = pObject;
         return m_pState->Add(pObject.get(), [pWeak, pMethod](Args... args) {
-            if (auto pLocked = pWeak.lock()) ((*pLocked).*pMethod)(std::forward<Args>(args)...);
+            if (auto pLocked = pWeak.lock()) {
+                ((*pLocked).*pMethod)(std::forward<Args>(args)...);
+            }
         });
     }
 
@@ -174,17 +186,23 @@ public:
     // C# 風の書き方: auto handle = onChanged += [](...) { ... };
     template<class F>
         requires std::invocable<F&, Args...>
-    DelegateHandle operator+=(F&& function) { return AddLambda(std::forward<F>(function)); }
+    DelegateHandle operator+=(F&& function) {
+        return AddLambda(std::forward<F>(function));
+    }
+
     bool operator-=(DelegateHandle handle) { return Remove(handle); }
 
     // 登録 1 件を解除
     bool Remove(DelegateHandle handle) { return m_pState->Remove(handle); }
+
     // AddRaw / AddWeak でこのオブジェクトに対して登録した物をすべて解除
     std::size_t RemoveAll(const void* pOwner) { return m_pState->RemoveAll(pOwner); }
+
     // すべて解除
     void Clear() { m_pState->Clear(); }
 
     [[nodiscard]] bool IsBound() const { return m_pState->Count() > 0; } // 1 件以上登録されているか
+
     [[nodiscard]] std::size_t Count() const { return m_pState->Count(); } // 登録件数
 
     // 登録されたすべての関数を登録順に呼ぶ
@@ -228,6 +246,7 @@ private:
                     return true;
                 }
             }
+
             return false;
         }
 
@@ -240,26 +259,34 @@ private:
                     ++nRemoved;
                 }
             }
+
             Compact();
             return nRemoved;
         }
 
         // --- 全解除処理 ---
         void Clear() {
-            for (auto& entry : m_vEntries) entry.bRemoved = true;
+            for (auto& entry : m_vEntries) {
+                entry.bRemoved = true;
+            }
+
             Compact();
         }
 
         // --- 有効な登録件数の取得処理 ---
         std::size_t Count() const {
             std::size_t nCount = 0;
-            for (const auto& entry : m_vEntries) nCount += entry.bRemoved ? 0 : 1;
+            for (const auto& entry : m_vEntries) {
+                nCount += entry.bRemoved ? 0 : 1;
+            }
+
             return nCount;
         }
 
         // --- 一斉呼び出し処理 ---
         void Broadcast(Args&... args) {
             ++m_nBroadcastDepth;
+
             // 添字で回す: 呼び出し中に登録されても（配列が伸びても）安全で、
             // 解除は印だけ付けて一番外側の呼び出しが終わってから詰める。
             // 呼び出し開始時点の件数までしか回さないので、途中で増えた分は次回から。
@@ -269,6 +296,7 @@ private:
                 Callback function = m_vEntries[nIndex].function; // コピーしてから呼ぶ（配列の再確保対策）
                 function(args...);
             }
+
             --m_nBroadcastDepth;
             Compact();
         }
@@ -280,9 +308,9 @@ private:
             std::erase_if(m_vEntries, [](const Entry& entry) { return entry.bRemoved; });
         }
 
-        std::vector<Entry> m_vEntries;   // 登録リスト（登録順）
-        std::uint64_t m_nNextId = 1;     // 次に振る登録番号
-        int m_nBroadcastDepth = 0;       // Broadcast の入れ子の深さ（呼び出し中は 1 以上）
+        std::vector<Entry> m_vEntries; // 登録リスト（登録順）
+        std::uint64_t m_nNextId = 1;   // 次に振る登録番号
+        int m_nBroadcastDepth = 0;     // Broadcast の入れ子の深さ（呼び出し中は 1 以上）
     };
 
     std::shared_ptr<State> m_pState; // 登録リスト
@@ -296,16 +324,22 @@ private:
 class ScopedDelegateHandle {
 public:
     ScopedDelegateHandle() = default;
+
     template<class... Args>
     ScopedDelegateHandle(const MulticastDelegate<Args...>& delegate, DelegateHandle handle)
         : m_pRemover(delegate.Remover()), m_handle(handle) {}
+
     ~ScopedDelegateHandle() { Release(); }
 
     // コピー禁止（同じ登録を 2 回解除しないように）、ムーブは可
     ScopedDelegateHandle(const ScopedDelegateHandle&) = delete;
     ScopedDelegateHandle& operator=(const ScopedDelegateHandle&) = delete;
+
     ScopedDelegateHandle(ScopedDelegateHandle&& other) noexcept
-        : m_pRemover(std::move(other.m_pRemover)), m_handle(other.m_handle) { other.m_handle.Reset(); }
+        : m_pRemover(std::move(other.m_pRemover)), m_handle(other.m_handle) {
+        other.m_handle.Reset();
+    }
+
     ScopedDelegateHandle& operator=(ScopedDelegateHandle&& other) noexcept {
         if (this != &other) {
             Release(); // 今持っている登録を先に解除
@@ -313,15 +347,20 @@ public:
             m_handle = other.m_handle;
             other.m_handle.Reset();
         }
+
         return *this;
     }
 
     // --- 登録の解除処理（デリゲートが既に破棄されていれば何もしない） ---
     void Release() {
-        if (auto pRemover = m_pRemover.lock(); pRemover && m_handle.IsValid()) pRemover->Remove(m_handle);
+        if (auto pRemover = m_pRemover.lock(); pRemover && m_handle.IsValid()) {
+            pRemover->Remove(m_handle);
+        }
+
         m_pRemover.reset();
         m_handle.Reset();
     }
+
     // 登録がまだ有効か
     [[nodiscard]] bool IsValid() const { return m_handle.IsValid() && !m_pRemover.expired(); }
 
@@ -341,7 +380,9 @@ public:
     void Add(const MulticastDelegate<Args...>& delegate, DelegateHandle handle) {
         m_vHandles.emplace_back(delegate, handle);
     }
-    void Clear() { m_vHandles.clear(); }                               // すべて解除
+
+    void Clear() { m_vHandles.clear(); } // すべて解除
+
     [[nodiscard]] std::size_t Count() const { return m_vHandles.size(); } // 保持している登録数
 
 private:

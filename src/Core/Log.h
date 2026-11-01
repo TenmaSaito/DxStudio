@@ -40,17 +40,19 @@ struct LogEntry {
 //**********************************************************************************
 class Debug {
 public:
-    static void Log(std::string_view message);        // 通常のログ
-    static void LogWarning(std::string_view message); // 警告
-    static void LogError(std::string_view message);   // エラー
+    static void Log(std::string_view message);                   // 通常のログ
+    static void LogWarning(std::string_view message);            // 警告
+    static void LogError(std::string_view message);              // エラー
     static void Write(LogLevel level, std::string_view message); // 重要度を指定して出力
 
     // 新しいログが出るたびに呼ばれる通知。呼び出したスレッドで通知されるが、
     // SetMainThread() 後はそのスレッドでのみ通知する（別スレッドのログは
     // DispatchPending() が呼ばれるまで待つ）。
     static MulticastDelegate<const LogEntry&>& OnLog();
+
     // UI を持つプログラム（エディター）が UI スレッドで 1 回呼ぶ
     static void SetMainThread();
+
     // 別スレッドから出て待っているログを通知する（メインスレッドで定期的に呼ぶ）
     static void DispatchPending();
     static std::vector<LogEntry> History(); // 履歴のコピーを取得

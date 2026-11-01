@@ -45,11 +45,12 @@ public:
 
     void Start(Entity& entity) override;                       // アクションファイルを読み込みマップを有効にする
     void Update(Entity& entity, float fDeltaSeconds) override; // このフレームのイベントを IInputReceiver へ届ける
+
     std::vector<EditorField> EditorFields() override {
         return {EditField("Actions File", m_sActionsFile), EditField("Action Map", m_sActionMap)};
     }
 
-    [[nodiscard]] CInputActionMap* GetActionMap() const;                 // 使っているアクションマップ
+    [[nodiscard]] CInputActionMap* GetActionMap() const;                  // 使っているアクションマップ
     [[nodiscard]] CInputAction* FindAction(std::string_view sName) const; // マップ内のアクションの検索
     // よく使う読み取りの近道（アクションが無ければ 0 / false）
     [[nodiscard]] Vector3 ReadValue2D(std::string_view sName) const;

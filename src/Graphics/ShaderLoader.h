@@ -31,8 +31,8 @@ struct ShaderPair {
 // *** バックエンドごとのシェーダーモデル ***
 //**********************************************************************************
 struct ShaderProfile {
-    const char* pVertexTarget = "vs_5_0";  // 頂点シェーダーのターゲット
-    const char* pPixelTarget = "ps_5_0";   // ピクセルシェーダーのターゲット
+    const char* pVertexTarget = "vs_5_0"; // 頂点シェーダーのターゲット
+    const char* pPixelTarget = "ps_5_0";  // ピクセルシェーダーのターゲット
     // コンパイル済みファイル名の接尾辞: Default.cso -> Default<接尾辞>.vs.cso
     const wchar_t* pCompiledSuffix = L"";
     bool bLegacy = false; // SM3: 後方互換のコンパイルを有効にする

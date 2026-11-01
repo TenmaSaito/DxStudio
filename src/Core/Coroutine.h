@@ -47,30 +47,41 @@ namespace dxs {
 // 指定秒数待つ（CoroutineRunner の TimeScale の影響を受ける）
 struct WaitForSeconds {
     explicit WaitForSeconds(float fSecondsValue) : fSeconds(fSecondsValue) {}
+
     float fSeconds = 0.0f; // 待つ秒数
 };
+
 // 実時間で指定秒数待つ（TimeScale の影響を受けない）
 struct WaitForSecondsRealtime {
     explicit WaitForSecondsRealtime(float fSecondsValue) : fSeconds(fSecondsValue) {}
+
     float fSeconds = 0.0f; // 待つ秒数
 };
+
 // 指定フレーム数待つ。WaitForFrames(1) は `co_yield nullptr` と同じ
 struct WaitForFrames {
     explicit WaitForFrames(int nFramesValue) : nFrames(nFramesValue) {}
+
     int nFrames = 1; // 待つフレーム数
 };
+
 // 条件が true になったフレームで再開する
 struct WaitUntil {
     explicit WaitUntil(std::function<bool()> predicateValue) : predicate(std::move(predicateValue)) {}
+
     std::function<bool()> predicate; // 毎フレーム呼ばれる判定関数
 };
+
 // 条件が false になったフレームで再開する
 struct WaitWhile {
     explicit WaitWhile(std::function<bool()> predicateValue) : predicate(std::move(predicateValue)) {}
+
     std::function<bool()> predicate; // 毎フレーム呼ばれる判定関数
 };
+
 // `yield return null` に相当（次のフレームまで待つ）
 struct NextFrameTag {};
+
 inline constexpr NextFrameTag NextFrame{};
 // フレームの終わりは別の段階が無いため「次のフレーム」で代用する
 using WaitForEndOfFrame = NextFrameTag;
@@ -81,21 +92,26 @@ namespace detail {
 //**********************************************************************************
 // *** 待機状態（内部用） ***
 //**********************************************************************************
-struct WaitNone {};      // 待機なし（すぐ再開）
-struct WaitTime {        // 時間待ち
+struct WaitNone {}; // 待機なし（すぐ再開）
+
+struct WaitTime {            // 時間待ち
     float fRemaining = 0.0f; // 残り秒数
     bool bRealtime = false;  // 実時間で数えるか
 };
-struct WaitFrames {      // フレーム数待ち
-    int nRemaining = 0;      // 残りフレーム数
+
+struct WaitFrames {     // フレーム数待ち
+    int nRemaining = 0; // 残りフレーム数
 };
-struct WaitPredicate {   // 条件待ち
+
+struct WaitPredicate {               // 条件待ち
     std::function<bool()> predicate; // 判定関数
     bool bResumeWhen = true;         // WaitUntil: true で再開 / WaitWhile: false で再開
 };
-struct WaitChild {       // 子コルーチンの終了待ち
+
+struct WaitChild {                     // 子コルーチンの終了待ち
     std::shared_ptr<Coroutine> pChild; // 子コルーチン
 };
+
 // 現在の待機状態（どれか 1 つ）
 using YieldInstruction = std::variant<WaitNone, WaitTime, WaitFrames, WaitPredicate, WaitChild>;
 } // namespace detail
@@ -113,11 +129,15 @@ public:
         std::exception_ptr pException;        // 本体で投げられた例外
 
         Coroutine get_return_object() { return Coroutine(Handle::from_promise(*this)); }
+
         // 生成時は止めておく: CoroutineRunner::Start() が最初の co_yield まで実行する
         std::suspend_always initial_suspend() noexcept { return {}; }
+
         // 終了後も破棄せず止めておく（IsDone() で終了を判定するため）
         std::suspend_always final_suspend() noexcept { return {}; }
+
         void return_void() noexcept {}
+
         void unhandled_exception() noexcept { pException = std::current_exception(); }
 
         // co_yield に渡せる物ごとの処理（待機状態を記録して止まる）
@@ -130,10 +150,12 @@ public:
         std::suspend_always yield_value(WaitWhile wait);
         std::suspend_always yield_value(Coroutine&& child);
     };
+
     using Handle = std::coroutine_handle<promise_type>;
 
     Coroutine() = default;
     ~Coroutine();
+
     // コピー禁止（同じコルーチンを 2 回破棄しないように）、ムーブは可
     Coroutine(const Coroutine&) = delete;
     Coroutine& operator=(const Coroutine&) = delete;
@@ -141,17 +163,21 @@ public:
     Coroutine& operator=(Coroutine&& other) noexcept;
 
     [[nodiscard]] bool IsValid() const noexcept { return static_cast<bool>(m_handle); } // 中身があるか
+
     [[nodiscard]] bool IsDone() const noexcept { return !m_handle || m_handle.done(); } // 終了したか
-    [[nodiscard]] bool HasStarted() const noexcept { return m_bStarted; }               // 開始済みか
+
+    [[nodiscard]] bool HasStarted() const noexcept { return m_bStarted; } // 開始済みか
 
     // 次の待機地点まで本体を実行する。終了したら false。
     // 本体が投げた例外はここから再送出される。
     bool Start();
+
     // 1 フレーム進める。終了したら false。
     bool Tick(float fDeltaSeconds, float fUnscaledDeltaSeconds);
 
 private:
     explicit Coroutine(Handle handle) : m_handle(handle) {}
+
     bool Resume(); // 本体を次の待機地点まで再開する
     // 今の待機状態がこのフレームで満たされたら true
     bool UpdateWait(float fDeltaSeconds, float fUnscaledDeltaSeconds);
@@ -165,7 +191,9 @@ private:
 //**********************************************************************************
 struct CoroutineHandle {
     std::uint64_t nId = 0; // 番号（0 は無効）
+
     [[nodiscard]] bool IsValid() const noexcept { return nId != 0; }
+
     friend bool operator==(const CoroutineHandle&, const CoroutineHandle&) = default;
 };
 
@@ -182,10 +210,10 @@ public:
     CoroutineRunner(CoroutineRunner&&) noexcept = default;
     CoroutineRunner& operator=(CoroutineRunner&&) noexcept = default;
 
-    CoroutineHandle Start(Coroutine coroutine); // 開始（最初の co_yield まで即実行）
-    bool Stop(CoroutineHandle handle);           // 停止
-    void StopAll();                              // すべて停止
-    void Tick(float fDeltaSeconds);              // 1 フレーム進める（実時間 = 経過時間）
+    CoroutineHandle Start(Coroutine coroutine);                  // 開始（最初の co_yield まで即実行）
+    bool Stop(CoroutineHandle handle);                           // 停止
+    void StopAll();                                              // すべて停止
+    void Tick(float fDeltaSeconds);                              // 1 フレーム進める（実時間 = 経過時間）
     void Tick(float fDeltaSeconds, float fUnscaledDeltaSeconds); // 1 フレーム進める
 
     [[nodiscard]] bool IsRunning(CoroutineHandle handle) const; // 実行中か
@@ -193,6 +221,7 @@ public:
 
     // WaitForSeconds に渡す経過時間に掛ける倍率（Unity の Time.timeScale）
     void SetTimeScale(float fScale) { m_fTimeScale = fScale < 0.0f ? 0.0f : fScale; }
+
     [[nodiscard]] float TimeScale() const noexcept { return m_fTimeScale; }
 
     // コルーチンの本体が例外を投げたときの通知（そのコルーチンは停止する）。
@@ -208,6 +237,7 @@ private:
         Coroutine coroutine;   // コルーチン本体
         bool bStopped = false; // 停止済み（Tick 中は印だけ付ける）
     };
+
     void ReportError(const std::exception_ptr& pException); // 例外の通知
 
     std::vector<Entry> m_vEntries; // 実行中のコルーチン

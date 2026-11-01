@@ -9,6 +9,7 @@
 
 namespace {
 int g_nFailures = 0;
+
 void Check(bool bCondition, const char* pWhat) {
     if (!bCondition) {
         std::cerr << "FAILED: " << pWhat << '\n';
@@ -19,7 +20,9 @@ void Check(bool bCondition, const char* pWhat) {
 class CCounter {
 public:
     void Add(int nValue) { m_nTotal += nValue; }
+
     int Twice(int nValue) const { return nValue * 2; }
+
     int m_nTotal = 0;
 };
 
@@ -60,6 +63,7 @@ void TestDelegates() {
         dxs::ScopedDelegateHandle scoped(*pDelegate, pDelegate->AddLambda([&] { ++nScoped; }));
         pDelegate->Broadcast();
     }
+
     pDelegate->Broadcast();
     Check(nScoped == 1, "ScopedDelegateHandle removes its binding");
     dxs::ScopedDelegateHandle outlives(*pDelegate, *pDelegate += [] {});
@@ -69,7 +73,9 @@ void TestDelegates() {
 class CPlayModeListener final : public dxs::IPlayModeCallbacks, public dxs::ISceneCallbacks {
 public:
     void OnEnterPlayMode(dxs::Scene&) override { ++m_nEnter; }
+
     void OnSceneSaved(const dxs::Scene&) override { ++m_nSaved; }
+
     int m_nEnter = 0;
     int m_nSaved = 0;
 };
@@ -83,6 +89,7 @@ void TestCallbackInterfaces() {
         dxs::EngineEvents::Get().onEnterPlayMode.Broadcast(scene);
         dxs::EngineEvents::Get().onSceneSaved.Broadcast(scene);
     }
+
     dxs::EngineEvents::Get().onEnterPlayMode.Broadcast(scene);
     Check(listener.m_nEnter == 1 && listener.m_nSaved == 1, "interface callbacks fire until the registration ends");
 }
@@ -95,13 +102,13 @@ dxs::Coroutine CountFrames(int& nCounter, int nFrames) {
 }
 
 dxs::Coroutine Sequence(std::vector<int>& vSteps, bool& bGate) {
-    vSteps.push_back(1);                         // runs inside StartCoroutine
+    vSteps.push_back(1); // runs inside StartCoroutine
     co_yield dxs::WaitForSeconds(0.5f);
     vSteps.push_back(2);
     co_yield dxs::WaitUntil([&] { return bGate; });
     vSteps.push_back(3);
     int nChildFrames = 0;
-    co_yield CountFrames(nChildFrames, 2);       // waits for the nested coroutine
+    co_yield CountFrames(nChildFrames, 2); // waits for the nested coroutine
     vSteps.push_back(10 + nChildFrames);
     co_yield dxs::WaitForFrames(2);
     vSteps.push_back(4);
@@ -146,7 +153,8 @@ void TestCoroutines() {
     runner.onError.AddLambda([&](const std::string& sMessage) { sError = sMessage; });
     runner.Start(Throws());
     runner.Tick(0.016f);
-    Check(sError.find("boom") != std::string::npos && runner.RunningCount() == 0, "exceptions stop the coroutine and are reported");
+    Check(sError.find("boom") != std::string::npos && runner.RunningCount() == 0,
+          "exceptions stop the coroutine and are reported");
 
     runner.SetTimeScale(0.0f);
     vSteps.clear();
@@ -160,14 +168,18 @@ void TestCoroutines() {
 class CBlinker final : public dxs::Component {
 public:
     void Start(dxs::Entity& entity) override { StartCoroutine(Blink(entity)); }
+
     void Update(dxs::Entity&, float) override { ++m_nUpdates; }
+
     void LateUpdate(dxs::Entity&, float) override { m_bLateAfterUpdate = m_nUpdates > 0; }
+
     dxs::Coroutine Blink(dxs::Entity& entity) {
         while (true) {
             co_yield dxs::WaitForSeconds(0.5f);
             entity.draw.bVisible = !entity.draw.bVisible;
         }
     }
+
     int m_nUpdates = 0;
     bool m_bLateAfterUpdate = false;
 };
@@ -182,9 +194,10 @@ void TestComponentCoroutines() {
     Check(!dxs::AttachComponent(entity, "CBlinker", error), "AttachComponent rejects duplicates");
     scene.vEntities.push_back(entity);
     int nStarted = 0;
-    dxs::ScopedDelegateHandle started(dxs::EngineEvents::Get().onComponentStarted,
-                                      dxs::EngineEvents::Get().onComponentStarted.AddLambda(
-                                          [&](dxs::Entity&, dxs::Component&, const std::string& sName) { nStarted += sName == "CBlinker"; }));
+    dxs::ScopedDelegateHandle started(
+        dxs::EngineEvents::Get().onComponentStarted,
+        dxs::EngineEvents::Get().onComponentStarted.AddLambda(
+            [&](dxs::Entity&, dxs::Component&, const std::string& sName) { nStarted += sName == "CBlinker"; }));
     dxs::UpdateUserComponents(scene, 0.3f);
     Check(scene.vEntities[0].draw.bVisible, "blink not yet toggled");
     dxs::UpdateUserComponents(scene, 0.3f);
@@ -193,6 +206,7 @@ void TestComponentCoroutines() {
     Check(pBlinker && pBlinker->m_nUpdates == 2 && pBlinker->m_bLateAfterUpdate, "Update and LateUpdate order");
     Check(nStarted == 1, "onComponentStarted fired once");
 }
+
 // The shipped CoroutineTemplate sample must run through all five steps.
 void TestCoroutineTemplate() {
     dxs::Scene scene;
@@ -201,27 +215,32 @@ void TestCoroutineTemplate() {
     std::string error;
     Check(dxs::AttachComponent(entity, "CoroutineTemplate", error), "CoroutineTemplate is registered");
     scene.vEntities.push_back(entity);
-    for (int nFrame = 0; nFrame < 300; ++nFrame) dxs::UpdateUserComponents(scene, 1.0f / 60.0f); // 5 s
+    for (int nFrame = 0; nFrame < 300; ++nFrame) {
+        dxs::UpdateUserComponents(scene, 1.0f / 60.0f); // 5 s
+    }
+
     const auto values = dxs::ComponentEditorValues(scene.vEntities[0], 0);
     const auto step = std::find_if(values.begin(), values.end(), [](const auto& pair) { return pair.first == "Step"; });
     Check(step != values.end() && step->second == "5", "CoroutineTemplate reaches step 5 within 5 seconds");
-    Check(scene.vEntities[0].draw.position.x > 1.9f && scene.vEntities[0].draw.bVisible, "CoroutineTemplate moved and stopped blinking");
+    Check(scene.vEntities[0].draw.position.x > 1.9f && scene.vEntities[0].draw.bVisible,
+          "CoroutineTemplate moved and stopped blinking");
 }
+
 // Log entries written by worker threads (background export) reach the
 // listeners only on the main thread, in order.
 void TestLogThreads() {
     dxs::Debug::SetMainThread();
     std::vector<std::string> vSeen;
-    dxs::ScopedDelegateHandle listener(dxs::Debug::OnLog(), dxs::Debug::OnLog().AddLambda([&](const dxs::LogEntry& entry) {
-        vSeen.push_back(entry.sMessage);
-    }));
+    dxs::ScopedDelegateHandle listener(
+        dxs::Debug::OnLog(), dxs::Debug::OnLog().AddLambda([&](const dxs::LogEntry& entry) { vSeen.push_back(entry.sMessage); }));
     std::thread worker([] { dxs::Debug::Log("from worker"); });
     worker.join();
     const auto vHistory = dxs::Debug::History();
     Check(!vHistory.empty() && vHistory.back().sMessage == "from worker", "worker entry is in the history at once");
     Check(vSeen.empty(), "worker entry is not broadcast on the worker thread");
     dxs::Debug::Log("from main");
-    Check(vSeen.size() == 2 && vSeen[0] == "from worker" && vSeen[1] == "from main", "queued entries are broadcast first, on the main thread");
+    Check(vSeen.size() == 2 && vSeen[0] == "from worker" && vSeen[1] == "from main",
+          "queued entries are broadcast first, on the main thread");
     std::thread([] { dxs::Debug::LogWarning("later"); }).join();
     dxs::Debug::DispatchPending();
     Check(vSeen.size() == 3 && vSeen[2] == "later", "DispatchPending delivers queued entries");

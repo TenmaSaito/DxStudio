@@ -105,14 +105,14 @@ private:
 
     // ジョイパッド 1 台分の情報
     typedef struct {
-        XINPUT_STATE joykeyState;          // プレス情報
-        XINPUT_STATE joykeyStateTrigger;   // トリガー情報
-        XINPUT_STATE joykeyStateRelease;   // リリース情報
-        int nJoykeyStateRepeat[KEY_MAX];   // ボタンのリピート情報
-        int nJoythumbRepeat[STICK_MAX];    // スティックのリピート情報
-        XINPUT_VIBRATION vibration;        // 振動の情報
-        int nCounterVibration;             // 振動の残りフレーム
-        bool bConnected;                   // 追加: 接続されているか
+        XINPUT_STATE joykeyState;        // プレス情報
+        XINPUT_STATE joykeyStateTrigger; // トリガー情報
+        XINPUT_STATE joykeyStateRelease; // リリース情報
+        int nJoykeyStateRepeat[KEY_MAX]; // ボタンのリピート情報
+        int nJoythumbRepeat[STICK_MAX];  // スティックのリピート情報
+        XINPUT_VIBRATION vibration;      // 振動の情報
+        int nCounterVibration;           // 振動の残りフレーム
+        bool bConnected;                 // 追加: 接続されているか
     } XINPUT_INFO;
 
     XINPUT_INFO m_aJoypad[MAX_JOYPAD] = {}; // ジョイパッドの情報

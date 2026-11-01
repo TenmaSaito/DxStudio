@@ -34,7 +34,7 @@ using graphics::Vertex;
 //**********************************************************************************
 // *** 定数宣言 ***
 //**********************************************************************************
-constexpr std::size_t MAX_VERTEX_COUNT = 1u << 20;             // 1 フレームの最大頂点数（約 100 万）
+constexpr std::size_t MAX_VERTEX_COUNT = 1u << 20;            // 1 フレームの最大頂点数（約 100 万）
 constexpr float CLEAR_COLOR[4] = {0.16f, 0.31f, 0.50f, 1.0f}; // 背景色（空の青）
 
 //**********************************************************************************
@@ -42,26 +42,21 @@ constexpr float CLEAR_COLOR[4] = {0.16f, 0.31f, 0.50f, 1.0f}; // 背景色（空
 //**********************************************************************************
 // 立方体: 6 面をそれぞれ別の頂点で持つ（面ごとに色を変えるため）。続けて XY 平面の四角形。
 constexpr Vertex BASE_VERTICES[] = {
-    {-0.5f,-0.5f,-0.5f},{-0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f},
-    {-0.5f,-0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f},{ 0.5f,-0.5f,-0.5f},
-    { 0.5f,-0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f},{-0.5f, 0.5f, 0.5f},
-    { 0.5f,-0.5f, 0.5f},{-0.5f, 0.5f, 0.5f},{-0.5f,-0.5f, 0.5f},
-    {-0.5f,-0.5f, 0.5f},{-0.5f, 0.5f, 0.5f},{-0.5f, 0.5f,-0.5f},
-    {-0.5f,-0.5f, 0.5f},{-0.5f, 0.5f,-0.5f},{-0.5f,-0.5f,-0.5f},
-    { 0.5f,-0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f, 0.5f},
-    { 0.5f,-0.5f,-0.5f},{ 0.5f, 0.5f, 0.5f},{ 0.5f,-0.5f, 0.5f},
-    {-0.5f, 0.5f,-0.5f},{-0.5f, 0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f},
-    {-0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f, 0.5f},{ 0.5f, 0.5f,-0.5f},
-    {-0.5f,-0.5f, 0.5f},{-0.5f,-0.5f,-0.5f},{ 0.5f,-0.5f,-0.5f},
-    {-0.5f,-0.5f, 0.5f},{ 0.5f,-0.5f,-0.5f},{ 0.5f,-0.5f, 0.5f},
-    {-0.5f,-0.5f,0},{-0.5f, 0.5f,0},{0.5f, 0.5f,0},
-    {-0.5f,-0.5f,0},{ 0.5f, 0.5f,0},{0.5f,-0.5f,0},
+    {-0.5f, -0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f},  {0.5f, 0.5f, -0.5f},   {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, -0.5f},
+    {0.5f, -0.5f, -0.5f},  {0.5f, -0.5f, 0.5f},   {0.5f, 0.5f, 0.5f},    {-0.5f, 0.5f, 0.5f},   {0.5f, -0.5f, 0.5f},
+    {-0.5f, 0.5f, 0.5f},   {-0.5f, -0.5f, 0.5f},  {-0.5f, -0.5f, 0.5f},  {-0.5f, 0.5f, 0.5f},   {-0.5f, 0.5f, -0.5f},
+    {-0.5f, -0.5f, 0.5f},  {-0.5f, 0.5f, -0.5f},  {-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f},  {0.5f, 0.5f, -0.5f},
+    {0.5f, 0.5f, 0.5f},    {0.5f, -0.5f, -0.5f},  {0.5f, 0.5f, 0.5f},    {0.5f, -0.5f, 0.5f},   {-0.5f, 0.5f, -0.5f},
+    {-0.5f, 0.5f, 0.5f},   {0.5f, 0.5f, 0.5f},    {-0.5f, 0.5f, -0.5f},  {0.5f, 0.5f, 0.5f},    {0.5f, 0.5f, -0.5f},
+    {-0.5f, -0.5f, 0.5f},  {-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f},  {-0.5f, -0.5f, 0.5f},  {0.5f, -0.5f, -0.5f},
+    {0.5f, -0.5f, 0.5f},   {-0.5f, -0.5f, 0},     {-0.5f, 0.5f, 0},      {0.5f, 0.5f, 0},       {-0.5f, -0.5f, 0},
+    {0.5f, 0.5f, 0},       {0.5f, -0.5f, 0},
 };
 
 // 各図形が頂点バッファの何番目から始まるか（BuildVertices の追加順と一致させる）
-constexpr UINT CUBE_START = 0;   // 立方体（36 頂点）
-constexpr UINT QUAD_START = 36;  // 四角形（6 頂点）
-constexpr UINT GRID_START = 42;  // グリッド
+constexpr UINT CUBE_START = 0;  // 立方体（36 頂点）
+constexpr UINT QUAD_START = 36; // 四角形（6 頂点）
+constexpr UINT GRID_START = 42; // グリッド
 constexpr UINT GRID_COUNT = 84; // 縦横 21 本ずつ、1 本 2 頂点
 constexpr UINT AXIS_X_START = GRID_START + GRID_COUNT;
 constexpr UINT AXIS_Z_START = AXIS_X_START + 2;
@@ -85,36 +80,59 @@ constexpr UINT LETTER_X_COUNT = 4, LETTER_Y_COUNT = 6, LETTER_Z_COUNT = 6;
 //==================================================================================
 std::vector<Vertex> BuildVertices() {
     std::vector<Vertex> v(std::begin(BASE_VERTICES), std::end(BASE_VERTICES));
+
     // グリッド: -10 から 10 まで 1 単位ごとの線（XZ 平面）
     for (int nLine = -10; nLine <= 10; ++nLine) {
         const float n = static_cast<float>(nLine);
-        v.push_back({n, 0, -10}); v.push_back({n, 0, 10});
-        v.push_back({-10, 0, n}); v.push_back({10, 0, n});
+        v.push_back({n, 0, -10});
+        v.push_back({n, 0, 10});
+        v.push_back({-10, 0, n});
+        v.push_back({10, 0, n});
     }
+
     // X 軸・Z 軸（グリッドの上に色付きで描く）
-    v.push_back({-10, 0, 0}); v.push_back({10, 0, 0});
-    v.push_back({0, 0, -10}); v.push_back({0, 0, 10});
+    v.push_back({-10, 0, 0});
+    v.push_back({10, 0, 0});
+    v.push_back({0, 0, -10});
+    v.push_back({0, 0, 10});
+
     // 立方体の 12 本の辺（選択時のアウトライン）
-    constexpr Vertex CORNERS[] = {
-        {-0.5f,-0.5f,-0.5f},{0.5f,-0.5f,-0.5f},{0.5f,0.5f,-0.5f},{-0.5f,0.5f,-0.5f},
-        {-0.5f,-0.5f,0.5f},{0.5f,-0.5f,0.5f},{0.5f,0.5f,0.5f},{-0.5f,0.5f,0.5f}
-    };
-    constexpr int EDGES[][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
-    for (const auto& edge : EDGES) { v.push_back(CORNERS[edge[0]]); v.push_back(CORNERS[edge[1]]); }
+    constexpr Vertex CORNERS[] = {{-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f},
+                                  {-0.5f, -0.5f, 0.5f},  {0.5f, -0.5f, 0.5f},  {0.5f, 0.5f, 0.5f},  {-0.5f, 0.5f, 0.5f}};
+    constexpr int EDGES[][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6}, {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+    for (const auto& edge : EDGES) {
+        v.push_back(CORNERS[edge[0]]);
+        v.push_back(CORNERS[edge[1]]);
+    }
+
     // 四角形の 4 本の辺（2D のアウトライン）
-    v.push_back({-0.5f,-0.5f,0}); v.push_back({0.5f,-0.5f,0});
-    v.push_back({0.5f,-0.5f,0}); v.push_back({0.5f,0.5f,0});
-    v.push_back({0.5f,0.5f,0}); v.push_back({-0.5f,0.5f,0});
-    v.push_back({-0.5f,0.5f,0}); v.push_back({-0.5f,-0.5f,0});
+    v.push_back({-0.5f, -0.5f, 0});
+    v.push_back({0.5f, -0.5f, 0});
+    v.push_back({0.5f, -0.5f, 0});
+    v.push_back({0.5f, 0.5f, 0});
+    v.push_back({0.5f, 0.5f, 0});
+    v.push_back({-0.5f, 0.5f, 0});
+    v.push_back({-0.5f, 0.5f, 0});
+    v.push_back({-0.5f, -0.5f, 0});
+
     // ギズモ: +X 方向の軸、矢印の先、拡大縮小用の小さな箱
-    v.push_back({0,0,0}); v.push_back({1,0,0});
-    v.push_back({1,0,0}); v.push_back({0.80f,0.09f,0});
-    v.push_back({1,0,0}); v.push_back({0.80f,-0.09f,0});
-    v.push_back({0,0,0}); v.push_back({1,0,0});
-    v.push_back({0.91f,-0.06f,0}); v.push_back({1.03f,-0.06f,0});
-    v.push_back({1.03f,-0.06f,0}); v.push_back({1.03f,0.06f,0});
-    v.push_back({1.03f,0.06f,0}); v.push_back({0.91f,0.06f,0});
-    v.push_back({0.91f,0.06f,0}); v.push_back({0.91f,-0.06f,0});
+    v.push_back({0, 0, 0});
+    v.push_back({1, 0, 0});
+    v.push_back({1, 0, 0});
+    v.push_back({0.80f, 0.09f, 0});
+    v.push_back({1, 0, 0});
+    v.push_back({0.80f, -0.09f, 0});
+    v.push_back({0, 0, 0});
+    v.push_back({1, 0, 0});
+    v.push_back({0.91f, -0.06f, 0});
+    v.push_back({1.03f, -0.06f, 0});
+    v.push_back({1.03f, -0.06f, 0});
+    v.push_back({1.03f, 0.06f, 0});
+    v.push_back({1.03f, 0.06f, 0});
+    v.push_back({0.91f, 0.06f, 0});
+    v.push_back({0.91f, 0.06f, 0});
+    v.push_back({0.91f, -0.06f, 0});
+
     // 回転ギズモの円（XY 平面上の単位円）
     for (UINT uSegment = 0; uSegment < GIZMO_RING_SEGMENTS; ++uSegment) {
         const float fA = XM_2PI * uSegment / GIZMO_RING_SEGMENTS;
@@ -122,21 +140,37 @@ std::vector<Vertex> BuildVertices() {
         v.push_back({std::cos(fA), std::sin(fA), 0});
         v.push_back({std::cos(fB), std::sin(fB), 0});
     }
+
     auto square = [&](float fLo, float fHi) {
-        v.push_back({fLo,fLo,0}); v.push_back({fHi,fLo,0});
-        v.push_back({fHi,fLo,0}); v.push_back({fHi,fHi,0});
-        v.push_back({fHi,fHi,0}); v.push_back({fLo,fHi,0});
-        v.push_back({fLo,fHi,0}); v.push_back({fLo,fLo,0});
+        v.push_back({fLo, fLo, 0});
+        v.push_back({fHi, fLo, 0});
+        v.push_back({fHi, fLo, 0});
+        v.push_back({fHi, fHi, 0});
+        v.push_back({fHi, fHi, 0});
+        v.push_back({fLo, fHi, 0});
+        v.push_back({fLo, fHi, 0});
+        v.push_back({fLo, fLo, 0});
     };
-    square(0.23f, 0.45f); // 平面移動のハンドル
+    square(0.23f, 0.45f);  // 平面移動のハンドル
     square(-0.08f, 0.08f); // 均等スケールのハンドル
-    square(0, 1); // 画面上の四角形（範囲選択）
+    square(0, 1);          // 画面上の四角形（範囲選択）
     // 文字（[-1, 1] の箱の中に線で描く）
-    v.push_back({-1,-1,0}); v.push_back({1,1,0}); v.push_back({-1,1,0}); v.push_back({1,-1,0});            // X
-    v.push_back({-1,1,0}); v.push_back({0,0,0}); v.push_back({1,1,0}); v.push_back({0,0,0});
-    v.push_back({0,0,0}); v.push_back({0,-1,0});                                                          // Y
-    v.push_back({-1,1,0}); v.push_back({1,1,0}); v.push_back({1,1,0}); v.push_back({-1,-1,0});
-    v.push_back({-1,-1,0}); v.push_back({1,-1,0});                                                        // Z
+    v.push_back({-1, -1, 0});
+    v.push_back({1, 1, 0});
+    v.push_back({-1, 1, 0});
+    v.push_back({1, -1, 0}); // X
+    v.push_back({-1, 1, 0});
+    v.push_back({0, 0, 0});
+    v.push_back({1, 1, 0});
+    v.push_back({0, 0, 0});
+    v.push_back({0, 0, 0});
+    v.push_back({0, -1, 0}); // Y
+    v.push_back({-1, 1, 0});
+    v.push_back({1, 1, 0});
+    v.push_back({1, 1, 0});
+    v.push_back({-1, -1, 0});
+    v.push_back({-1, -1, 0});
+    v.push_back({1, -1, 0}); // Z
     return v;
 }
 
@@ -146,25 +180,27 @@ std::vector<Vertex> BuildVertices() {
 // --- ワールド行列（拡大 → 回転 → 移動）の作成処理 ---
 XMMATRIX World(const DrawItem& item) {
     return XMMatrixScaling(item.scale.x, item.scale.y, item.scale.z) *
-        XMMatrixRotationRollPitchYaw(item.rotation.x, item.rotation.y, item.rotation.z) *
-        XMMatrixTranslation(item.position.x, item.position.y, item.position.z);
+           XMMatrixRotationRollPitchYaw(item.rotation.x, item.rotation.y, item.rotation.z) *
+           XMMatrixTranslation(item.position.x, item.position.y, item.position.z);
 }
 
 // --- ビュー行列の作成処理（注視点の周りを回るカメラ） ---
 XMMATRIX View(const Camera& camera) {
     const XMVECTOR target = XMLoadFloat3(&camera.target);
     const float fCosPitch = std::cos(camera.fPitch);
-    const XMVECTOR offset = XMVectorSet(std::sin(camera.fYaw) * fCosPitch * camera.fDistance,
-        std::sin(camera.fPitch) * camera.fDistance, -std::cos(camera.fYaw) * fCosPitch * camera.fDistance, 0);
+    const XMVECTOR offset =
+        XMVectorSet(std::sin(camera.fYaw) * fCosPitch * camera.fDistance, std::sin(camera.fPitch) * camera.fDistance,
+                    -std::cos(camera.fYaw) * fCosPitch * camera.fDistance, 0);
     return XMMatrixLookAtLH(XMVectorAdd(target, offset), target, XMVectorSet(0, 1, 0, 0));
 }
 
 // --- ビュー × 射影 行列の作成処理 ---
 XMMATRIX ViewProjection(const Camera& camera, float fAspect) {
     const float fHeight = camera.fDistance * (10.0f / 6.32455532f); // 平行投影の見える高さ（距離に比例）
-    const auto projection = camera.bOrthographic
-        ? XMMatrixOrthographicLH(fHeight * fAspect, fHeight, camera.fNearClip, camera.fFarClip)
-        : XMMatrixPerspectiveFovLH(XMConvertToRadians(camera.fFieldOfView), fAspect, camera.fNearClip, camera.fFarClip);
+    const auto projection =
+        camera.bOrthographic
+            ? XMMatrixOrthographicLH(fHeight * fAspect, fHeight, camera.fNearClip, camera.fFarClip)
+            : XMMatrixPerspectiveFovLH(XMConvertToRadians(camera.fFieldOfView), fAspect, camera.fNearClip, camera.fFarClip);
     return View(camera) * projection;
 }
 
@@ -172,16 +208,20 @@ XMMATRIX ViewProjection(const Camera& camera, float fAspect) {
 XMMATRIX AxisRotation(int nAxis) {
     return nAxis == 0 ? XMMatrixIdentity() : nAxis == 1 ? XMMatrixRotationZ(XM_PIDIV2) : XMMatrixRotationY(-XM_PIDIV2);
 }
+
 // --- XY 平面の円を各軸に垂直な面へ回す行列 ---
 XMMATRIX RingRotation(int nAxis) {
     return nAxis == 0 ? XMMatrixRotationY(XM_PIDIV2) : nAxis == 1 ? XMMatrixRotationX(-XM_PIDIV2) : XMMatrixIdentity();
 }
+
 // --- ギズモの軸の向きの行列 ---
 XMMATRIX GizmoAxisRotation(const DrawItem& item, int nAxis, GizmoMode mode) {
     // 拡大縮小はオブジェクト自身の軸で行い、移動はワールドの軸で行う
     const auto basis = AxisRotation(nAxis);
-    return mode == GizmoMode::Scale ? basis * XMMatrixRotationRollPitchYaw(item.rotation.x, item.rotation.y, item.rotation.z) : basis;
+    return mode == GizmoMode::Scale ? basis * XMMatrixRotationRollPitchYaw(item.rotation.x, item.rotation.y, item.rotation.z)
+                                    : basis;
 }
+
 // --- 画面上でほぼ一定の大きさ（約 90 ピクセル）になるギズモの長さの計算処理 ---
 bool GizmoLength(const Camera& camera, const DrawItem& item, unsigned uWidth, unsigned uHeight, float& fLength) {
     if (!uWidth || !uHeight) return false;
@@ -189,19 +229,21 @@ bool GizmoLength(const Camera& camera, const DrawItem& item, unsigned uWidth, un
     const auto clip = XMVector4Transform(XMVectorSet(item.position.x, item.position.y, item.position.z, 1), vp);
     const float fW = XMVectorGetW(clip), fZ = XMVectorGetZ(clip);
     if (!std::isfinite(fW) || fW <= 0 || fZ < 0 || fZ > fW) return false; // カメラの後ろ・視野外
-    const float fWorldHeight = camera.bOrthographic ? camera.fDistance * (10.0f / 6.32455532f) : 2.0f * std::tan(XM_PIDIV4 / 2) * fW;
+    const float fWorldHeight =
+        camera.bOrthographic ? camera.fDistance * (10.0f / 6.32455532f) : 2.0f * std::tan(XM_PIDIV4 / 2) * fW;
     fLength = fWorldHeight * 90.0f / uHeight;
     return std::isfinite(fLength) && fLength > 0;
 }
+
 // --- 3D の点 → 画面座標（ピクセル）の変換処理。視野外なら false ---
 bool ScreenPoint(XMVECTOR point, FXMMATRIX mvp, unsigned uWidth, unsigned uHeight, XMFLOAT2& result) {
     const auto clip = XMVector4Transform(point, mvp);
     const float fW = XMVectorGetW(clip), fZ = XMVectorGetZ(clip);
     if (!std::isfinite(fW) || fW <= 0 || fZ < 0 || fZ > fW) return false;
-    result = {(XMVectorGetX(clip) / fW + 1.0f) * 0.5f * uWidth,
-              (1.0f - XMVectorGetY(clip) / fW) * 0.5f * uHeight};
+    result = {(XMVectorGetX(clip) / fW + 1.0f) * 0.5f * uWidth, (1.0f - XMVectorGetY(clip) / fW) * 0.5f * uHeight};
     return std::isfinite(result.x) && std::isfinite(result.y);
 }
+
 // --- 点 (fX, fY) と線分 ab の距離 ---
 float SegmentDistance(float fX, float fY, XMFLOAT2 a, XMFLOAT2 b) {
     const float fDx = b.x - a.x, fDy = b.y - a.y, fLength2 = fDx * fDx + fDy * fDy;
@@ -210,9 +252,9 @@ float SegmentDistance(float fX, float fY, XMFLOAT2 a, XMFLOAT2 b) {
     const float fPx = fX - (a.x + fT * fDx), fPy = fY - (a.y + fT * fDy);
     return std::sqrt(fPx * fPx + fPy * fPy);
 }
+
 // --- マウス位置からの視線と平面の交点（origin からの相対位置）の計算処理 ---
-bool PlaneHit(int nX, int nY, unsigned uWidth, unsigned uHeight, FXMMATRIX vp,
-              XMVECTOR origin, XMVECTOR normal, XMVECTOR& hit) {
+bool PlaneHit(int nX, int nY, unsigned uWidth, unsigned uHeight, FXMMATRIX vp, XMVECTOR origin, XMVECTOR normal, XMVECTOR& hit) {
     const float fSx = 2.0f * nX / uWidth - 1.0f, fSy = 1.0f - 2.0f * nY / uHeight;
     XMVECTOR determinant;
     const auto inverse = XMMatrixInverse(&determinant, vp);
@@ -227,6 +269,7 @@ bool PlaneHit(int nX, int nY, unsigned uWidth, unsigned uHeight, FXMMATRIX vp,
     hit = XMVectorSubtract(XMVectorAdd(nearPoint, XMVectorScale(ray, fT)), origin);
     return std::isfinite(XMVectorGetX(hit)) && std::isfinite(XMVectorGetY(hit)) && std::isfinite(XMVectorGetZ(hit));
 }
+
 // --- 点が凸四角形の中にあるか（全辺で外積の符号がそろうか）の判定処理 ---
 bool PointInQuad(float fX, float fY, const XMFLOAT2 (&aQuad)[4]) {
     bool bPositive = false, bNegative = false;
@@ -237,6 +280,7 @@ bool PointInQuad(float fX, float fY, const XMFLOAT2 (&aQuad)[4]) {
         bPositive |= fCross > 0.001f;
         bNegative |= fCross < -0.001f;
     }
+
     return !(bPositive && bNegative);
 }
 
@@ -257,32 +301,40 @@ GraphicsApi g_defaultApi = GraphicsApi::DIRECT3D12; // API を指定しないと
 // *** レンダラーの内部状態 ***
 //**********************************************************************************
 struct Renderer::Impl {
-    std::unique_ptr<graphics::IGraphicsDevice> pDevice;       // 描画デバイス（API ごとの実装）
-    unsigned uWidth = 0, uHeight = 0;                        // 描画領域の大きさ
-    UINT uBaseVertexCount = 0;                               // 固定の頂点数（この後ろにモデルを書く）
-    Camera camera{};                                         // カメラ
-    std::vector<int> vSelection;                             // 選択中のオブジェクト番号
-    std::vector<XMFLOAT3> vDebugLines;                       // 補助線（2 点で 1 本）
-    XMFLOAT4 debugColor{0.55f, 0.95f, 0.45f, 1.0f};          // 補助線の色
-    bool bMarquee = false;                                   // 範囲選択の四角形を表示するか
+    std::unique_ptr<graphics::IGraphicsDevice> pDevice;     // 描画デバイス（API ごとの実装）
+    unsigned uWidth = 0, uHeight = 0;                       // 描画領域の大きさ
+    UINT uBaseVertexCount = 0;                              // 固定の頂点数（この後ろにモデルを書く）
+    Camera camera{};                                        // カメラ
+    std::vector<int> vSelection;                            // 選択中のオブジェクト番号
+    std::vector<XMFLOAT3> vDebugLines;                      // 補助線（2 点で 1 本）
+    XMFLOAT4 debugColor{0.55f, 0.95f, 0.45f, 1.0f};         // 補助線の色
+    bool bMarquee = false;                                  // 範囲選択の四角形を表示するか
     int nRectX0 = 0, nRectY0 = 0, nRectX1 = 0, nRectY1 = 0; // 範囲選択の四角形（ピクセル）
-    int nGizmoHot = -1;                                      // マウスが乗っているハンドル
-    bool bShowOrientation = true;                            // 右上の向き表示
-    DrawMode drawMode = DrawMode::SHADED;                    // シーンビューの描画モード
-    std::string sResizeError;                                // 大きさ変更の失敗理由（次の Render で返す）
+    int nGizmoHot = -1;                                     // マウスが乗っているハンドル
+    bool bShowOrientation = true;                           // 右上の向き表示
+    DrawMode drawMode = DrawMode::SHADED;                   // シーンビューの描画モード
+    std::string sResizeError;                               // 大きさ変更の失敗理由（次の Render で返す）
 };
 
 //==================================================================================
 // --- コンストラクタ / デストラクタ ---
 //==================================================================================
 Renderer::Renderer() = default;
-Renderer::~Renderer() { Shutdown(); }
+
+Renderer::~Renderer() {
+    Shutdown();
+}
 
 //==================================================================================
 // --- 既定の API の設定 / 取得処理 ---
 //==================================================================================
-void Renderer::SetDefaultApi(GraphicsApi api) { g_defaultApi = api; }
-GraphicsApi Renderer::DefaultApi() { return g_defaultApi; }
+void Renderer::SetDefaultApi(GraphicsApi api) {
+    g_defaultApi = api;
+}
+
+GraphicsApi Renderer::DefaultApi() {
+    return g_defaultApi;
+}
 
 //==================================================================================
 // --- 初期化処理（既定の API） ---
@@ -302,6 +354,7 @@ bool Renderer::Initialize(HWND hwnd, unsigned width, unsigned height, const std:
         error = "Invalid viewport dimensions or window";
         return false;
     }
+
     auto pImpl = std::make_unique<Impl>();
     pImpl->uWidth = width;
     pImpl->uHeight = height;
@@ -310,6 +363,7 @@ bool Renderer::Initialize(HWND hwnd, unsigned width, unsigned height, const std:
         error = std::string(GraphicsApiDisplayName(api)) + " backend is not available in this build";
         return false;
     }
+
     // 固定の頂点をデバイスの作成時に送る
     const auto vVertices = BuildVertices();
     pImpl->uBaseVertexCount = static_cast<UINT>(vVertices.size());
@@ -326,6 +380,7 @@ bool Renderer::Initialize(HWND hwnd, unsigned width, unsigned height, const std:
         pImpl->pDevice->Shutdown();
         return false;
     }
+
     p_ = std::move(pImpl); // 成功したときだけ内部状態を差し替える
     return true;
 }
@@ -336,30 +391,49 @@ bool Renderer::Initialize(HWND hwnd, unsigned width, unsigned height, const std:
 bool Renderer::InitializeWithFallback(HWND hwnd, unsigned width, unsigned height, const std::wstring& shaderPath,
                                       GraphicsApi preferred, std::string& error, std::string* pReport) {
     std::string sReport;
+
     // 希望の API → それ以外を優先度順
     std::vector<GraphicsApi> vOrder{preferred};
     for (const auto api : ALL_GRAPHICS_APIS) {
-        if (api != preferred) vOrder.push_back(api);
+        if (api != preferred) {
+            vOrder.push_back(api);
+        }
     }
+
     for (const auto api : vOrder) {
         std::string sAttemptError;
         if (Initialize(hwnd, width, height, shaderPath, api, sAttemptError)) {
-            if (pReport) *pReport = sReport;
+            if (pReport) {
+                *pReport = sReport;
+            }
+
             error.clear();
             return true;
         }
+
         sReport += sAttemptError + "\n";
-        if (error.empty()) error = sAttemptError; // 希望した API の失敗理由を返す
+        if (error.empty()) {
+            error = sAttemptError; // 希望した API の失敗理由を返す
+        }
     }
-    if (pReport) *pReport = sReport;
+
+    if (pReport) {
+        *pReport = sReport;
+    }
+
     return false;
 }
 
 //==================================================================================
 // --- 状態の取得処理 ---
 //==================================================================================
-bool Renderer::IsInitialized() const { return static_cast<bool>(p_); }
-GraphicsApi Renderer::Api() const { return p_ ? p_->pDevice->Api() : g_defaultApi; }
+bool Renderer::IsInitialized() const {
+    return static_cast<bool>(p_);
+}
+
+GraphicsApi Renderer::Api() const {
+    return p_ ? p_->pDevice->Api() : g_defaultApi;
+}
 
 //==================================================================================
 // --- 描画領域の大きさ変更処理 ---
@@ -377,9 +451,11 @@ void Renderer::Resize(unsigned width, unsigned height) {
 // --- カメラの設定処理 ---
 //==================================================================================
 void Renderer::SetCamera(const Camera& camera) {
-    if (!p_ || !std::isfinite(camera.fDistance) || !std::isfinite(camera.fYaw) ||
-        !std::isfinite(camera.fPitch) || !std::isfinite(camera.target.x) ||
-        !std::isfinite(camera.target.y) || !std::isfinite(camera.target.z)) return;
+    if (!p_ || !std::isfinite(camera.fDistance) || !std::isfinite(camera.fYaw) || !std::isfinite(camera.fPitch) ||
+        !std::isfinite(camera.target.x) || !std::isfinite(camera.target.y) || !std::isfinite(camera.target.z)) {
+        return;
+    }
+
     // 不正な値（NaN / 無限大）は無視し、距離と上下の角度は範囲内に収める
     p_->camera = camera;
     p_->camera.fDistance = std::clamp(camera.fDistance, 0.2f, 80.0f);
@@ -390,15 +466,22 @@ void Renderer::SetCamera(const Camera& camera) {
 // --- 描画モードの設定 / 取得処理 ---
 //==================================================================================
 void Renderer::SetDrawMode(DrawMode mode) {
-    if (p_) p_->drawMode = mode;
+    if (p_) {
+        p_->drawMode = mode;
+    }
 }
-DrawMode Renderer::GetDrawMode() const { return p_ ? p_->drawMode : DrawMode::SHADED; }
+
+DrawMode Renderer::GetDrawMode() const {
+    return p_ ? p_->drawMode : DrawMode::SHADED;
+}
 
 //==================================================================================
 // --- 向き表示の切り替え処理 ---
 //==================================================================================
 void Renderer::SetShowOrientationGizmo(bool bShow) {
-    if (p_) p_->bShowOrientation = bShow;
+    if (p_) {
+        p_->bShowOrientation = bShow;
+    }
 }
 
 //==================================================================================
@@ -407,8 +490,11 @@ void Renderer::SetShowOrientationGizmo(bool bShow) {
 // 各オブジェクトのローカル空間で視線と単位立方体（2D は z = 0 の面）の交差を
 // 調べ、一番手前に当たった物を返す。
 int Renderer::Pick(int x, int y, const std::vector<DrawItem>& items) const {
-    if (!p_ || !p_->uWidth || !p_->uHeight || x < 0 || y < 0 ||
-        x >= static_cast<int>(p_->uWidth) || y >= static_cast<int>(p_->uHeight)) return -1;
+    if (!p_ || !p_->uWidth || !p_->uHeight || x < 0 || y < 0 || x >= static_cast<int>(p_->uWidth) ||
+        y >= static_cast<int>(p_->uHeight)) {
+        return -1;
+    }
+
     // ピクセル中心の画面座標を -1..1 の正規化座標へ
     const float fSx = (2.0f * (x + 0.5f) / p_->uWidth) - 1.0f;
     const float fSy = 1.0f - (2.0f * (y + 0.5f) / p_->uHeight);
@@ -422,12 +508,14 @@ int Renderer::Pick(int x, int y, const std::vector<DrawItem>& items) const {
         XMVECTOR determinant;
         const XMMATRIX inverse = XMMatrixInverse(&determinant, mvp);
         if (!std::isfinite(XMVectorGetX(determinant)) || std::abs(XMVectorGetX(determinant)) < 1e-12f) continue;
+
         // 画面の点を逆変換して、ローカル空間での視線（手前 → 奥）を作る
         XMFLOAT3 origin, end;
         XMStoreFloat3(&origin, XMVector3TransformCoord(XMVectorSet(fSx, fSy, 0, 1), inverse));
         XMStoreFloat3(&end, XMVector3TransformCoord(XMVectorSet(fSx, fSy, 1, 1), inverse));
         const float aOrigin[] = {origin.x, origin.y, origin.z};
         const float aDirection[] = {end.x - origin.x, end.y - origin.y, end.z - origin.z};
+
         // スラブ法: 軸ごとの「入る」「出る」範囲を重ねて単位立方体との交差を判定（2D は z = 0 の薄い板）
         float fMin = 0.0f, fMax = 1.0f;
         bool bHit = true;
@@ -435,16 +523,27 @@ int Renderer::Pick(int x, int y, const std::vector<DrawItem>& items) const {
             const float fLo = item.bIs2D && nAxis == 2 ? 0.0f : -0.5f;
             const float fHi = item.bIs2D && nAxis == 2 ? 0.0f : 0.5f;
             if (std::abs(aDirection[nAxis]) < 1e-8f) {
-                if (aOrigin[nAxis] < fLo || aOrigin[nAxis] > fHi) { bHit = false; break; }
+                if (aOrigin[nAxis] < fLo || aOrigin[nAxis] > fHi) {
+                    bHit = false;
+                    break;
+                }
             } else {
                 float fA = (fLo - aOrigin[nAxis]) / aDirection[nAxis], fB = (fHi - aOrigin[nAxis]) / aDirection[nAxis];
-                if (fA > fB) std::swap(fA, fB);
+                if (fA > fB) {
+                    std::swap(fA, fB);
+                }
+
                 fMin = std::max(fMin, fA);
                 fMax = std::min(fMax, fB);
-                if (fMin > fMax) { bHit = false; break; }
+                if (fMin > fMax) {
+                    bHit = false;
+                    break;
+                }
             }
         }
+
         if (!bHit) continue;
+
         // 当たった点の深度で一番手前を選ぶ
         const XMVECTOR local = XMVectorSet(aOrigin[0] + aDirection[0] * fMin, aOrigin[1] + aDirection[1] * fMin,
                                            aOrigin[2] + aDirection[2] * fMin, 1);
@@ -457,6 +556,7 @@ int Renderer::Pick(int x, int y, const std::vector<DrawItem>& items) const {
             nBest = static_cast<int>(nIndex);
         }
     }
+
     return nBest;
 }
 
@@ -479,37 +579,65 @@ std::vector<int> Renderer::PickRect(int x0, int y0, int x1, int y1, const std::v
         float fMinX = std::numeric_limits<float>::infinity(), fMinY = fMinX;
         float fMaxX = -fMinX, fMaxY = -fMinX;
         bool bProjected = false;
+
         // 立方体の 8 頂点（2D は 4 頂点）を画面に投影して外接四角形を求める
-        for (int nZ = 0; nZ < (item.bIs2D ? 1 : 2); ++nZ)
-            for (int nY = 0; nY < 2; ++nY)
+        for (int nZ = 0; nZ < (item.bIs2D ? 1 : 2); ++nZ) {
+            for (int nY = 0; nY < 2; ++nY) {
                 for (int nX = 0; nX < 2; ++nX) {
                     XMFLOAT2 point;
-                    if (!ScreenPoint(XMVectorSet(nX ? 0.5f : -0.5f, nY ? 0.5f : -0.5f,
-                                                 item.bIs2D ? 0.0f : (nZ ? 0.5f : -0.5f), 1),
-                                     mvp, p_->uWidth, p_->uHeight, point)) continue;
+                    if (!ScreenPoint(
+                            XMVectorSet(nX ? 0.5f : -0.5f, nY ? 0.5f : -0.5f, item.bIs2D ? 0.0f : (nZ ? 0.5f : -0.5f), 1), mvp,
+                            p_->uWidth, p_->uHeight, point)) {
+                        continue;
+                    }
+
                     bProjected = true;
-                    fMinX = std::min(fMinX, point.x); fMaxX = std::max(fMaxX, point.x);
-                    fMinY = std::min(fMinY, point.y); fMaxY = std::max(fMaxY, point.y);
+                    fMinX = std::min(fMinX, point.x);
+                    fMaxX = std::max(fMaxX, point.x);
+                    fMinY = std::min(fMinY, point.y);
+                    fMaxY = std::max(fMaxY, point.y);
                 }
-        if (bProjected && fMaxX >= fLeft && fMinX <= fRight && fMaxY >= fTop && fMinY <= fBottom)
+            }
+        }
+
+        if (bProjected && fMaxX >= fLeft && fMinX <= fRight && fMaxY >= fTop && fMinY <= fBottom) {
             vResult.push_back(static_cast<int>(nIndex));
+        }
     }
+
     return vResult;
 }
 
 //==================================================================================
 // --- 選択・範囲選択・ハンドル強調・補助線の設定処理 ---
 //==================================================================================
-void Renderer::SetSelection(const std::vector<int>& indices) { if (p_) p_->vSelection = indices; }
+void Renderer::SetSelection(const std::vector<int>& indices) {
+    if (p_) {
+        p_->vSelection = indices;
+    }
+}
+
 void Renderer::SetMarquee(bool visible, int x0, int y0, int x1, int y1) {
     if (!p_) return;
     p_->bMarquee = visible;
-    p_->nRectX0 = x0; p_->nRectY0 = y0; p_->nRectX1 = x1; p_->nRectY1 = y1;
+    p_->nRectX0 = x0;
+    p_->nRectY0 = y0;
+    p_->nRectX1 = x1;
+    p_->nRectY1 = y1;
 }
-void Renderer::SetGizmoHot(int handle) { if (p_) p_->nGizmoHot = handle; }
+
+void Renderer::SetGizmoHot(int handle) {
+    if (p_) {
+        p_->nGizmoHot = handle;
+    }
+}
+
 void Renderer::SetDebugLines(std::vector<XMFLOAT3> vSegments, const XMFLOAT4& color) {
     if (!p_) return;
-    if (vSegments.size() % 2) vSegments.pop_back(); // 2 点で 1 本なので端数は捨てる
+    if (vSegments.size() % 2) {
+        vSegments.pop_back(); // 2 点で 1 本なので端数は捨てる
+    }
+
     p_->vDebugLines = std::move(vSegments);
     p_->debugColor = color;
 }
@@ -523,64 +651,89 @@ int Renderer::HitGizmo(int x, int y, const DrawItem& item, GizmoMode mode) const
     float fLength;
     if (!GizmoLength(p_->camera, item, uWidth, uHeight, fLength)) return -1;
     const auto vp = ViewProjection(p_->camera, static_cast<float>(uWidth) / uHeight);
-    const auto base = XMMatrixScaling(fLength, fLength, fLength) * XMMatrixTranslation(item.position.x, item.position.y, item.position.z) * vp;
+    const auto base =
+        XMMatrixScaling(fLength, fLength, fLength) * XMMatrixTranslation(item.position.x, item.position.y, item.position.z) * vp;
+
     // 中心の箱は全方向の均等スケール。平面ハンドルは軸より優先し、
     // それ以外の場所では軸を選びやすくする。
     if (mode == GizmoMode::Scale) {
         XMFLOAT2 center;
         if (ScreenPoint(XMVectorSet(0, 0, 0, 1), base, uWidth, uHeight, center) &&
-            std::hypot(center.x - x, center.y - y) <= 9.0f) return 6;
+            std::hypot(center.x - x, center.y - y) <= 9.0f) {
+            return 6;
+        }
     }
+
     if (mode == GizmoMode::Translate) {
         for (int nNormal = 0; nNormal < 3; ++nNormal) {
             const auto mvp = RingRotation(nNormal) * base;
             XMFLOAT2 aQuad[4]{};
-            const XMVECTOR aPoints[] = {XMVectorSet(.23f,.23f,0,1), XMVectorSet(.45f,.23f,0,1),
-                                        XMVectorSet(.45f,.45f,0,1), XMVectorSet(.23f,.45f,0,1)};
+            const XMVECTOR aPoints[] = {XMVectorSet(.23f, .23f, 0, 1), XMVectorSet(.45f, .23f, 0, 1),
+                                        XMVectorSet(.45f, .45f, 0, 1), XMVectorSet(.23f, .45f, 0, 1)};
             bool bValid = true;
-            for (int nCorner = 0; nCorner < 4; ++nCorner) bValid &= ScreenPoint(aPoints[nCorner], mvp, uWidth, uHeight, aQuad[nCorner]);
+            for (int nCorner = 0; nCorner < 4; ++nCorner) {
+                bValid &= ScreenPoint(aPoints[nCorner], mvp, uWidth, uHeight, aQuad[nCorner]);
+            }
+
             const float fArea = std::abs((aQuad[1].x - aQuad[0].x) * (aQuad[3].y - aQuad[0].y) -
                                          (aQuad[1].y - aQuad[0].y) * (aQuad[3].x - aQuad[0].x));
             if (bValid && fArea > 20.0f && PointInQuad(static_cast<float>(x), static_cast<float>(y), aQuad)) return 3 + nNormal;
         }
     }
+
     float fBest = 9.0f;
     int nSelected = -1;
     for (int nAxis = 0; nAxis < 3; ++nAxis) {
         const auto mvp = (mode == GizmoMode::Rotate ? RingRotation(nAxis) : GizmoAxisRotation(item, nAxis, mode)) * base;
         if (mode == GizmoMode::Rotate) {
             XMFLOAT2 center, u, v;
-            if (!ScreenPoint(XMVectorSet(0,0,0,1), mvp, uWidth, uHeight, center) ||
-                !ScreenPoint(XMVectorSet(1,0,0,1), mvp, uWidth, uHeight, u) ||
-                !ScreenPoint(XMVectorSet(0,1,0,1), mvp, uWidth, uHeight, v)) continue;
+            if (!ScreenPoint(XMVectorSet(0, 0, 0, 1), mvp, uWidth, uHeight, center) ||
+                !ScreenPoint(XMVectorSet(1, 0, 0, 1), mvp, uWidth, uHeight, u) ||
+                !ScreenPoint(XMVectorSet(0, 1, 0, 1), mvp, uWidth, uHeight, v)) {
+                continue;
+            }
+
             // 真横から見えている円は（細い線になり）うまくドラッグできないので除外
             if (std::abs((u.x - center.x) * (v.y - center.y) - (u.y - center.y) * (v.x - center.x)) < 64.0f) continue;
             for (UINT uSegment = 0; uSegment < GIZMO_RING_SEGMENTS; ++uSegment) {
                 const float fA = XM_2PI * uSegment / GIZMO_RING_SEGMENTS, fB = XM_2PI * (uSegment + 1) / GIZMO_RING_SEGMENTS;
                 XMFLOAT2 pointA, pointB;
                 if (!ScreenPoint(XMVectorSet(std::cos(fA), std::sin(fA), 0, 1), mvp, uWidth, uHeight, pointA) ||
-                    !ScreenPoint(XMVectorSet(std::cos(fB), std::sin(fB), 0, 1), mvp, uWidth, uHeight, pointB)) continue;
+                    !ScreenPoint(XMVectorSet(std::cos(fB), std::sin(fB), 0, 1), mvp, uWidth, uHeight, pointB)) {
+                    continue;
+                }
+
                 const float fDistance = SegmentDistance(static_cast<float>(x), static_cast<float>(y), pointA, pointB);
-                if (fDistance < fBest) { fBest = fDistance; nSelected = nAxis; }
+                if (fDistance < fBest) {
+                    fBest = fDistance;
+                    nSelected = nAxis;
+                }
             }
         } else {
             // 移動・拡縮: 軸の線分（中心付近は除く）との距離
             XMFLOAT2 pointA, pointB;
-            if (!ScreenPoint(XMVectorSet(0.20f,0,0,1), mvp, uWidth, uHeight, pointA) ||
-                !ScreenPoint(XMVectorSet(1,0,0,1), mvp, uWidth, uHeight, pointB)) continue;
+            if (!ScreenPoint(XMVectorSet(0.20f, 0, 0, 1), mvp, uWidth, uHeight, pointA) ||
+                !ScreenPoint(XMVectorSet(1, 0, 0, 1), mvp, uWidth, uHeight, pointB)) {
+                continue;
+            }
+
             if (std::hypot(pointB.x - pointA.x, pointB.y - pointA.y) < 8.0f) continue;
             const float fDistance = SegmentDistance(static_cast<float>(x), static_cast<float>(y), pointA, pointB);
-            if (fDistance < fBest) { fBest = fDistance; nSelected = nAxis; }
+            if (fDistance < fBest) {
+                fBest = fDistance;
+                nSelected = nAxis;
+            }
         }
     }
+
     return nSelected;
 }
 
 //==================================================================================
 // --- ギズモのドラッグによる変形の計算処理 ---
 //==================================================================================
-bool Renderer::DragGizmo(const DrawItem& start, GizmoMode mode, int axis,
-                         int startX, int startY, int x, int y, DrawItem& out) const {
+bool Renderer::DragGizmo(const DrawItem& start, GizmoMode mode, int axis, int startX, int startY, int x, int y,
+                         DrawItem& out) const {
     if (!p_ || axis < 0 || axis > 6) return false;
     if (axis >= 3 && axis <= 5 && mode != GizmoMode::Translate) return false;
     if (axis == 6 && mode != GizmoMode::Scale) return false;
@@ -598,47 +751,68 @@ bool Renderer::DragGizmo(const DrawItem& start, GizmoMode mode, int axis,
         const auto normal = axisNormal(axis - 3);
         XMVECTOR hitA, hitB;
         if (!PlaneHit(startX, startY, uWidth, uHeight, vp, center, normal, hitA) ||
-            !PlaneHit(x, y, uWidth, uHeight, vp, center, normal, hitB)) return false;
+            !PlaneHit(x, y, uWidth, uHeight, vp, center, normal, hitB)) {
+            return false;
+        }
+
         XMFLOAT3 delta{};
         XMStoreFloat3(&delta, XMVectorSubtract(hitB, hitA));
-        out.position.x += delta.x; out.position.y += delta.y; out.position.z += delta.z;
+        out.position.x += delta.x;
+        out.position.y += delta.y;
+        out.position.z += delta.z;
         return true;
     }
+
     if (axis == 6) { // 均等スケール: 右上へのドラッグで拡大
         const float fFactor = std::max(0.01f, 1.0f + (static_cast<float>(x - startX) - static_cast<float>(y - startY)) / 90.0f);
         if (!std::isfinite(fFactor)) return false;
-        out.scale.x *= fFactor; out.scale.y *= fFactor; out.scale.z *= fFactor;
+        out.scale.x *= fFactor;
+        out.scale.y *= fFactor;
+        out.scale.z *= fFactor;
         return true;
     }
+
     float fDelta = 0;
     if (mode == GizmoMode::Rotate) {
         // 回転: 回転軸に垂直な平面上で、開始点と現在点のなす角度
         const auto normal = axisNormal(axis);
         XMVECTOR hitA, hitB;
         if (!PlaneHit(startX, startY, uWidth, uHeight, vp, center, normal, hitA) ||
-            !PlaneHit(x, y, uWidth, uHeight, vp, center, normal, hitB)) return false;
+            !PlaneHit(x, y, uWidth, uHeight, vp, center, normal, hitB)) {
+            return false;
+        }
+
         if (XMVectorGetX(XMVector3LengthSq(hitA)) < 1e-10f || XMVectorGetX(XMVector3LengthSq(hitB)) < 1e-10f) return false;
         hitA = XMVector3Normalize(hitA);
         hitB = XMVector3Normalize(hitB);
-        fDelta = std::atan2(XMVectorGetX(XMVector3Dot(normal, XMVector3Cross(hitA, hitB))), XMVectorGetX(XMVector3Dot(hitA, hitB)));
+        fDelta =
+            std::atan2(XMVectorGetX(XMVector3Dot(normal, XMVector3Cross(hitA, hitB))), XMVectorGetX(XMVector3Dot(hitA, hitB)));
     } else {
         // 移動・拡縮: マウスの移動量を、画面上での軸の向きに投影する
         const auto mvp = GizmoAxisRotation(start, axis, mode) * XMMatrixScaling(fLength, fLength, fLength) *
                          XMMatrixTranslation(start.position.x, start.position.y, start.position.z) * vp;
         XMFLOAT2 pointA, pointB;
-        if (!ScreenPoint(XMVectorSet(0,0,0,1), mvp, uWidth, uHeight, pointA) ||
-            !ScreenPoint(XMVectorSet(1,0,0,1), mvp, uWidth, uHeight, pointB)) return false;
+        if (!ScreenPoint(XMVectorSet(0, 0, 0, 1), mvp, uWidth, uHeight, pointA) ||
+            !ScreenPoint(XMVectorSet(1, 0, 0, 1), mvp, uWidth, uHeight, pointB)) {
+            return false;
+        }
+
         const float fVx = pointB.x - pointA.x, fVy = pointB.y - pointA.y, fDenominator = fVx * fVx + fVy * fVy;
         if (fDenominator < 64.0f) return false;
         const float fRatio = ((x - startX) * fVx + (y - startY) * fVy) / fDenominator;
         fDelta = mode == GizmoMode::Translate ? fRatio * fLength : fRatio;
     }
+
     if (!std::isfinite(fDelta)) return false;
+
     // 対象の成分（移動 / 回転 / 拡縮 の X / Y / Z）に加える
     XMFLOAT3& target = mode == GizmoMode::Translate ? out.position : mode == GizmoMode::Rotate ? out.rotation : out.scale;
     float* pComponent = axis == 0 ? &target.x : axis == 1 ? &target.y : &target.z;
     *pComponent += fDelta;
-    if (mode == GizmoMode::Scale && std::abs(*pComponent) < 0.01f) *pComponent = *pComponent < 0 ? -0.01f : 0.01f; // 0 にはしない
+    if (mode == GizmoMode::Scale && std::abs(*pComponent) < 0.01f) {
+        *pComponent = *pComponent < 0 ? -0.01f : 0.01f; // 0 にはしない
+    }
+
     return true;
 }
 
@@ -647,12 +821,20 @@ bool Renderer::DragGizmo(const DrawItem& start, GizmoMode mode, int axis,
 //==================================================================================
 // 描画順: 1. モデルの頂点を送る → 2. シーンのオブジェクト → 3. グリッド →
 //         4. 補助線と選択のアウトライン → 5. ギズモ → 6. 範囲選択 → 7. 向き表示
-bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, int selected, bool showGrid, GizmoMode mode, bool showGizmo) {
+bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, int selected, bool showGrid, GizmoMode mode,
+                      bool showGizmo) {
     error.clear();
-    if (!p_ || !p_->pDevice) { error = "Renderer is not initialized"; return false; }
+    if (!p_ || !p_->pDevice) {
+        error = "Renderer is not initialized";
+        return false;
+    }
+
     auto& p = *p_;
     auto& device = *p.pDevice;
-    if (!p.sResizeError.empty()) { error = p.sResizeError; return false; } // 大きさ変更の失敗を報告
+    if (!p.sResizeError.empty()) {
+        error = p.sResizeError;
+        return false;
+    } // 大きさ変更の失敗を報告
 
     // 1. モデルの頂点を固定の頂点の後ろに並べて送る
     std::vector<UINT> vModelStarts(items.size(), 0), vModelCounts(items.size(), 0);
@@ -663,15 +845,19 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
             error = "Model vertex limit exceeded (1,048,576 vertices per frame).";
             return false;
         }
+
         vModelStarts[nIndex] = static_cast<UINT>(nCursor);
         vModelCounts[nIndex] = static_cast<UINT>(items[nIndex].pVertices->size());
         nCursor += items[nIndex].pVertices->size();
     }
+
     for (size_t nIndex = 0; nIndex < items.size(); ++nIndex) {
         if (!vModelCounts[nIndex]) continue;
         const auto& vModel = *items[nIndex].pVertices;
         static_assert(sizeof(XMFLOAT3) == sizeof(Vertex));
-        if (!device.UploadVertices(vModelStarts[nIndex], reinterpret_cast<const Vertex*>(vModel.data()), vModel.size(), error)) return false;
+        if (!device.UploadVertices(vModelStarts[nIndex], reinterpret_cast<const Vertex*>(vModel.data()), vModel.size(), error)) {
+            return false;
+        }
     }
 
     // 補助線はモデルのさらに後ろに書く
@@ -679,7 +865,10 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
     if (showGrid && !p.vDebugLines.empty() && nCursor + p.vDebugLines.size() <= MAX_VERTEX_COUNT) {
         uDebugStart = static_cast<UINT>(nCursor);
         uDebugCount = static_cast<UINT>(p.vDebugLines.size());
-        if (!device.UploadVertices(uDebugStart, reinterpret_cast<const Vertex*>(p.vDebugLines.data()), p.vDebugLines.size(), error)) return false;
+        if (!device.UploadVertices(uDebugStart, reinterpret_cast<const Vertex*>(p.vDebugLines.data()), p.vDebugLines.size(),
+                                   error)) {
+            return false;
+        }
     }
 
     // 2. シーンのオブジェクト（プロジェクトのシェーダー。シェーディング / ワイヤーフレーム）
@@ -694,6 +883,7 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
         if (!items[nIndex].bVisible) continue;
         (items[nIndex].color.w < 0.999f ? vTransparent : vOpaque).push_back(nIndex);
     }
+
     { // カメラ位置からの距離で半透明の物を並べ替える
         const float fCosPitch = std::cos(p.camera.fPitch);
         const XMFLOAT3 eye{p.camera.target.x + std::sin(p.camera.fYaw) * fCosPitch * p.camera.fDistance,
@@ -706,6 +896,7 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
         };
         std::sort(vTransparent.begin(), vTransparent.end(), [&](size_t a, size_t b) { return distance2(a) > distance2(b); });
     }
+
     // オブジェクト 1 つを描く（pOverride があればその色で描く。ワイヤーフレームの線色など）
     auto drawItem = [&](size_t nIndex, const XMFLOAT4* pOverride) {
         const auto& item = items[nIndex];
@@ -715,23 +906,32 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
             // 明るさの区間ごとに色を変えて描き、メッシュを立体的に見せる（暗い区間から順）
             const auto* pRuns = item.pShadeRuns.get();
             std::uint64_t nRunTotal = 0;
-            if (pRuns && !pOverride)
-                for (const auto nRun : *pRuns) nRunTotal += nRun;
+            if (pRuns && !pOverride) {
+                for (const auto nRun : *pRuns) {
+                    nRunTotal += nRun;
+                }
+            }
+
             if (pRuns && !pOverride && nRunTotal == vModelCounts[nIndex]) {
                 UINT uStart = vModelStarts[nIndex];
                 for (size_t nLevel = 0; nLevel < pRuns->size(); ++nLevel) {
                     const UINT uCount = (*pRuns)[nLevel];
                     if (uCount) {
-                        const float fShade = 0.45f + 0.55f * (static_cast<float>(nLevel) + 0.5f) / static_cast<float>(pRuns->size());
-                        device.Draw(MakeConstants(mvp, {color.x * fShade, color.y * fShade, color.z * fShade, color.w}), uCount, uStart);
+                        const float fShade =
+                            0.45f + 0.55f * (static_cast<float>(nLevel) + 0.5f) / static_cast<float>(pRuns->size());
+                        device.Draw(MakeConstants(mvp, {color.x * fShade, color.y * fShade, color.z * fShade, color.w}), uCount,
+                                    uStart);
                     }
+
                     uStart += uCount;
                 }
             } else { // 区間情報が無い / 合わない場合は 1 色で描く
                 device.Draw(MakeConstants(mvp, color), vModelCounts[nIndex], vModelStarts[nIndex]);
             }
+
             return;
         }
+
         {
             if (item.bIs2D) {
                 device.Draw(MakeConstants(mvp, color), 6, QUAD_START);
@@ -746,15 +946,30 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
             }
         }
     };
+
     // 全オブジェクトを描く（不透明 → 半透明）
     auto drawObjects = [&](bool bWireframe, const XMFLOAT4* pOverride) {
         device.SetPipeline(bWireframe ? PipelineKind::SCENE_WIREFRAME : PipelineKind::SCENE);
-        for (const size_t nIndex : vOpaque) drawItem(nIndex, pOverride);
-        if (!bWireframe && !vTransparent.empty()) device.SetPipeline(PipelineKind::SCENE_TRANSPARENT);
-        for (const size_t nIndex : vTransparent) drawItem(nIndex, pOverride);
+        for (const size_t nIndex : vOpaque) {
+            drawItem(nIndex, pOverride);
+        }
+
+        if (!bWireframe && !vTransparent.empty()) {
+            device.SetPipeline(PipelineKind::SCENE_TRANSPARENT);
+        }
+
+        for (const size_t nIndex : vTransparent) {
+            drawItem(nIndex, pOverride);
+        }
     };
-    if (drawMode != DrawMode::WIREFRAME) drawObjects(false, nullptr);
-    if (drawMode == DrawMode::WIREFRAME) drawObjects(true, nullptr);
+    if (drawMode != DrawMode::WIREFRAME) {
+        drawObjects(false, nullptr);
+    }
+
+    if (drawMode == DrawMode::WIREFRAME) {
+        drawObjects(true, nullptr);
+    }
+
     if (drawMode == DrawMode::SHADED_WIREFRAME) { // シェーディングの上に暗い線を重ねる
         constexpr XMFLOAT4 WIRE_COLOR{0.08f, 0.08f, 0.08f, 1.0f};
         drawObjects(true, &WIRE_COLOR);
@@ -773,18 +988,26 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
 
     // 4. 補助線と選択のアウトライン（主に選択中の物は最後に、明るいオレンジで）
     device.SetPipeline(PipelineKind::OVERLAY);
-    if (uDebugCount) device.Draw(MakeConstants(vp, p.debugColor), uDebugCount, uDebugStart);
+    if (uDebugCount) {
+        device.Draw(MakeConstants(vp, p.debugColor), uDebugCount, uDebugStart);
+    }
+
     auto outline = [&](int nIndex) {
         if (nIndex < 0 || static_cast<size_t>(nIndex) >= items.size()) return;
         const auto& item = items[nIndex];
         if (!item.bVisible) return;
         const auto color = nIndex == selected ? XMFLOAT4{1.0f, 0.63f, 0.08f, 1.0f} : XMFLOAT4{1.0f, 0.76f, 0.25f, 1.0f};
-        device.Draw(MakeConstants(XMMatrixScaling(1.025f, 1.025f, 1.025f) * World(item) * vp, color),
-                    item.bIs2D ? 8 : 24, item.bIs2D ? QUAD_LINES_START : CUBE_LINES_START);
+        device.Draw(MakeConstants(XMMatrixScaling(1.025f, 1.025f, 1.025f) * World(item) * vp, color), item.bIs2D ? 8 : 24,
+                    item.bIs2D ? QUAD_LINES_START : CUBE_LINES_START);
     };
     if (showGrid || showGizmo) {
-        for (int nIndex : p.vSelection) if (nIndex != selected) outline(nIndex);
+        for (int nIndex : p.vSelection) {
+            if (nIndex != selected) {
+                outline(nIndex);
+            }
+        }
     }
+
     outline(selected);
 
     // 5. 主に選択中の物の変形ギズモ
@@ -792,26 +1015,36 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
         const auto& item = items[selected];
         float fLength;
         if (GizmoLength(p.camera, item, p.uWidth, p.uHeight, fLength)) {
-            const auto base = XMMatrixScaling(fLength, fLength, fLength) * XMMatrixTranslation(item.position.x, item.position.y, item.position.z) * vp;
+            const auto base = XMMatrixScaling(fLength, fLength, fLength) *
+                              XMMatrixTranslation(item.position.x, item.position.y, item.position.z) * vp;
             for (int nAxis = 0; nAxis < 3; ++nAxis) {
-                const auto gizmoMvp = (mode == GizmoMode::Rotate ? RingRotation(nAxis) : GizmoAxisRotation(item, nAxis, mode)) * base;
+                const auto gizmoMvp =
+                    (mode == GizmoMode::Rotate ? RingRotation(nAxis) : GizmoAxisRotation(item, nAxis, mode)) * base;
                 const auto color = nAxis == p.nGizmoHot ? HOT_COLOR : AXIS_COLORS[nAxis];
+
                 // 線は 1 ピクセル幅しかないので、同じ図形を上下左右に 1 ピクセルずつ
                 // ずらして重ね描きし、3 ピクセル幅に見せる
-                constexpr float OFFSETS[][2] = {{0,0},{-1,0},{1,0},{0,-1},{0,1}};
+                constexpr float OFFSETS[][2] = {{0, 0}, {-1, 0}, {1, 0}, {0, -1}, {0, 1}};
                 for (const auto& offset : OFFSETS) {
-                    const auto shifted = gizmoMvp * XMMatrixTranslation(2.0f * offset[0] / p.uWidth, 2.0f * offset[1] / p.uHeight, 0);
-                    if (mode == GizmoMode::Rotate) device.Draw(MakeConstants(shifted, color), GIZMO_RING_SEGMENTS * 2, GIZMO_RING_START);
-                    else if (mode == GizmoMode::Scale) device.Draw(MakeConstants(shifted, color), 10, GIZMO_SCALE_START);
-                    else device.Draw(MakeConstants(shifted, color), 6, GIZMO_ARROW_START);
+                    const auto shifted =
+                        gizmoMvp * XMMatrixTranslation(2.0f * offset[0] / p.uWidth, 2.0f * offset[1] / p.uHeight, 0);
+                    if (mode == GizmoMode::Rotate) {
+                        device.Draw(MakeConstants(shifted, color), GIZMO_RING_SEGMENTS * 2, GIZMO_RING_START);
+                    } else if (mode == GizmoMode::Scale) {
+                        device.Draw(MakeConstants(shifted, color), 10, GIZMO_SCALE_START);
+                    } else {
+                        device.Draw(MakeConstants(shifted, color), 6, GIZMO_ARROW_START);
+                    }
                 }
             }
+
             if (mode == GizmoMode::Translate) {
                 for (int nNormal = 0; nNormal < 3; ++nNormal) {
                     const auto color = p.nGizmoHot == 3 + nNormal ? HOT_COLOR : AXIS_COLORS[nNormal];
                     device.Draw(MakeConstants(RingRotation(nNormal) * base, color), 8, GIZMO_PLANE_START);
                 }
             }
+
             if (mode == GizmoMode::Scale) {
                 XMFLOAT2 center;
                 if (ScreenPoint(XMVectorSet(0, 0, 0, 1), base, p.uWidth, p.uHeight, center)) {
@@ -845,16 +1078,20 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
             XMFLOAT3 direction{};
             XMStoreFloat3(&direction, XMVector3TransformNormal(XMVectorSet(nAxis == 0, nAxis == 1, nAxis == 2, 0), view));
             const float fDx = direction.x * 30.0f * fPixelX, fDy = direction.y * 30.0f * fPixelY;
+
             // 奥を向いている軸は暗くする（Unity と同じ）
             const float fShade = direction.z > 0.0f ? 0.55f : 1.0f;
             const XMFLOAT4 color{AXIS_COLORS[nAxis].x * fShade, AXIS_COLORS[nAxis].y * fShade, AXIS_COLORS[nAxis].z * fShade, 1};
+
             // +X の単位線分 (0,0,0)-(1,0,0) を、画面に投影した軸の向きへ写す行列
             const XMMATRIX shaft(fDx, fDy, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, fCenterX, fCenterY, 0, 1);
             for (const float fOffset : {-1.0f, 0.0f, 1.0f}) {
-                const auto thick = shaft * XMMatrixTranslation(fOffset * fPixelX * (std::abs(fDy) > std::abs(fDx) ? 1.0f : 0.0f),
-                                                               fOffset * fPixelY * (std::abs(fDy) > std::abs(fDx) ? 0.0f : 1.0f), 0);
+                const auto thick =
+                    shaft * XMMatrixTranslation(fOffset * fPixelX * (std::abs(fDy) > std::abs(fDx) ? 1.0f : 0.0f),
+                                                fOffset * fPixelY * (std::abs(fDy) > std::abs(fDx) ? 0.0f : 1.0f), 0);
                 device.Draw(MakeConstants(thick, color), 2, GIZMO_ARROW_START);
             }
+
             const auto letter = XMMatrixScaling(4.0f * fPixelX, 5.0f * fPixelY, 1) *
                                 XMMatrixTranslation(fCenterX + fDx * 1.35f, fCenterY + fDy * 1.35f, 0);
             device.Draw(MakeConstants(letter, color), LETTER_COUNTS[nAxis], LETTER_STARTS[nAxis]);
@@ -869,7 +1106,10 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
 //==================================================================================
 void Renderer::Shutdown() {
     if (!p_) return;
-    if (p_->pDevice) p_->pDevice->Shutdown();
+    if (p_->pDevice) {
+        p_->pDevice->Shutdown();
+    }
+
     p_.reset();
 }
 } // namespace dxs

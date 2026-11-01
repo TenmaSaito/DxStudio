@@ -11,34 +11,42 @@ bool Editor::ShellCommand(int id) {
         ApplyLanguage(id == ID_LANGUAGE_JAPANESE ? EditorLanguage::JAPANESE : EditorLanguage::ENGLISH);
         return true;
     }
+
     if (id == ID_EXIT) {
         SendMessageW(window, WM_CLOSE, 0, 0);
         return true;
     }
+
     if (id >= ID_MENU_BAR_FIRST && id < ID_MENU_BAR_FIRST + MENU_COUNT) {
         OpenMainMenu(id - ID_MENU_BAR_FIRST);
         return true;
     }
+
     if (id == ID_DRAW_MODE_MENU || id == ID_ASPECT_MENU) {
         ShowViewDropdown(id);
         return true;
     }
+
     if (id >= ID_DRAW_MODE_FIRST && id < ID_DRAW_MODE_FIRST + 3) {
         SetDrawMode(id - ID_DRAW_MODE_FIRST);
         return true;
     }
+
     if (id >= ID_ASPECT_FIRST && id < ID_ASPECT_FIRST + ASPECT_COUNT) {
         SetGameAspect(id - ID_ASPECT_FIRST);
         return true;
     }
+
     if (id == ID_VIEW_TAB_FIRST || id == ID_VIEW_TAB_FIRST + 1) {
         SelectViewTab(id == ID_VIEW_TAB_FIRST + 1);
         return true;
     }
+
     if (id >= ID_PANEL_TAB_FIRST && id < ID_PANEL_TAB_FIRST + BOTTOM_TAB_COUNT) {
         SelectBottomTab(id - ID_PANEL_TAB_FIRST);
         return true;
     }
+
     if (id == ID_SHOW_CONSOLE) {
         auto& p = panels[3];
         p.hidden = p.collapsed = false;
@@ -47,41 +55,54 @@ bool Editor::ShellCommand(int id) {
         Layout();
         return true;
     }
+
     if (id == ID_CLEAR_CONSOLE) {
         ClearConsolePanel(consolePanel);
         return true;
     }
+
     if (id == ID_PAUSE) {
         TogglePause();
         return true;
     }
+
     if (id == ID_STEP) {
         StepFrame();
         return true;
     }
+
     if (id >= ID_GRAPHICS_D3D12 && id <= ID_GRAPHICS_D3D9) {
         SwitchGraphicsApi(id == ID_GRAPHICS_D3D12   ? GraphicsApi::DIRECT3D12
                           : id == ID_GRAPHICS_D3D11 ? GraphicsApi::DIRECT3D11
                                                     : GraphicsApi::DIRECT3D9);
         return true;
     }
+
     if (id == ID_GRAPHICS_MENU || id == ID_LAYOUT_MENU) {
         ShowToolbarDropdown(id);
         return true;
     }
+
     if (id >= ID_ADD_COMPONENT_MENU_FIRST && id <= ID_ADD_COMPONENT_MENU_LAST) {
         const auto names = RegisteredComponentNames();
         const size_t index = static_cast<size_t>(id - ID_ADD_COMPONENT_MENU_FIRST);
-        if (index < names.size()) AttachToSelection(names[index]);
+        if (index < names.size()) {
+            AttachToSelection(names[index]);
+        }
+
         return true;
     }
+
     if (id == ID_OPEN_README) {
         const auto readme = base / L"README.md";
         if (reinterpret_cast<INT_PTR>(ShellExecuteW(window, L"open", readme.c_str(), nullptr, base.c_str(), SW_SHOWNORMAL)) <=
-            32)
+            32) {
             Error(window, "Could not open README.md.");
+        }
+
         return true;
     }
+
     if (id == ID_ABOUT) {
         const std::wstring text = L"DxStudio\n\nUnity / Unreal style C++20 editor.\nRenderer: " +
                                   Wide(GraphicsApiDisplayName(renderer.Api())) +
@@ -89,40 +110,56 @@ bool Editor::ShellCommand(int id) {
         MessageBoxL(window, text.c_str(), L"About DxStudio", MB_OK | MB_ICONINFORMATION);
         return true;
     }
+
     if (id >= ID_SECTION_TOGGLE && id < ID_SECTION_TOGGLE + 3 && IsOverTitlebarMenu(groupLabels[id - ID_SECTION_TOGGLE])) {
         ShowTitlebarMenu(groupLabels[id - ID_SECTION_TOGGLE]);
         return true;
     }
+
     if (id >= ID_COMPONENT_HEADER_FIRST && id < ID_COMPONENT_HEADER_FIRST + COMPONENT_VIEW_LIMIT) {
         for (auto& view : vComponentViews) {
             if (GetDlgCtrlID(view.hHeader) != id) continue;
-            if (IsOverTitlebarMenu(view.hHeader)) ShowTitlebarMenu(view.hHeader);
-            else {
+            if (IsOverTitlebarMenu(view.hHeader)) {
+                ShowTitlebarMenu(view.hHeader);
+            } else {
                 collapsedComponents[view.sName] = !collapsedComponents[view.sName];
                 LayoutPanel(2);
             }
+
             break;
         }
+
         return true;
     }
+
     if (id == ID_ADD_COMPONENT) {
         ShowAddComponentMenu();
         return true;
     }
+
     if (id >= ID_SECTION_TOGGLE && id < ID_SECTION_TOGGLE + 3) {
         aSectionOpen[id - ID_SECTION_TOGGLE] = !aSectionOpen[id - ID_SECTION_TOGGLE];
         LayoutPanel(2);
         return true;
     }
+
     if (id == ID_RESET_LAYOUT) {
         for (int i = 0; i < 4; ++i) {
-            if (panels[i].floating) FloatPanel(i);
+            if (panels[i].floating) {
+                FloatPanel(i);
+            }
+
             panels[i].hidden = panels[i].collapsed = false;
         }
-        for (int slot = 0; slot < SLOT_COUNT; ++slot) aSlotPanel[slot] = slot;
+
+        for (int slot = 0; slot < SLOT_COUNT; ++slot) {
+            aSlotPanel[slot] = slot;
+        }
+
         Layout();
         return true;
     }
+
     if (id == ID_SAVE_LAYOUT) {
         const auto path = projectRoot / L"EditorLayout.dxl";
         auto temp = path;
@@ -132,19 +169,27 @@ bool Editor::ShellCommand(int id) {
             Error(window, "Could not save the workspace layout.");
             return true;
         }
+
         file << "DXLAYOUT 2 " << nDockLeft << ' ' << nDockRight << ' ' << nDockProject << '\n';
-        for (const auto& panel : panels)
+        for (const auto& panel : panels) {
             file << (panel.floating ? 1 : 0) << ' ' << (panel.hidden ? 1 : 0) << ' ' << (panel.collapsed ? 1 : 0) << '\n';
-        for (const int panelIndex : aSlotPanel) file << panelIndex << ' ';
+        }
+
+        for (const int panelIndex : aSlotPanel) {
+            file << panelIndex << ' ';
+        }
+
         file << '\n';
         file.close();
         if (!file || !MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
             Error(window, "Could not finalize the workspace layout.");
             return true;
         }
+
         SetStatus(L"Workspace layout saved in the active project.");
         return true;
     }
+
     if (id == ID_LOAD_LAYOUT) {
         const auto path = projectRoot / L"EditorLayout.dxl";
         std::ifstream file(path, std::ios::binary);
@@ -152,16 +197,20 @@ bool Editor::ShellCommand(int id) {
         unsigned version{};
         int left{}, right{}, project{}, floating[4]{}, hidden[4]{}, collapsed[4]{};
         int slots[SLOT_COUNT] = {0, 1, 2, 3};
-        if (!file || !(file >> magic >> version >> left >> right >> project) || magic != "DXLAYOUT" || version < 1 || version > 2) {
+        if (!file || !(file >> magic >> version >> left >> right >> project) || magic != "DXLAYOUT" || version < 1 ||
+            version > 2) {
             Error(window, "No valid saved workspace layout was found.");
             return true;
         }
-        for (int i = 0; i < 4; ++i)
+
+        for (int i = 0; i < 4; ++i) {
             if (!(file >> floating[i] >> hidden[i] >> collapsed[i]) || (floating[i] & ~1) || (hidden[i] & ~1) ||
                 (collapsed[i] & ~1)) {
                 Error(window, "The saved workspace layout is invalid.");
                 return true;
             }
+        }
+
         if (version >= 2) {
             bool seen[SLOT_COUNT]{};
             for (int& panelIndex : slots) {
@@ -169,23 +218,30 @@ bool Editor::ShellCommand(int id) {
                     Error(window, "The saved workspace layout is invalid.");
                     return true;
                 }
+
                 seen[panelIndex] = true;
             }
         }
+
         std::copy(std::begin(slots), std::end(slots), std::begin(aSlotPanel));
         nDockLeft = left;
         nDockRight = right;
         nDockProject = project;
         nInspectorScroll = 0;
         for (int i = 0; i < 4; ++i) {
-            if (panels[i].floating != (floating[i] != 0)) FloatPanel(i);
+            if (panels[i].floating != (floating[i] != 0)) {
+                FloatPanel(i);
+            }
+
             panels[i].hidden = hidden[i] != 0;
             panels[i].collapsed = collapsed[i] != 0;
         }
+
         Layout();
         SetStatus(L"Saved workspace layout restored.");
         return true;
     }
+
     int index = -1;
     if (id >= ID_PANEL_SHOW && id < ID_PANEL_SHOW + 4) {
         index = id - ID_PANEL_SHOW;
@@ -198,21 +254,26 @@ bool Editor::ShellCommand(int id) {
     } else if (id >= ID_PANEL_MINIMIZE && id < ID_PANEL_MINIMIZE + 4) {
         index = id - ID_PANEL_MINIMIZE;
         auto& p = panels[index];
-        if (p.floating)
+        if (p.floating) {
             ShowWindow(p.window, IsIconic(p.window) ? SW_RESTORE : SW_MINIMIZE);
-        else
+        } else {
             p.collapsed = !p.collapsed;
+        }
     } else if (id >= ID_PANEL_HIDE && id < ID_PANEL_HIDE + 4) {
         index = id - ID_PANEL_HIDE;
         panels[index].hidden = true;
     }
+
     if (index < 0) return false;
     Layout();
     return true;
 }
 
 void Editor::ShowObjectMenu(POINT point) {
-    if (point.x == -1 && point.y == -1) GetCursorPos(&point);
+    if (point.x == -1 && point.y == -1) {
+        GetCursorPos(&point);
+    }
+
     HMENU menu = CreatePopupMenu();
     AppendMenuL(menu, MF_STRING, ID_ADD_EMPTY, L"Create Empty");
     AppendPrimitiveMenus(menu);
@@ -223,11 +284,16 @@ void Editor::ShowObjectMenu(POINT point) {
     AppendMenuL(menu, MF_STRING | availability, ID_DELETE, L"Delete selection");
     const int action = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, window, nullptr);
     DestroyMenu(menu);
-    if (action) Command(action, BN_CLICKED);
+    if (action) {
+        Command(action, BN_CLICKED);
+    }
 }
 
 void Editor::ShowComponentMenu(POINT point) {
-    if (point.x == -1 && point.y == -1) GetCursorPos(&point);
+    if (point.x == -1 && point.y == -1) {
+        GetCursorPos(&point);
+    }
+
     if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
     auto& entity = scene.vEntities[nSelected];
     const int selectedRow = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
@@ -243,22 +309,29 @@ void Editor::ShowComponentMenu(POINT point) {
                 ID_MOVE_COMPONENT_DOWN, L"Move Down");
     const int action = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, window, nullptr);
     DestroyMenu(menu);
-    if (action) Command(action, BN_CLICKED);
+    if (action) {
+        Command(action, BN_CLICKED);
+    }
 }
 
 void Editor::RefreshTransport() {
     theme::SetButtonIcon(controls[9], bPlaying ? theme::Icon::STOP : theme::Icon::PLAY);
-    for (HWND button : {controls[9], pauseButton, stepButton})
+    for (HWND button : {controls[9], pauseButton, stepButton}) {
         InvalidateRect(button, nullptr, FALSE);
+    }
+
     // The toolbar tints blue while playing, as a clear Play Mode cue.
     RECT r{};
     GetClientRect(window, &r);
     RECT top{0, 0, r.right, TOP_CHROME_HEIGHT};
     InvalidateRect(window, &top, TRUE);
-    for (HWND button : menuButtons)
+    for (HWND button : menuButtons) {
         InvalidateRect(button, nullptr, FALSE);
-    for (HWND button : {controls[4], controls[5], controls[6], controls[7], controls[10], graphicsButton, layoutButton})
+    }
+
+    for (HWND button : {controls[4], controls[5], controls[6], controls[7], controls[10], graphicsButton, layoutButton}) {
         InvalidateRect(button, nullptr, FALSE);
+    }
 }
 
 void Editor::TogglePlay() {
@@ -293,6 +366,7 @@ void Editor::TogglePlay() {
         SelectViewTab(false);
         SetStatus(L"Play Mode stopped. Runtime changes were discarded.");
     }
+
     RefreshTransport();
 }
 
@@ -302,17 +376,21 @@ void Editor::TogglePause() {
     nPlayTick = GetTickCount64();
     EngineEvents::Get().onPauseChanged.Broadcast(bPaused);
     SetStatus(bPaused ? L"Paused. Step advances one frame."
-                     : (bPlaying ? L"PLAY MODE resumed." : L"Pause armed: Play starts paused."));
+                      : (bPlaying ? L"PLAY MODE resumed." : L"Pause armed: Play starts paused."));
     RefreshTransport();
 }
 
 void Editor::StepFrame() {
-    if (!bPlaying) TogglePlay();
+    if (!bPlaying) {
+        TogglePlay();
+    }
+
     if (!bPlaying) return;
     if (!bPaused) {
         bPaused = true;
         EngineEvents::Get().onPauseChanged.Broadcast(true);
     }
+
     bStepRequested = true;
     SetStatus(L"Stepped one frame.");
     RefreshTransport();
@@ -322,7 +400,10 @@ void Editor::SwitchGraphicsApi(GraphicsApi api) {
     if (api == projectSettings.graphicsApi && renderer.IsInitialized() && renderer.Api() == api) return;
     projectSettings.graphicsApi = api;
     std::string error;
-    if (!SaveProjectSettings(projectRoot / PROJECT_SETTINGS_FILE_NAME, projectSettings, error)) Debug::LogWarning(error);
+    if (!SaveProjectSettings(projectRoot / PROJECT_SETTINGS_FILE_NAME, projectSettings, error)) {
+        Debug::LogWarning(error);
+    }
+
     if (InitRenderer()) {
         const auto message = std::wstring(L"Graphics API: ") + Wide(GraphicsApiDisplayName(renderer.Api())) +
                              L". Exported games use this setting too.";
@@ -331,9 +412,8 @@ void Editor::SwitchGraphicsApi(GraphicsApi api) {
 }
 
 void Editor::UpdateGraphicsBadge() {
-    SetWindowTextW(
-        graphicsButton,
-        Wide(GraphicsApiShortName(renderer.IsInitialized() ? renderer.Api() : projectSettings.graphicsApi)).c_str());
+    SetWindowTextW(graphicsButton,
+                   Wide(GraphicsApiShortName(renderer.IsInitialized() ? renderer.Api() : projectSettings.graphicsApi)).c_str());
     InvalidateRect(graphicsButton, nullptr, FALSE);
     Layout(); // the badge width follows its label
 }
@@ -343,11 +423,13 @@ void Editor::AttachToSelection(const std::string& name) {
         Error(window, "Select exactly one GameObject to add a component.");
         return;
     }
+
     std::string error;
     if (!AttachComponent(scene.vEntities[nSelected], name, error)) {
         Error(window, error);
         return;
     }
+
     Inspect();
     SetStatus(L"Component attached. Save or export to keep it.");
 }
@@ -357,30 +439,41 @@ void Editor::LoadSettings() {
     std::string error;
     const auto path = projectRoot / PROJECT_SETTINGS_FILE_NAME;
     std::error_code ec;
-    if (std::filesystem::exists(path, ec) && !LoadProjectSettings(path, projectSettings, error)) Debug::LogWarning(error);
+    if (std::filesystem::exists(path, ec) && !LoadProjectSettings(path, projectSettings, error)) {
+        Debug::LogWarning(error);
+    }
 }
 
 bool Editor::SwitchProject(const std::filesystem::path& descriptor) {
-    if (bPlaying) TogglePlay();
+    if (bPlaying) {
+        TogglePlay();
+    }
+
     std::filesystem::path root;
     std::string error;
     if (!LoadProjectDescriptor(descriptor, root, error)) {
         Error(window, error);
         return false;
     }
+
     Scene loaded;
     if (!LoadScene(root / L"scene.dxs", loaded, error)) {
         Error(window, error);
         return false;
     }
+
     std::error_code ec;
     if (!std::filesystem::is_regular_file(root / L"Default.hlsl", ec) || ec) {
         Error(window, "The project does not contain Default.hlsl.");
         return false;
     }
+
     renderer.Shutdown();
     bRendererReady = false;
-    if (projectPanel) DestroyWindow(projectPanel);
+    if (projectPanel) {
+        DestroyWindow(projectPanel);
+    }
+
     projectRoot = root;
     projectFile = descriptor;
     scene = std::move(loaded);
@@ -403,14 +496,19 @@ bool Editor::NewProject() {
     std::filesystem::path requested;
     std::string error;
     if (!ChooseProjectDescriptor(window, true, base, requested, error)) {
-        if (!error.empty()) Error(window, error);
+        if (!error.empty()) {
+            Error(window, error);
+        }
+
         return false;
     }
+
     const auto projectName = requested.stem().wstring();
     if (projectName.empty() || projectName == L"." || projectName == L"..") {
         Error(window, "Enter a valid project name.");
         return false;
     }
+
     const auto root = requested.parent_path() / projectName;
     const auto descriptor = root / (projectName + L".dxproject");
     std::error_code ec;
@@ -418,6 +516,7 @@ bool Editor::NewProject() {
         Error(window, "A folder with that project name already exists. Choose another name.");
         return false;
     }
+
     for (const auto& folder : {root / L"Scripts", root / L"Assets" / L"Models", root / L"Assets" / L"Materials",
                                root / L"Assets" / L"Textures", root / L"Assets" / L"Animations"}) {
         std::filesystem::create_directories(folder, ec);
@@ -426,17 +525,20 @@ bool Editor::NewProject() {
             return false;
         }
     }
+
     std::filesystem::copy_file(base / L"project" / L"Default.hlsl", root / L"Default.hlsl", ec);
     if (ec) {
         Error(window, "Could not copy the default shader: " + ec.message());
         return false;
     }
+
     Material defaultMaterial;
     defaultMaterial.sName = "Default";
     if (!SaveMaterial(root / L"Assets" / L"Materials" / L"Default.dxmat", defaultMaterial, error)) {
         Error(window, error);
         return false;
     }
+
     Scene fresh;
     fresh.projectRoot = root;
     Entity mainCamera;
@@ -451,11 +553,13 @@ bool Editor::NewProject() {
         Error(window, error);
         return false;
     }
+
     std::wstring generationError;
     if (!GenerateVisualStudioProject(root, base, generationError)) {
         Error(window, Utf8(generationError));
         return false;
     }
+
     return SwitchProject(descriptor);
 }
 
@@ -465,15 +569,19 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
         Error(window, "The build script is missing.");
         return false;
     }
+
     if (IsTaskRunning()) {
         Error(window, "A build is already running (Build > Cancel build stops it).");
         return false;
     }
+
     std::wstring command = L"cmd.exe /d /s /c \"\"" + script.wstring() + L"\" \"" + projectRoot.wstring() + L"\"\"";
+
     // Expected Gradle task count: from the previous successful build (read
     // before the script overwrites the log), else a typical full build.
     const int nPreviousTasks = CountBuildLogTasks(base / std::filesystem::path(scriptName).stem() / L"build.log");
     const int nExpectedTasks = nPreviousTasks > 0 ? nPreviousTasks : 40;
+
     // The script, Gradle and its Java processes go into one job object, so
     // Cancel (or closing the editor) stops the whole tree.
     HANDLE hJob = CreateJobObjectW(nullptr, nullptr);
@@ -482,15 +590,23 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         SetInformationJobObject(hJob, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
     }
+
     STARTUPINFOW startup{sizeof(startup)};
     PROCESS_INFORMATION process{};
-    if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, base.c_str(),
-                        &startup, &process)) {
-        if (hJob) CloseHandle(hJob);
+    if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr,
+                        base.c_str(), &startup, &process)) {
+        if (hJob) {
+            CloseHandle(hJob);
+        }
+
         Error(window, "Could not start the build process.");
         return false;
     }
-    if (hJob) AssignProcessToJobObject(hJob, process.hProcess);
+
+    if (hJob) {
+        AssignProcessToJobObject(hJob, process.hProcess);
+    }
+
     ResumeThread(process.hThread);
     CloseHandle(process.hThread);
 
@@ -511,7 +627,10 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
                 const auto driveFile = log.parent_path() / L"temp-drive.txt";
                 std::wifstream in(driveFile);
                 std::wstring sDrive;
-                if (in >> sDrive && sDrive.size() == 2 && sDrive[1] == L':') DefineDosDeviceW(DDD_REMOVE_DEFINITION, sDrive.c_str(), nullptr);
+                if (in >> sDrive && sDrive.size() == 2 && sDrive[1] == L':') {
+                    DefineDosDeviceW(DDD_REMOVE_DEFINITION, sDrive.c_str(), nullptr);
+                }
+
                 in.close();
                 std::error_code ec;
                 std::filesystem::remove(driveFile, ec);
@@ -519,20 +638,28 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
                 Debug::LogWarning(Utf8(sLabel) + " build canceled.");
                 return;
             }
+
             if (*pExitCode != 0) {
-                const std::string message = "The build failed.\n\n" + SummarizeBuildLog(log) + "\nFull log: " + Utf8(log.wstring());
+                const std::string message =
+                    "The build failed.\n\n" + SummarizeBuildLog(log) + "\nFull log: " + Utf8(log.wstring());
                 Debug::LogError(message);
                 SetStatus(L"Build failed.");
                 Error(window, message);
                 return;
             }
+
             const auto completed = sLabel + L" build completed.";
             SetStatus(completed.c_str());
             Debug::Log(Utf8(completed));
             MessageBoxL(window, completed.c_str(), L"Build", MB_OK | MB_ICONINFORMATION);
         },
         hJob);
-    if (pTask) pTask->progress = [log, nExpectedTasks] { return BuildLogProgress(log, nExpectedTasks); };
+    if (pTask) {
+        pTask->progress = [log, nExpectedTasks] {
+            return BuildLogProgress(log, nExpectedTasks);
+        };
+    }
+
     return true;
 }
 
@@ -542,36 +669,65 @@ std::string SummarizeBuildLog(const std::filesystem::path& log) {
     std::ifstream file(log, std::ios::binary);
     std::vector<std::string> vLines;
     for (std::string line; std::getline(file, line);) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (line.size() > 220) line = line.substr(0, 217) + "...";
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        if (line.size() > 220) {
+            line = line.substr(0, 217) + "...";
+        }
+
         vLines.push_back(std::move(line));
     }
+
     std::vector<std::string> vSummary;
     for (size_t nIndex = 0; nIndex < vLines.size(); ++nIndex) {
         if (vLines[nIndex].find("What went wrong") == std::string::npos) continue;
         for (size_t nNext = nIndex + 1; nNext < vLines.size() && nNext <= nIndex + 8; ++nNext) {
             if (vLines[nNext].rfind("* Try", 0) == 0) break;
-            if (!vLines[nNext].empty()) vSummary.push_back(vLines[nNext]);
+            if (!vLines[nNext].empty()) {
+                vSummary.push_back(vLines[nNext]);
+            }
         }
+
         break; // the first failure is the cause
     }
-    for (const auto& line : vLines)
-        if (line.rfind("ERROR:", 0) == 0 && std::find(vSummary.begin(), vSummary.end(), line) == vSummary.end()) vSummary.push_back(line);
-    if (vSummary.empty()) {
-        for (const auto& line : vLines)
-            if (!line.empty()) vSummary.push_back(line);
-        if (vSummary.size() > 12) vSummary.erase(vSummary.begin(), vSummary.end() - 12);
+
+    for (const auto& line : vLines) {
+        if (line.rfind("ERROR:", 0) == 0 && std::find(vSummary.begin(), vSummary.end(), line) == vSummary.end()) {
+            vSummary.push_back(line);
+        }
     }
+
+    if (vSummary.empty()) {
+        for (const auto& line : vLines) {
+            if (!line.empty()) {
+                vSummary.push_back(line);
+            }
+        }
+
+        if (vSummary.size() > 12) {
+            vSummary.erase(vSummary.begin(), vSummary.end() - 12);
+        }
+    }
+
     std::string sText;
-    for (const auto& line : vSummary) sText += line + "\n";
+    for (const auto& line : vSummary) {
+        sText += line + "\n";
+    }
+
     return sText;
 }
 
 bool Editor::StartBackgroundTask(std::wstring sLabel, std::function<void()> work, std::function<void()> onDone, HANDLE hJob) {
     if (IsTaskRunning()) {
-        if (hJob) CloseHandle(hJob);
+        if (hJob) {
+            CloseHandle(hJob);
+        }
+
         return false;
     }
+
     pTask = std::make_unique<BackgroundTask>();
     pTask->sLabel = std::move(sLabel);
     pTask->nStartTick = GetTickCount64();
@@ -591,10 +747,19 @@ bool Editor::StartBackgroundTask(std::wstring sLabel, std::function<void()> work
 
 void Editor::FinishBackgroundTask() {
     if (!pTask) return;
-    if (pTask->worker.joinable()) pTask->worker.join();
+    if (pTask->worker.joinable()) {
+        pTask->worker.join();
+    }
+
     KillTimer(window, TASK_STATUS_TIMER);
-    if (pTask->onDone) pTask->onDone(); // may read pTask (e.g. bCanceled)
-    if (pTask && pTask->hJob) CloseHandle(pTask->hJob);
+    if (pTask->onDone) {
+        pTask->onDone(); // may read pTask (e.g. bCanceled)
+    }
+
+    if (pTask && pTask->hJob) {
+        CloseHandle(pTask->hJob);
+    }
+
     pTask.reset();
     Layout(); // hide the gauge
 }
@@ -605,24 +770,41 @@ void Editor::CancelBackgroundTask(bool bWaitForWorker) {
         pTask->bCanceled = true;
         TerminateJobObject(pTask->hJob, 1);
     }
+
     if (!bWaitForWorker) {
         SetStatus(pTask->hJob ? L"Canceling the build..." : L"An export cannot be canceled; it finishes shortly.");
         return;
     }
+
     // Shutting down: wait for the worker, drop the completion callback.
-    if (pTask->worker.joinable()) pTask->worker.join();
-    if (pTask->hJob) CloseHandle(pTask->hJob);
+    if (pTask->worker.joinable()) {
+        pTask->worker.join();
+    }
+
+    if (pTask->hJob) {
+        CloseHandle(pTask->hJob);
+    }
+
     pTask.reset();
 }
 
 void Editor::UpdateTaskStatus() {
     if (!pTask) return;
-    if (pTask->progress) pTask->fProgress = pTask->progress();
+    if (pTask->progress) {
+        pTask->fProgress = pTask->progress();
+    }
+
     const auto nSeconds = (GetTickCount64() - pTask->nStartTick) / 1000;
     std::wstring text = pTask->sLabel + L"...  ";
-    if (pTask->fProgress >= 0.0f) text += std::to_wstring(static_cast<int>(pTask->fProgress * 100.0f)) + L"%   ";
+    if (pTask->fProgress >= 0.0f) {
+        text += std::to_wstring(static_cast<int>(pTask->fProgress * 100.0f)) + L"%   ";
+    }
+
     text += std::to_wstring(nSeconds) + L" s" + (pTask->hJob ? L"   (Build > Cancel build to stop)" : L"");
-    if (Text(status) != text) SetStatus(text.c_str());
+    if (Text(status) != text) {
+        SetStatus(text.c_str());
+    }
+
     InvalidateRect(progressGauge, nullptr, FALSE);
 }
 
@@ -647,10 +829,15 @@ void Editor::DrawProgressGauge(const DRAWITEMSTRUCT& item) {
         fill.left = track.left + static_cast<int>(dPosition * (nWidth - nBlock));
         fill.right = fill.left + nBlock;
     }
-    if (fill.right > fill.left) theme::RoundFill(hDc, fill, 2, theme::COLOR_FOCUS, theme::COLOR_FOCUS);
+
+    if (fill.right > fill.left) {
+        theme::RoundFill(hDc, fill, 2, theme::COLOR_FOCUS, theme::COLOR_FOCUS);
+    }
+
     if (fProgress >= 0.0f) {
         const std::wstring sPercent = std::to_wstring(static_cast<int>(fProgress * 100.0f)) + L"%";
-        theme::DrawLabel(hDc, sPercent, rect, theme::COLOR_TEXT_BRIGHT, theme::GetFonts().hSmall ? theme::GetFonts().hSmall : theme::GetFonts().hRegular,
+        theme::DrawLabel(hDc, sPercent, rect, theme::COLOR_TEXT_BRIGHT,
+                         theme::GetFonts().hSmall ? theme::GetFonts().hSmall : theme::GetFonts().hRegular,
                          DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 }
@@ -659,24 +846,30 @@ namespace {
 // Reads a log that the build is still writing (shared access).
 std::vector<std::string> ReadSharedLines(const std::filesystem::path& log) {
     std::vector<std::string> vLines;
-    HANDLE hFile = CreateFileW(log.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-                               FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE hFile = CreateFileW(log.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE) return vLines;
     std::string sText;
     char aBuffer[16384];
     DWORD dwRead = 0;
-    while (ReadFile(hFile, aBuffer, sizeof(aBuffer), &dwRead, nullptr) && dwRead > 0 && sText.size() < 8u * 1024u * 1024u)
+    while (ReadFile(hFile, aBuffer, sizeof(aBuffer), &dwRead, nullptr) && dwRead > 0 && sText.size() < 8u * 1024u * 1024u) {
         sText.append(aBuffer, dwRead);
+    }
+
     CloseHandle(hFile);
     size_t nStart = 0;
     while (nStart <= sText.size()) {
         const size_t nEnd = sText.find('\n', nStart);
         std::string line = sText.substr(nStart, nEnd == std::string::npos ? std::string::npos : nEnd - nStart);
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
         vLines.push_back(std::move(line));
         if (nEnd == std::string::npos) break;
         nStart = nEnd + 1;
     }
+
     return vLines;
 }
 } // namespace
@@ -685,10 +878,19 @@ int CountBuildLogTasks(const std::filesystem::path& log) {
     int nTasks = 0;
     bool bSucceeded = false;
     for (const auto& line : ReadSharedLines(log)) {
-        if (line.rfind("Offline build failed", 0) == 0) nTasks = 0; // the online retry starts over
-        if (line.rfind("> Task ", 0) == 0) ++nTasks;
-        if (line.find("BUILD SUCCESSFUL") != std::string::npos) bSucceeded = true;
+        if (line.rfind("Offline build failed", 0) == 0) {
+            nTasks = 0; // the online retry starts over
+        }
+
+        if (line.rfind("> Task ", 0) == 0) {
+            ++nTasks;
+        }
+
+        if (line.find("BUILD SUCCESSFUL") != std::string::npos) {
+            bSucceeded = true;
+        }
     }
+
     return bSucceeded ? nTasks : 0;
 }
 
@@ -698,10 +900,19 @@ float BuildLogProgress(const std::filesystem::path& log, int nExpectedTasks) {
     int nTasks = 0;
     bool bGradleStarted = false;
     for (const auto& line : ReadSharedLines(log)) {
-        if (line.rfind("Gradle:", 0) == 0) bGradleStarted = true;
-        if (line.rfind("Offline build failed", 0) == 0) nTasks = 0;
-        if (line.rfind("> Task ", 0) == 0) ++nTasks;
+        if (line.rfind("Gradle:", 0) == 0) {
+            bGradleStarted = true;
+        }
+
+        if (line.rfind("Offline build failed", 0) == 0) {
+            nTasks = 0;
+        }
+
+        if (line.rfind("> Task ", 0) == 0) {
+            ++nTasks;
+        }
     }
+
     if (!bGradleStarted) return 0.02f;
     const float fTasks = static_cast<float>(nTasks) / static_cast<float>(std::max(nExpectedTasks, nTasks + 1));
     return std::min(0.05f + 0.93f * fTasks, 0.98f);
@@ -721,9 +932,12 @@ bool Editor::InitRenderer() {
         SetStatus(L"Renderer unavailable. Fix the shader and select Reload Shader.");
         return false;
     }
-    if (renderer.Api() != projectSettings.graphicsApi)
+
+    if (renderer.Api() != projectSettings.graphicsApi) {
         Debug::LogWarning(std::string(GraphicsApiDisplayName(projectSettings.graphicsApi)) + " is unavailable; using " +
                           GraphicsApiDisplayName(renderer.Api()) + ".\n" + report);
+    }
+
     renderer.SetCamera(camera);
     bRendererReady = true;
     SetStatus(L"RMB + WASD/QE: fly | Alt + RMB: orbit | MMB: pan | Shift + gizmo: snap");
@@ -740,33 +954,44 @@ void Editor::Draw() {
         const ULONGLONG now = GetTickCount64();
         float dt = std::clamp(static_cast<float>(now - nPlayTick) / 1000.0f, 0.0f, 0.1f);
         nPlayTick = now;
+
         // Paused: the scene is frozen; Step advances exactly one 1/60 s frame.
         if (!bPaused || bStepRequested) {
-            if (bStepRequested) dt = 1.0f / 60.0f;
+            if (bStepRequested) {
+                dt = 1.0f / 60.0f;
+            }
+
             bStepRequested = false;
             UpdateUserComponents(scene, dt);
             RefreshComponentFields();
         }
     }
+
     renderer.SetCamera(bPlaying || bGameView ? ActiveGameCamera(scene) : camera);
     renderer.SetDrawMode(drawMode);
     auto items = ResolveWorldDraws(scene);
     std::string error;
     renderer.SetSelection(bGameView ? std::vector<int>{} : vSelectedIndices);
-    renderer.SetDebugLines(bGameView ? std::vector<DirectX::XMFLOAT3>{} : ColliderOutlineSegments(scene), {0.55f, 0.95f, 0.45f, 1.0f});
-    const bool rendered = bGameView ? renderer.Render(items, error) : renderer.Render(items, error, nSelected, true, gizmoMode, true);
+    renderer.SetDebugLines(bGameView ? std::vector<DirectX::XMFLOAT3>{} : ColliderOutlineSegments(scene),
+                           {0.55f, 0.95f, 0.45f, 1.0f});
+    const bool rendered =
+        bGameView ? renderer.Render(items, error) : renderer.Render(items, error, nSelected, true, gizmoMode, true);
     if (!rendered) {
         bRendererReady = false;
         Error(window, "Rendering failed: " + error);
         SetStatus(L"Rendering stopped. Select Reload Shader to retry.");
     }
+
     UpdateFrameStats();
 }
 
 void Editor::UpdateFrameStats() {
     ++nFpsFrames;
     const ULONGLONG now = GetTickCount64();
-    if (!nFpsTick) nFpsTick = now;
+    if (!nFpsTick) {
+        nFpsTick = now;
+    }
+
     if (now - nFpsTick < 500) return;
     const double fps = nFpsFrames * 1000.0 / static_cast<double>(now - nFpsTick);
     nFpsFrames = 0;
@@ -782,73 +1007,95 @@ void Editor::Command(int id, int notification) {
         TogglePlay();
         return;
     }
+
     if (bPlaying && (id == ID_SAVE || id == ID_LOAD || id == ID_OPEN_PROJECT || id == ID_SAVE_PROJECT_AS || id == ID_EXPORT ||
-                    id == ID_BUILD_ANDROID || id == ID_RELOAD_SHADER)) {
+                     id == ID_BUILD_ANDROID || id == ID_RELOAD_SHADER)) {
         Error(window, "Stop Play Mode before saving, loading, switching, exporting, building, or reloading the shader.");
         return;
     }
+
     if (id == ID_PERSPECTIVE || id == ID_ORTHOGRAPHIC || id == ID_FRONT_VIEW) {
         camera.bOrthographic = id != ID_PERSPECTIVE;
         if (id == ID_FRONT_VIEW) {
             camera.fYaw = 0;
             camera.fPitch = 0;
         }
+
         renderer.SetCamera(camera);
         InvalidateRect(window, nullptr, TRUE);
-        for (auto button : projectionButtons)
+        for (auto button : projectionButtons) {
             InvalidateRect(button, nullptr, TRUE);
+        }
+
         SetStatus(camera.bOrthographic ? L"Orthographic camera. Save or export to keep this camera view."
-                                      : L"Perspective camera. Quads and cubes share the same 3D world.");
+                                       : L"Perspective camera. Quads and cubes share the same 3D world.");
         return;
     }
+
     if (id == ID_FRAME_SELECTION) {
         FrameSelection();
         return;
     }
+
     if (id == ID_NEW_PROJECT) {
         NewProject();
         return;
     }
+
     if (id == ID_CHOOSE_SCRIPT_EDITOR) {
         ChooseProjectScriptEditor(projectPanel);
         return;
     }
+
     if (id == ID_AUTOMATIC_SCRIPT_EDITOR) {
         UseAutomaticProjectScriptEditor(projectPanel);
         return;
     }
+
     if (id == ID_OPEN_PROJECT) {
         std::filesystem::path descriptor;
         std::string error;
-        if (ChooseProjectDescriptor(window, false, projectFile.empty() ? projectRoot : projectFile, descriptor, error))
+        if (ChooseProjectDescriptor(window, false, projectFile.empty() ? projectRoot : projectFile, descriptor, error)) {
             SwitchProject(descriptor);
-        else if (!error.empty())
+        } else if (!error.empty()) {
             Error(window, error);
+        }
+
         return;
     }
+
     if (id == ID_SAVE_PROJECT_AS) {
         std::filesystem::path descriptor;
         std::string error;
         if (ChooseProjectDescriptor(window, true, projectFile.empty() ? projectRoot : projectFile, descriptor, error)) {
-            if (!SaveProjectDescriptor(descriptor, projectRoot, error))
+            if (!SaveProjectDescriptor(descriptor, projectRoot, error)) {
                 Error(window, error);
-            else {
+            } else {
                 projectFile = descriptor;
                 SetStatus(L"Project file saved.");
             }
-        } else if (!error.empty())
+        } else if (!error.empty()) {
             Error(window, error);
+        }
+
         return;
     }
+
     if (id == ID_CANCEL_BUILD) {
-        if (IsTaskRunning()) CancelBackgroundTask(false);
-        else SetStatus(L"No build is running.");
+        if (IsTaskRunning()) {
+            CancelBackgroundTask(false);
+        } else {
+            SetStatus(L"No build is running.");
+        }
+
         return;
     }
+
     if (id == ID_BUILD_ANDROID) {
         RunBuildScript(L"build-android.cmd", L"Android Debug APK");
         return;
     }
+
     if (id == ID_PLATFORM_INFO) {
         MessageBoxL(window,
                     L"Windows x64: DirectX 12 export and in-editor Play Mode are available.\n\n"
@@ -857,49 +1104,66 @@ void Editor::Command(int id, int notification) {
                     L"Build platforms", MB_OK | MB_ICONINFORMATION);
         return;
     }
+
     if (id == ID_HIERARCHY && notification == LBN_SELCHANGE) {
         const int count = static_cast<int>(SendMessageW(hierarchy, LB_GETSELCOUNT, 0, 0));
         std::vector<int> rows(count > 0 ? count : 0), next;
-        if (count > 0) SendMessageW(hierarchy, LB_GETSELITEMS, count, reinterpret_cast<LPARAM>(rows.data()));
-        for (const int row : rows)
-            if (row >= 0 && static_cast<size_t>(row) < vHierarchyRows.size()) next.push_back(vHierarchyRows[row]);
+        if (count > 0) {
+            SendMessageW(hierarchy, LB_GETSELITEMS, count, reinterpret_cast<LPARAM>(rows.data()));
+        }
+
+        for (const int row : rows) {
+            if (row >= 0 && static_cast<size_t>(row) < vHierarchyRows.size()) {
+                next.push_back(vHierarchyRows[row]);
+            }
+        }
+
         const int caretRow = static_cast<int>(SendMessageW(hierarchy, LB_GETCARETINDEX, 0, 0));
-        const int caret =
-            caretRow >= 0 && static_cast<size_t>(caretRow) < vHierarchyRows.size() ? vHierarchyRows[caretRow] : -1;
+        const int caret = caretRow >= 0 && static_cast<size_t>(caretRow) < vHierarchyRows.size() ? vHierarchyRows[caretRow] : -1;
+
         // Apply only typed-but-unapplied values: Apply() rebuilds the list,
         // which would break a drag that starts with this click.
         if (InspectorHasPendingEdits() && !Apply()) {
             SyncHierarchy();
             return;
         }
+
         SetSelection(std::move(next), caret);
         return;
     }
+
     if (id == ID_HIERARCHY_SEARCH && notification == EN_CHANGE) {
         Populate();
         return;
     }
+
     if (id == ID_INSPECTOR_ENABLED && notification == BN_CLICKED) {
         if (nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size() && vSelectedIndices.size() == 1) {
             bInspectorEnabledChecked = !bInspectorEnabledChecked;
             InvalidateRect(inspectorEnabled, nullptr, FALSE);
             scene.vEntities[nSelected].draw.bVisible = bInspectorEnabledChecked;
             SetStatus(scene.vEntities[nSelected].draw.bVisible ? L"GameObject enabled."
-                                                            : L"GameObject disabled. It remains in the hierarchy.");
+                                                               : L"GameObject disabled. It remains in the hierarchy.");
             InvalidateRect(viewport, nullptr, FALSE);
         }
+
         return;
     }
+
     if (id == ID_COMPONENT_LIST && notification == LBN_SELCHANGE) {
         RefreshComponentFields();
         return;
     }
+
     if (id == ID_COMPONENT_FIELDS && notification == LBN_SELCHANGE) {
         const int index = static_cast<int>(SendMessageW(componentFields, LB_GETCURSEL, 0, 0));
-        if (index >= 0 && static_cast<size_t>(index) < vInspectedComponentFields.size())
+        if (index >= 0 && static_cast<size_t>(index) < vInspectedComponentFields.size()) {
             SetWindowTextW(componentValue, Wide(vInspectedComponentFields[index].second).c_str());
+        }
+
         return;
     }
+
     if (notification != BN_CLICKED) return;
     if (id == ID_CREATE_MENU) {
         RECT r{};
@@ -907,6 +1171,7 @@ void Editor::Command(int id, int notification) {
         ShowObjectMenu({r.left, r.bottom});
         return;
     }
+
     if (id == ID_APPLY_COMPONENT_VALUE) {
         if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
         auto& entity = scene.vEntities[nSelected];
@@ -917,16 +1182,19 @@ void Editor::Command(int id, int notification) {
             Error(window, "Select a component field first.");
             return;
         }
+
         std::string error;
         if (!SetComponentEditorValue(entity, static_cast<size_t>(componentIndex), vInspectedComponentFields[fieldIndex].first,
-                                     Utf8(Text(componentValue)), error))
+                                     Utf8(Text(componentValue)), error)) {
             Error(window, error);
-        else {
+        } else {
             RefreshComponentFields();
             SetStatus(L"Component field applied. Values remain live during Play Mode.");
         }
+
         return;
     }
+
     if (id == ID_ADD_COMPONENT && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size()) {
         if (!Apply()) return;
         int choice = static_cast<int>(SendMessageW(componentChoice, CB_GETCURSEL, 0, 0));
@@ -934,6 +1202,7 @@ void Editor::Command(int id, int notification) {
             Error(window, "Choose a registered component first.");
             return;
         }
+
         int length = static_cast<int>(SendMessageW(componentChoice, CB_GETLBTEXTLEN, choice, 0));
         std::wstring value(static_cast<size_t>(length) + 1, L'\0');
         SendMessageW(componentChoice, CB_GETLBTEXT, choice, reinterpret_cast<LPARAM>(value.data()));
@@ -943,11 +1212,15 @@ void Editor::Command(int id, int notification) {
             auto& entity = scene.vEntities[nSelected];
             if (name == "MeshRenderer") {
                 entity.renderer = Entity::RendererKind::Mesh;
-                if (entity.sModelAsset.empty()) entity.sModelAsset = PrimitiveAssetPath(PrimitiveShape::CUBE);
+                if (entity.sModelAsset.empty()) {
+                    entity.sModelAsset = PrimitiveAssetPath(PrimitiveShape::CUBE);
+                }
+
                 Populate();
                 SetStatus(L"MeshRenderer attached. Pick a mesh with the Mesh field's button.");
                 return;
             }
+
             entity.renderer = name == "PolygonRenderer" ? Entity::RendererKind::Polygon
                               : name == "ModelRenderer" ? Entity::RendererKind::Model
                                                         : Entity::RendererKind::Image;
@@ -956,16 +1229,19 @@ void Editor::Command(int id, int notification) {
                 entity.renderer = Entity::RendererKind::None;
                 return;
             }
+
             Inspect();
             SetStatus(L"IRender component attached at compile-time-known renderer type.");
             return;
         }
+
         auto& components = scene.vEntities[nSelected].vComponents;
         std::string attachError;
         if (!AttachComponent(scene.vEntities[nSelected], name, attachError)) {
             Error(window, attachError);
             return;
         }
+
         Inspect();
         SendMessageW(componentList, LB_SETCURSEL,
                      static_cast<WPARAM>(components.size() - 1 +
@@ -979,6 +1255,7 @@ void Editor::Command(int id, int notification) {
             Error(window, "Select an attached component to remove.");
             return;
         }
+
         if (!Apply()) return;
         auto& components = scene.vEntities[nSelected].vComponents;
         auto& entity = scene.vEntities[nSelected];
@@ -991,6 +1268,7 @@ void Editor::Command(int id, int notification) {
                 DetachComponent(entity, static_cast<size_t>(index));
             }
         }
+
         Inspect();
         SetStatus(L"Component detached. Its serialized Inspector values were removed.");
     } else if ((id == ID_MOVE_COMPONENT_UP || id == ID_MOVE_COMPONENT_DOWN) && nSelected >= 0 &&
@@ -1013,8 +1291,10 @@ void Editor::Command(int id, int notification) {
         }
     } else if (id >= ID_MOVE_MODE && id <= ID_SCALE_MODE) {
         gizmoMode = id == ID_MOVE_MODE ? GizmoMode::Translate : id == ID_ROTATE_MODE ? GizmoMode::Rotate : GizmoMode::Scale;
-        for (auto button : gizmoButtons)
+        for (auto button : gizmoButtons) {
             InvalidateRect(button, nullptr, TRUE);
+        }
+
         SetStatus(L"Drag a colored axis to transform. Esc cancels a drag.");
     } else if (id >= ID_ADD_PRIMITIVE_FIRST && id < ID_ADD_PRIMITIVE_FIRST + static_cast<int>(PRIMITIVES.size())) {
         AddPrimitive(PRIMITIVES[static_cast<size_t>(id - ID_ADD_PRIMITIVE_FIRST)].shape);
@@ -1050,6 +1330,7 @@ void Editor::Command(int id, int notification) {
             Error(window, Utf8(importError));
             return;
         }
+
         Entity entity;
         entity.sName = Utf8(source.stem().wstring());
         entity.renderer = Entity::RendererKind::Mesh;
@@ -1064,13 +1345,15 @@ void Editor::Command(int id, int notification) {
         if (!Apply()) return;
         std::vector<int> duplicates;
         duplicates.reserve(vSelectedIndices.size());
-        for (int source : vSelectedIndices)
+        for (int source : vSelectedIndices) {
             if (source >= 0 && static_cast<size_t>(source) < scene.vEntities.size()) {
                 Entity copy = scene.vEntities[static_cast<size_t>(source)];
                 copy.sName += " (Clone)";
                 scene.vEntities.push_back(std::move(copy));
                 duplicates.push_back(static_cast<int>(scene.vEntities.size()) - 1);
             }
+        }
+
         if (!duplicates.empty()) {
             vSelectedIndices = duplicates;
             nSelected = duplicates.back();
@@ -1078,19 +1361,23 @@ void Editor::Command(int id, int notification) {
             SetStatus(L"Selection duplicated. Ctrl+D repeats this action.");
         }
     } else if (id == ID_DELETE && nSelected >= 0 && nSelected < static_cast<int>(scene.vEntities.size())) {
-        if (vSelectedIndices.size() > 1 && MessageBoxL(window, L"Remove all selected objects from the scene?",
-                                                      L"Delete objects", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
+        if (vSelectedIndices.size() > 1 && MessageBoxL(window, L"Remove all selected objects from the scene?", L"Delete objects",
+                                                       MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES) {
             return;
+        }
+
         for (auto it = vSelectedIndices.rbegin(); it != vSelectedIndices.rend(); ++it) {
             const int removed = *it;
             scene.vEntities.erase(scene.vEntities.begin() + removed);
             for (auto& entity : scene.vEntities) {
-                if (entity.nParent == removed)
+                if (entity.nParent == removed) {
                     entity.nParent = -1;
-                else if (entity.nParent > removed)
+                } else if (entity.nParent > removed) {
                     --entity.nParent;
+                }
             }
         }
+
         vSelectedIndices.clear();
         nSelected = -1;
         Populate();
@@ -1102,22 +1389,26 @@ void Editor::Command(int id, int notification) {
             Error(window, "The existing scene could not be loaded. Fix it and use Load before saving.");
             return;
         }
+
         if (!Apply()) return;
         std::string error;
-        if (!SaveScene(projectRoot / L"scene.dxs", scene, error))
+        if (!SaveScene(projectRoot / L"scene.dxs", scene, error)) {
             Error(window, error);
-        else
+        } else {
             SetStatus(L"Scene saved to the active project.");
+        }
     } else if (id == ID_LOAD) {
         Scene loaded;
         std::string error;
-        if (!LoadScene(projectRoot / L"scene.dxs", loaded, error))
+        if (!LoadScene(projectRoot / L"scene.dxs", loaded, error)) {
             Error(window, error);
-        else {
+        } else {
             scene = std::move(loaded);
             renderer.SetCamera(camera);
-            for (auto button : projectionButtons)
+            for (auto button : projectionButtons) {
                 InvalidateRect(button, nullptr, TRUE);
+            }
+
             bSceneProtected = false;
             nSelected = scene.vEntities.empty() ? -1 : 0;
             vSelectedIndices = nSelected < 0 ? std::vector<int>{} : std::vector<int>{nSelected};
@@ -1129,30 +1420,42 @@ void Editor::Command(int id, int notification) {
             Error(window, "The existing scene could not be loaded. Fix it and use Load before exporting.");
             return;
         }
+
         if (!Apply()) return;
         std::string error;
         std::filesystem::path destination;
         if (!ChooseExportFolder(window, base, destination, error)) {
-            if (!error.empty()) Error(window, error);
+            if (!error.empty()) {
+                Error(window, error);
+            }
+
             return;
         }
+
         std::error_code ec;
         bool existing = false;
         for (const auto& file : {L"Game.exe", L"scene.dxs", L"Default.vs.cso", L"Default.ps.cso"}) {
-            if (std::filesystem::exists(destination / file, ec)) existing = true;
+            if (std::filesystem::exists(destination / file, ec)) {
+                existing = true;
+            }
+
             if (ec) {
                 Error(window, "Could not check the export folder: " + ec.message());
                 return;
             }
         }
+
         if (existing &&
-            MessageBoxL(window, L"The selected folder already contains one or more exported game files. Replace them?",
-                        L"Export", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
+            MessageBoxL(window, L"The selected folder already contains one or more exported game files. Replace them?", L"Export",
+                        MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES) {
             return;
+        }
+
         if (IsTaskRunning()) {
             Error(window, "Wait for the running build to finish (or use Build > Cancel build).");
             return;
         }
+
         // Export on a worker thread from a copy of the scene, so editing and
         // Play stay responsive while shaders compile and files are copied.
         auto pError = std::make_shared<std::string>();
@@ -1160,14 +1463,14 @@ void Editor::Command(int id, int notification) {
         Scene snapshot = scene;
         const auto baseDir = base, projectDir = projectRoot;
         StartBackgroundTask(
-            L"Exporting game",
-            [=]() mutable { *pOk = ExportGame(baseDir, projectDir, destination, snapshot, *pError); },
+            L"Exporting game", [=]() mutable { *pOk = ExportGame(baseDir, projectDir, destination, snapshot, *pError); },
             [this, pError, pOk, destination] {
                 if (!*pOk) {
                     SetStatus(L"Export failed.");
                     Error(window, *pError);
                     return;
                 }
+
                 SetStatus(L"Export complete. Run Game.exe in the selected folder.");
                 MessageBoxL(window, (L"Exported to:\n" + destination.wstring()).c_str(), L"Export complete", MB_OK);
             });

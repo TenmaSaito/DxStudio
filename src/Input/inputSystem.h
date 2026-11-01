@@ -51,29 +51,40 @@ public:
     void Uninit(void);                                        // 終了
     void Update(void);                                        // 更新（デバイス → アクションマップの順）
 
-    CInputActionMap* CreateActionMap(std::string_view sName);                               // アクションマップの作成（同名があればそれを返す）
+    CInputActionMap* CreateActionMap(std::string_view sName); // アクションマップの作成（同名があればそれを返す）
     CInputAction* FindAction(std::string_view sMapName, std::string_view sActionName) const; // アクションの検索
-    float ReadControl(const INPUT_CONTROL_PATH& path) const; // ボタン / 軸の値の取得
-    Vector3 ReadStick(const INPUT_CONTROL_PATH& path) const; // スティックの値の取得
+    float ReadControl(const INPUT_CONTROL_PATH& path) const;                                 // ボタン / 軸の値の取得
+    Vector3 ReadStick(const INPUT_CONTROL_PATH& path) const;                                 // スティックの値の取得
+
     CInputKeyboard* GetKeyboard(void) const { return m_pKeyboard.get(); }
+
     CInputMouse* GetMouse(void) const { return m_pMouse.get(); }
+
     CJoypad* GetJoypad(void) const { return m_pJoypad.get(); }
 
     // ---- DxStudio で追加 ----------------------------------------------------
     [[nodiscard]] bool IsInitialized(void) const { return static_cast<bool>(m_pKeyboard); } // 初期化済みか
+
     CInputActionMap* FindActionMap(std::string_view sName) const; // アクションマップの検索
+
     [[nodiscard]] const std::vector<std::unique_ptr<CInputActionMap>>& GetActionMaps(void) const { return m_vpActionMap; }
+
     // デバイスの読み取り元の差し替え（テスト用）。nullptr で Win32 に戻す。
     void SetSource(IInputSource* pSource);
+
     // アクションファイル / キー名表の相対パスの基準となるプロジェクトのフォルダー
     void SetAssetRoot(const std::filesystem::path& root);
+
     [[nodiscard]] const std::filesystem::path& GetAssetRoot(void) const { return m_assetRoot; }
+
     // Assets/Input/keyboardKeys.csv を 1 回だけ読み込む（無ければ組み込みのキー名を使う）
     void EnsureKeyTable(void);
+
     // アクションファイル / テキストを読み込む。ファイルは 1 回だけ読む。既にある
     // マップにはアクションが追加される（同じ名前のアクションは既存の物を使う）。
     bool LoadActionsFile(const std::filesystem::path& file, std::string& error);
     bool LoadActionsText(std::string_view sText, std::string& error, std::string_view sSourceName = "actions");
+
     // 操作の名前 → 入力受付の情報: キーボードのキー名（keyboardKeys.csv）または 0x のスキャンコード、
     // Mouse.Left/Right/Middle、Pad[2].A/B/X/Y/LB/RB/Start/Back/Up/...、
     // Pad.LeftStick/RightStick、Pad.LeftStickUp...、Pad.LeftX/LeftY/RightX/RightY/LeftTrigger/RightTrigger
