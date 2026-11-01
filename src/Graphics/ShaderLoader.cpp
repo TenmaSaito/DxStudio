@@ -1,3 +1,12 @@
+//==================================================================================
+//
+// シェーダー読み込みのソースファイル [ShaderLoader.cpp]
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "ShaderLoader.h"
 #include "GraphicsDevice.h"
 
@@ -9,6 +18,10 @@
 
 namespace dxs::graphics {
 
+//**********************************************************************************
+// *** 組み込みの単色シェーダー ***
+//**********************************************************************************
+// mvp で座標変換し、color 一色で塗るだけのシェーダー（project/Default.hlsl と同じ決まり）
 const char* const BUILTIN_FLAT_SHADER_SOURCE = R"(
 cbuffer ObjectConstants : register(b0) {
     row_major float4x4 mvp;
@@ -24,6 +37,9 @@ PixelInput VSMain(VertexInput input) {
 float4 PSMain(PixelInput input) : SV_TARGET { return color; }
 )";
 
+//==================================================================================
+// --- HRESULT 付きのエラー文の作成処理 ---
+//==================================================================================
 std::string FormatHResult(const char* pAction, long nResult) {
     char aBuffer[160];
     std::snprintf(aBuffer, sizeof(aBuffer), "%s (HRESULT 0x%08lX)", pAction, static_cast<unsigned long>(nResult));
@@ -31,14 +47,17 @@ std::string FormatHResult(const char* pAction, long nResult) {
 }
 
 namespace {
+// --- コンパイルオプションの取得処理 ---
 UINT CompileFlags(const ShaderProfile& profile) {
+    // SM3 は古い書き方も通す後方互換モード、SM5 は厳密モード
     UINT uFlags = profile.bLegacy ? D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY : D3DCOMPILE_ENABLE_STRICTNESS;
 #if defined(_DEBUG)
-    uFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+    uFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION; // デバッグビルドはシェーダーもデバッグ可能にする
 #endif
     return uFlags;
 }
 
+// --- コンパイラのメッセージ（無ければ HRESULT）の取得処理 ---
 std::string DiagnosticText(ID3DBlob* pDiagnostics, const char* pFallback, HRESULT hr) {
     if (pDiagnostics && pDiagnostics->GetBufferSize()) {
         return std::string(static_cast<const char*>(pDiagnostics->GetBufferPointer()), pDiagnostics->GetBufferSize());
@@ -47,9 +66,13 @@ std::string DiagnosticText(ID3DBlob* pDiagnostics, const char* pFallback, HRESUL
 }
 } // namespace
 
+//==================================================================================
+// --- シェーダーの読み込み処理（ファイル） ---
+//==================================================================================
 bool LoadShaderPair(const std::wstring& sPath, const ShaderProfile& profile, ShaderPair& shaders, std::string& error) {
     const std::filesystem::path shaderFile(sPath);
     if (shaderFile.extension() == L".cso") {
+        // コンパイル済み: Default.cso → Default<接尾辞>.vs.cso と Default<接尾辞>.ps.cso
         auto vertexFile = shaderFile;
         auto pixelFile = shaderFile;
         const std::wstring sSuffix = profile.pCompiledSuffix ? profile.pCompiledSuffix : L"";
@@ -67,6 +90,7 @@ bool LoadShaderPair(const std::wstring& sPath, const ShaderProfile& profile, Sha
         }
         return true;
     }
+    // HLSL ソース: エントリポイントごとにコンパイル（#include は標準の方法で解決）
     auto compile = [&](const char* pEntry, const char* pTarget, ComPtr<ID3DBlob>& pOutput) {
         ComPtr<ID3DBlob> pDiagnostics;
         const HRESULT hr = D3DCompileFromFile(sPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, pEntry, pTarget,
@@ -78,6 +102,9 @@ bool LoadShaderPair(const std::wstring& sPath, const ShaderProfile& profile, Sha
            compile("PSMain", profile.pPixelTarget, shaders.pPixelShader);
 }
 
+//==================================================================================
+// --- シェーダーのコンパイル処理（メモリ上のソース） ---
+//==================================================================================
 bool CompileShaderSource(const char* pSource, const ShaderProfile& profile, ShaderPair& shaders, std::string& error) {
     auto compile = [&](const char* pEntry, const char* pTarget, ComPtr<ID3DBlob>& pOutput) {
         ComPtr<ID3DBlob> pDiagnostics;
@@ -90,6 +117,9 @@ bool CompileShaderSource(const char* pSource, const ShaderProfile& profile, Shad
            compile("PSMain", profile.pPixelTarget, shaders.pPixelShader);
 }
 
+//==================================================================================
+// --- API に応じたデバイスの生成処理 ---
+//==================================================================================
 std::unique_ptr<IGraphicsDevice> CreateGraphicsDevice(GraphicsApi api) {
     switch (api) {
     case GraphicsApi::DIRECT3D11: return CreateDeviceD3D11();
