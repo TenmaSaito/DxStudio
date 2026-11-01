@@ -1,5 +1,14 @@
-// Rigidbody / collider simulation and collision / trigger callbacks.
+//==================================================================================
+//
+// 物理のテスト [PhysicsTests.cpp]
+//
+// Rigidbody / コライダーのシミュレーションと、衝突 / トリガーのコールバック。
+//
+//==================================================================================
 
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Engine.h"
 
 #include <cmath>
@@ -32,12 +41,18 @@ DXS_REGISTER_COMPONENT(HitCounter)
 
 int g_nFailures = 0;
 
+//==================================================================================
+// --- 確認処理 ---
+//==================================================================================
 void Check(bool bCondition, const char* pWhat) {
     if (bCondition) return;
     std::cerr << "FAILED: " << pWhat << '\n';
     ++g_nFailures;
 }
 
+//==================================================================================
+// --- テスト用のエンティティの作成処理 ---
+//==================================================================================
 dxs::Entity MakeEntity(const char* pName, DirectX::XMFLOAT3 position, std::vector<std::string> vComponents) {
     dxs::Entity entity;
     entity.sName = pName;
@@ -46,12 +61,18 @@ dxs::Entity MakeEntity(const char* pName, DirectX::XMFLOAT3 position, std::vecto
     return entity;
 }
 
+//==================================================================================
+// --- 床の作成処理 ---
+//==================================================================================
 dxs::Entity Floor() {
     auto floor = MakeEntity("Floor", {0, 0, 0}, {"BoxCollider"});
-    floor.draw.scale = {20, 1, 20}; // top face at y = 0.5
+    floor.draw.scale = {20, 1, 20}; // 上の面は y = 0.5
     return floor;
 }
 
+//==================================================================================
+// --- fSeconds 秒分のシミュレーション処理 ---
+//==================================================================================
 void Run(dxs::Scene& scene, float fSeconds) {
     for (float fTime = 0; fTime < fSeconds; fTime += 1.0f / 60.0f) {
         dxs::UpdateUserComponents(scene, 1.0f / 60.0f);
@@ -59,10 +80,13 @@ void Run(dxs::Scene& scene, float fSeconds) {
 }
 } // namespace
 
+//==================================================================================
+// --- メイン関数 ---
+//==================================================================================
 int main() {
     using dxs::Entity;
 
-    // 1. A sphere falls onto a static floor and comes to rest on it.
+    // 1. 球が動かない床に落ち、その上で止まる
     {
         dxs::Scene scene;
         scene.vEntities.push_back(Floor());
@@ -82,13 +106,13 @@ int main() {
         Check(pCounter && pCounter->m_nFixed >= 150 && pCounter->m_nFixed <= 180, "FixedUpdate runs at 50 Hz");
         Check(scene.vEntities[0].draw.position.y == 0.0f, "static floor never moves");
 
-        // Lifting the ball off the floor reports OnCollisionExit.
+        // 球を床から持ち上げると OnCollisionExit が呼ばれる
         pBody->AddForce({0, 8, 0}, dxs::ForceMode::VELOCITY_CHANGE);
         Run(scene, 0.2f);
         Check(pCounter->m_nExit == 1, "jumping off the floor reports OnCollisionExit");
     }
 
-    // 2. A box lands flat; a box rotated 45 degrees around Y lands too (OBB).
+    // 2. 箱が平らに着地し、45 度回転した箱も着地する（OBB）
     {
         dxs::Scene scene;
         scene.vEntities.push_back(Floor());
@@ -97,7 +121,7 @@ int main() {
         rotated.draw.rotation = {0, DirectX::XM_PIDIV4, 0};
         scene.vEntities.push_back(rotated);
         auto tilted = MakeEntity("Tilted", {0, 3, 3}, {"BoxCollider", "Rigidbody"});
-        tilted.draw.rotation = {0, 0, DirectX::XM_PIDIV4}; // stands on an edge: lowest point at y - 0.707
+        tilted.draw.rotation = {0, 0, DirectX::XM_PIDIV4}; // 辺で立つ: 一番低い点は y - 0.707
         scene.vEntities.push_back(tilted);
         Run(scene, 3.0f);
         Check(std::abs(scene.vEntities[1].draw.position.y - 1.0f) < 0.03f, "box rests on the floor (y = 1)");
@@ -106,7 +130,7 @@ int main() {
         Check(std::abs(scene.vEntities[1].draw.position.x + 2.0f) < 0.01f, "box does not slide sideways");
     }
 
-    // 3. Bounciness 1 bounces back up; a kinematic body ignores gravity.
+    // 3. Bounciness 1 なら跳ね返り、Kinematic の物体は重力を受けない
     {
         dxs::Scene scene;
         scene.vEntities.push_back(Floor());
@@ -116,7 +140,7 @@ int main() {
         auto kinematic = MakeEntity("Platform", {3, 4, 0}, {"BoxCollider", "Rigidbody"});
         kinematic.componentProperties["Rigidbody"]["Is Kinematic"] = "true";
         scene.vEntities.push_back(kinematic);
-        Run(scene, 1.0f); // falls 3 m in ~0.78 s, then bounces
+        Run(scene, 1.0f); // 約 0.78 秒で 3m 落ちてから跳ねる
         float fHighest = 0.0f;
         for (int nFrame = 0; nFrame < 40; ++nFrame) {
             Run(scene, 1.0f / 60.0f);
@@ -127,7 +151,7 @@ int main() {
         Check(scene.vEntities[2].draw.position.y == 4.0f, "kinematic body is not moved by gravity");
     }
 
-    // 4. Triggers report enter / exit and do not block.
+    // 4. トリガーは入った / 出たことを知らせ、押し返さない
     {
         dxs::Scene scene;
         auto zone = MakeEntity("Zone", {0, 2, 0}, {"BoxCollider"});
@@ -142,7 +166,7 @@ int main() {
         Check(pCounter && pCounter->m_nEnter == 0, "triggers do not send OnCollisionEnter");
     }
 
-    // 5. A dynamic box pushes another (momentum is shared by mass).
+    // 5. 動く箱がもう 1 つを押す（運動量は質量に応じて分かれる）
     {
         dxs::Scene scene;
         dxs::physics::SetGravity({0, 0, 0});
@@ -159,7 +183,7 @@ int main() {
         dxs::physics::SetGravity({0, -9.81f, 0});
     }
 
-    // 6. Collider outlines for the Scene view (edit mode uses saved values).
+    // 6. シーンビューのコライダーの輪郭（編集中は保存値を使う）
     {
         dxs::Scene scene;
         auto box = MakeEntity("Box", {0, 0, 0}, {"BoxCollider"});
@@ -176,10 +200,10 @@ int main() {
         Check(std::abs(fMaxX - 2.0f) < 1e-4f, "box outline uses the saved Size X");
     }
 
-    // 7. MeshCollider: a static concave mesh floor, and a convex mesh body.
+    // 7. MeshCollider: 動かない凹んだメッシュの床と、凸包のメッシュの物体
     {
         dxs::Scene scene;
-        scene.projectRoot = "project"; // built-in primitives in project/Assets/Primitives
+        scene.projectRoot = "project"; // 組み込みの基本図形は project/Assets/Primitives にある
         auto ground = MakeEntity("MeshFloor", {0, 0, 0}, {"MeshCollider"});
         ground.renderer = Entity::RendererKind::Mesh;
         ground.sModelAsset = dxs::PrimitiveAssetPath(dxs::PrimitiveShape::CUBE);
@@ -205,16 +229,16 @@ int main() {
         Check(!dxs::ColliderOutlineSegments(scene).empty(), "mesh collider outline");
     }
 
-    // 8. Combining colliders: two shapes on one object, and a compound body
-    //    whose child collider (no Rigidbody) belongs to the parent.
+    // 8. コライダーの組み合わせ: 1 つの物体に 2 つの形、および子のコライダー
+    //    （Rigidbody なし）が親の一部になる複合の物体
     {
         dxs::Scene scene;
         scene.vEntities.push_back(Floor());
         auto multi = MakeEntity("Multi", {-4, 4, 0}, {"BoxCollider", "SphereCollider", "Rigidbody"});
-        multi.componentProperties["SphereCollider"]["Center Y"] = "-1"; // a "foot" below the box
+        multi.componentProperties["SphereCollider"]["Center Y"] = "-1"; // 箱の下の「足」
         scene.vEntities.push_back(multi);
         scene.vEntities.push_back(MakeEntity("Parent", {3, 4, 0}, {"BoxCollider", "Rigidbody", "HitCounter"}));
-        auto child = MakeEntity("Child", {0.8f, 0, 0}, {"SphereCollider", "HitCounter"}); // overlaps the parent box
+        auto child = MakeEntity("Child", {0.8f, 0, 0}, {"SphereCollider", "HitCounter"}); // 親の箱と重なる
         child.nParent = 2;
         scene.vEntities.push_back(child);
         Run(scene, 3.0f);

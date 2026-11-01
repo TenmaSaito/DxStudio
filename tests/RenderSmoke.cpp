@@ -1,7 +1,21 @@
+//==================================================================================
+//
+// 描画の簡易テスト [RenderSmoke.cpp]
+//
+// Direct3D 12 の描画、カメラ、選択、ギズモ、グリッド、大きさの変更、ソース無しの書き出し。
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Engine.h"
 #include <cmath>
 #include <iostream>
 
+//==================================================================================
+// --- メイン関数 ---
+//==================================================================================
 int main() {
     HINSTANCE instance = GetModuleHandleW(nullptr);
     WNDCLASSW wc{};
@@ -19,15 +33,15 @@ int main() {
         return 3;
     }
 
-    // Explicit front orthographic camera: handles are 90 pixels at the origin.
-    // Quad geometry itself no longer selects an independent projection.
+    // 正面からの平行投影のカメラ: 原点でハンドルの長さは 90 ピクセル
+    // 四角形の形によって別の投影が選ばれることは無い
     dxs::Camera frontCamera;
     frontCamera.bOrthographic = true;
     frontCamera.fPitch = 0;
     renderer.SetCamera(frontCamera);
 
-    // Verify hit tests,
-    // drag mapping and a quarter-turn without depending on scene contents.
+    // 当たり判定、
+    // ドラッグの対応と 90 度の回転を、シーンの中身に依存せずに確認する
     dxs::DrawItem sprite;
     sprite.bIs2D = true;
     dxs::DrawItem changed;
@@ -100,8 +114,8 @@ int main() {
         if (!renderer.Render({sprite}, error, 0, true, mode, true)) return 26;
     }
 
-    // A world-space quad follows perspective depth and shares occlusion with
-    // cubes. Its screen bounds differ from orthographic projection.
+    // ワールド空間の四角形は透視投影の奥行きに従い、立方体と前後関係を
+    // 共有する。画面上の範囲は平行投影とは異なる。
     dxs::Camera perspective = frontCamera;
     perspective.bOrthographic = false;
     renderer.SetCamera(perspective);
@@ -142,8 +156,8 @@ int main() {
 
     renderer.SetCamera(dxs::Camera{});
 
-    // Test picking with both projections and transformed geometry, as well as
-    // misses, changed camera target and resized viewport.
+    // 両方の投影と変形した形での選択、および外れた場合、
+    // 注視点を変えた場合、ビューポートの大きさを変えた場合を確認する
     dxs::DrawItem cube;
     cube.rotation.y = 0.4f;
     std::vector<dxs::DrawItem> one{cube};

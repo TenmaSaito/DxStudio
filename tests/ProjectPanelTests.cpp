@@ -1,3 +1,15 @@
+//==================================================================================
+//
+// Project パネルのテスト [ProjectPanelTests.cpp]
+//
+// ファイルの取り込み（上書きしない、取り消し、プロジェクトの外に出ない）と、
+// コンポーネントの作成（名前の検証）を確認する。
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "ProjectPanel.h"
 #include <fstream>
 #include <iostream>
@@ -5,11 +17,14 @@
 #include <system_error>
 #include <iterator>
 
+//==================================================================================
+// --- メイン関数 ---
+//==================================================================================
 int main() {
     namespace fs = std::filesystem;
 
-    // The fixture lives in the system temp folder: deep checkouts would exceed
-    // MAX_PATH, and substituted drives (subst) change canonical paths.
+    // テスト用のフォルダーはシステムの一時フォルダーに置く: 深い場所に置くと MAX_PATH を
+    // 超えることがあり、subst したドライブでは正規化したパスが変わるため。
     const auto fixture = fs::temp_directory_path() / (L"project-import-test-" + std::to_wstring(GetCurrentProcessId()));
     std::error_code ec;
     if (!fs::create_directory(fixture, ec)) {
@@ -71,7 +86,7 @@ int main() {
         return 7;
     }
 
-    // Developer Mode or the appropriate privilege may be required on Windows.
+    // Windows では開発者モードまたは適切な権限が必要な場合がある
     const auto link = project / L"outside-link";
     fs::create_directory_symlink(outside, link, ec);
     if (!ec) {

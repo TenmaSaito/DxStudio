@@ -1,6 +1,15 @@
-// CInputSystem port (cpp_TKG InputSystem) and the PlayerInput component,
-// driven by a fake IInputSource.
+//==================================================================================
+//
+// 入力のテスト [InputTests.cpp]
+//
+// CInputSystem（cpp_TKG の InputSystem の移植）と PlayerInput コンポーネント。
+// 偽の IInputSource で入力を与えて確認する。
+//
+//==================================================================================
 
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Engine.h"
 #include "Input/input.h"
 #include "Input/inputKeytable.h"
@@ -12,6 +21,9 @@
 namespace {
 int g_nFailures = 0;
 
+//==================================================================================
+// --- 確認処理 ---
+//==================================================================================
 void Check(bool bCondition, const char* pWhat) {
     if (bCondition) return;
     std::cerr << "FAILED: " << pWhat << '\n';
@@ -72,6 +84,9 @@ public:
 DXS_REGISTER_COMPONENT(Receiver)
 } // namespace
 
+//==================================================================================
+// --- メイン関数 ---
+//==================================================================================
 int main() {
     using dxs::CInputAction;
     FakeSource fake;
@@ -80,7 +95,7 @@ int main() {
     pSystem->SetAssetRoot("project");
     pSystem->Init(GetModuleHandleW(nullptr), nullptr);
 
-    // 1. Key table (keyboardKeys.csv): case-insensitive names, first name is official.
+    // 1. キー名の表（keyboardKeys.csv）: 大文字小文字は区別しない、最初の名前が正式名
     pSystem->EnsureKeyTable();
     auto* pTable = dxs::CInputKeyTable::GetInstance();
     int nCode = 0;
@@ -92,7 +107,7 @@ int main() {
               dxs::ScanCodeToVirtualKey(DIK_W) == 'W',
           "DIK scan codes map to virtual keys");
 
-    // 2. Default actions file.
+    // 2. 既定のアクションファイル
     std::string error;
     Check(pSystem->LoadActionsFile("Assets/Input/DefaultInputActions.dxinput", error), "default actions file loads");
     auto* pMove = pSystem->FindAction("Player", "Move");
@@ -103,7 +118,7 @@ int main() {
           "loading the same file again adds nothing");
     if (!pMove || !pJump || !pZoom) return 1;
 
-    // 3. Vector2D (WASD): value, normalised diagonal, phases and callbacks.
+    // 3. Vector2D（WASD）: 値、斜めの正規化、フェーズ、コールバック
     int nPerformed = 0, nStarted = 0, nCanceled = 0, nDelegate = 0;
     pMove->SetOnPerformed([&](const CInputAction&) { ++nPerformed; });
     pMove->SetOnStarted([&](const CInputAction&) { ++nStarted; });
@@ -129,7 +144,7 @@ int main() {
     pSystem->Update();
     Check(pMove->GetPhase() == CInputAction::PHASE::WAITING, "then waits");
 
-    // 4. Button: pressed / released this frame; keyboard trigger and repeat.
+    // 4. ボタン: このフレームで押された / 離された、キーボードのトリガーとリピート
     fake.Key(DIK_SPACE, true);
     pSystem->Update();
     Check(pJump->WasPressedThisFrame() && pJump->IsPressed(), "Space presses Jump");
@@ -142,7 +157,7 @@ int main() {
     pSystem->Update();
     Check(pJump->WasReleasedThisFrame() && pSystem->GetKeyboard()->GetRelease(DIK_SPACE), "released this frame");
 
-    // 5. Joypad: stick, button, trigger axis, vibration countdown.
+    // 5. ジョイパッド: スティック、ボタン、トリガーの軸、振動の残り時間
     fake.pad.Gamepad.sThumbLX = 32767;
     fake.pad.Gamepad.wButtons = XINPUT_GAMEPAD_A;
     fake.pad.Gamepad.bRightTrigger = 255;
@@ -158,7 +173,7 @@ int main() {
     fake.pad = {};
     pSystem->Update();
 
-    // 6. Axis1D + processors, mouse, focus loss.
+    // 6. Axis1D + 加工処理、マウス、フォーカスを失ったとき
     Check(pSystem->LoadActionsText("map Test\naction Turn VALUE_1D\naxis1d Q E\nprocessor invert\nprocessor scale 2\n"
                                    "action Click BUTTON\nsingle Mouse.Left\naction Code BUTTON\nsingle 0x39\n",
                                    error, "test"),
@@ -181,12 +196,12 @@ int main() {
     pSystem->CreateActionMap("Test")->SetEnable(false);
     Check(!pSystem->FindActionMap("Test")->IsEnable(), "action map disable");
 
-    // 7. Errors: line number, nothing created.
+    // 7. エラー: 行番号が出て、何も作られないこと
     Check(!pSystem->LoadActionsText("map Broken\naction A BUTTON\nsingle NoSuchKey\n", error, "broken") &&
               error.find("broken(3)") != std::string::npos && !pSystem->FindActionMap("Broken"),
           "unknown control reports its line and creates nothing");
 
-    // 8. PlayerInput component + IInputReceiver in Play.
+    // 8. Play 中の PlayerInput コンポーネント + IInputReceiver
     {
         dxs::Scene scene;
         scene.projectRoot = "project";
@@ -194,7 +209,7 @@ int main() {
         player.sName = "Player";
         player.vComponents = {"PlayerInput", "Receiver"};
         scene.vEntities.push_back(player);
-        dxs::UpdateUserComponents(scene, 1.0f / 60.0f); // Start
+        dxs::UpdateUserComponents(scene, 1.0f / 60.0f); // Start が呼ばれる
         fake.Key(DIK_SPACE, true);
         fake.Key(DIK_W, true);
         dxs::UpdateUserComponents(scene, 1.0f / 60.0f);

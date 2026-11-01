@@ -1,3 +1,14 @@
+//==================================================================================
+//
+// シーンとコンポーネントのテスト [SceneTests.cpp]
+//
+// シーンの読み込み / 保存、コンポーネントの実行、インスペクターの値、基本図形。
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Engine.h"
 #include <array>
 #include <algorithm>
@@ -7,6 +18,7 @@
 #include <iostream>
 #include <limits>
 
+// テスト用のコンポーネント: X 方向へ動く
 class MoveTest final : public dxs::Component {
 public:
     float speed = 1.0f;
@@ -29,7 +41,7 @@ std::unique_ptr<dxs::Component> CreateMoveTest() {
     return std::make_unique<MoveTest>();
 }
 
-// Every Inspector field kind (enum, vectors, slider, dynamic / static arrays).
+// インスペクターのすべての種類の欄（列挙型、ベクトル、スライダー、動的 / 静的配列）
 enum class Mode : unsigned char { Idle, Walk, Run };
 
 class FieldKinds final : public dxs::Component {
@@ -66,6 +78,9 @@ public:
     }
 };
 
+//==================================================================================
+// --- メイン関数 ---
+//==================================================================================
 int main() {
     namespace fs = std::filesystem;
     const fs::path dir = fs::current_path() / (L"dxstudio-scene-test-" + std::to_wstring(GetCurrentProcessId()));
@@ -252,7 +267,7 @@ int main() {
     const auto gameCamera = dxs::ActiveGameCamera(renderScene);
     assert(std::abs(gameCamera.fYaw - 0.2f) < 0.0001f && std::abs(gameCamera.fPitch - 0.1f) < 0.0001f);
 
-    // Built-in primitives: written as .x files, loaded through MeshRenderer.
+    // 組み込みの基本図形: .x ファイルに書き出し、MeshRenderer で読み込む
     {
         assert(dxs::EnsurePrimitiveAssets(dir, error));
         dxs::Scene meshScene;
@@ -284,7 +299,7 @@ int main() {
 
             assert(nRuns == draw.pVertices->size());
 
-            // 2D shapes (and only those) are flat in XY; Plane lies in XZ.
+            // 2D の図形（だけ）が XY 平面上で平ら。Plane は XZ 平面上にある
             assert(draw.bIs2D == dxs::PRIMITIVES[n].bFlat);
         }
 
@@ -298,7 +313,7 @@ int main() {
         fs::remove_all(dir / "Assets");
     }
 
-    // Inspector field kinds: rows, values, clamping, resize, save / load, Start.
+    // インスペクターの欄の種類: 行、値、範囲内に収める、サイズの変更、保存 / 読み込み、Start
     {
         assert(dxs::RegisterComponentClass("FieldKinds",
                                            [] { return std::unique_ptr<dxs::Component>(std::make_unique<FieldKinds>()); }));
@@ -324,19 +339,19 @@ int main() {
         assert(findInfo("Weights") && findInfo("Weights")->bArrayHeader);
         assert(findInfo("Weights.Size") && findInfo("Weights.Size")->sValue == "1" && !findInfo("Weights.Size")->bReadOnly);
         assert(findInfo("Weights[0]") && findInfo("Weights[0]")->sLabel == "Element 0" && findInfo("Weights[0]")->nIndent == 1);
-        assert(findInfo("Points.Size") && findInfo("Points.Size")->bReadOnly && findInfo("Points[1]")); // fixed std::array
+        assert(findInfo("Points.Size") && findInfo("Points.Size")->bReadOnly && findInfo("Points[1]")); // 固定の std::array
         std::string err;
-        assert(dxs::SetComponentEditorValue(e, 0, "Mode", "run", err)); // names are case-insensitive
+        assert(dxs::SetComponentEditorValue(e, 0, "Mode", "run", err)); // 名前は大文字小文字を区別しない
         assert(dxs::SetComponentEditorValue(e, 0, "Offset", "4, 5, 6", err));
-        assert(!dxs::SetComponentEditorValue(e, 0, "Offset", "4,5", err)); // needs three numbers
-        assert(dxs::SetComponentEditorValue(e, 0, "Volume", "7", err));    // clamped to the range
+        assert(!dxs::SetComponentEditorValue(e, 0, "Offset", "4,5", err)); // 数値が 3 つ必要
+        assert(dxs::SetComponentEditorValue(e, 0, "Volume", "7", err));    // 範囲内に収められる
         assert(dxs::SetComponentEditorValue(e, 0, "Level", "0", err));
         assert(dxs::SetComponentEditorValue(e, 0, "Weights.Size", "3", err));
         assert(dxs::SetComponentEditorValue(e, 0, "Weights[2]", "9.5", err));
         assert(dxs::SetComponentEditorValue(e, 0, "Flags.Size", "2", err) &&
                dxs::SetComponentEditorValue(e, 0, "Flags[1]", "true", err));
         assert(dxs::SetComponentEditorValue(e, 0, "Points[1]", "7,8,9", err));
-        assert(!dxs::SetComponentEditorValue(e, 0, "Points.Size", "5", err)); // fixed size
+        assert(!dxs::SetComponentEditorValue(e, 0, "Points.Size", "5", err)); // サイズは固定
         assert(!dxs::SetComponentEditorValue(e, 0, "Weights.Size", "-1", err));
         assert(dxs::SetComponentEditorValue(e, 0, "Modes.Size", "1", err) &&
                dxs::SetComponentEditorValue(e, 0, "Modes[0]", "Idle", err));
@@ -345,11 +360,11 @@ int main() {
         assert(props["Weights[2]"] == "9.5" && props["Flags[1]"] == "true" && props["Points[1]"] == "7,8,9" &&
                props["Modes[0]"] == "Idle");
         assert(dxs::SetComponentEditorValue(e, 0, "Weights.Size", "1", err) &&
-               !props.count("Weights[2]")); // stale elements dropped
+               !props.count("Weights[2]")); // 消えた要素の値は残らない
         assert(dxs::SetComponentEditorValue(e, 0, "Weights.Size", "3", err) &&
                dxs::SetComponentEditorValue(e, 0, "Weights[2]", "9.5", err));
 
-        // Save / load keeps every path; Start sees the saved values.
+        // 保存 / 読み込みですべてのパスが残り、Start では保存値が見える
         assert(dxs::SaveScene(dir / "fields.dxs", fieldScene, err));
         dxs::Scene loadedFields;
         assert(dxs::LoadScene(dir / "fields.dxs", loadedFields, err));

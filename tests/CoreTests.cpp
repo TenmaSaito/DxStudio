@@ -1,5 +1,14 @@
-// Delegates, callback interfaces and Unity-style coroutines.
+//==================================================================================
+//
+// エンジンの基本機能のテスト [CoreTests.cpp]
+//
+// デリゲート、コールバックのインターフェース、Unity 風のコルーチン、ログのスレッド。
+//
+//==================================================================================
 
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Engine.h"
 
 #include <algorithm>
@@ -10,6 +19,9 @@
 namespace {
 int g_nFailures = 0;
 
+//==================================================================================
+// --- 確認処理（失敗したら内容を出して終了） ---
+//==================================================================================
 void Check(bool bCondition, const char* pWhat) {
     if (!bCondition) {
         std::cerr << "FAILED: " << pWhat << '\n';
@@ -26,6 +38,9 @@ public:
     int m_nTotal = 0;
 };
 
+//==================================================================================
+// --- デリゲートのテスト ---
+//==================================================================================
 void TestDelegates() {
     dxs::Delegate<int(int)> doubler = dxs::Delegate<int(int)>::CreateRaw(static_cast<const CCounter*>(nullptr), &CCounter::Twice);
     CCounter counter;
@@ -43,7 +58,7 @@ void TestDelegates() {
     Check(onValue.Remove(lambdaHandle) && !onValue.Remove(lambdaHandle), "MulticastDelegate::Remove once");
     Check(onValue.RemoveAll(&counter) == 1 && !onValue.IsBound(), "MulticastDelegate::RemoveAll by owner");
 
-    // Removing and adding from inside a broadcast is safe.
+    // 通知の途中で削除 / 追加しても安全
     int nCalls = 0;
     dxs::DelegateHandle selfHandle;
     selfHandle = onValue.AddLambda([&](int) {
@@ -56,7 +71,7 @@ void TestDelegates() {
     onValue.Broadcast(1);
     Check(nCalls == 2, "binding removed during broadcast is not called again");
 
-    // Scoped handles unsubscribe automatically, even after the delegate died.
+    // スコープ付きのハンドルは自動で解除される（デリゲートが先に消えても）
     auto pDelegate = std::make_unique<dxs::MulticastDelegate<>>();
     int nScoped = 0;
     {
@@ -67,7 +82,7 @@ void TestDelegates() {
     pDelegate->Broadcast();
     Check(nScoped == 1, "ScopedDelegateHandle removes its binding");
     dxs::ScopedDelegateHandle outlives(*pDelegate, *pDelegate += [] {});
-    pDelegate.reset(); // must not crash when `outlives` is destroyed
+    pDelegate.reset(); // outlives が破棄されても落ちないこと
 }
 
 class CPlayModeListener final : public dxs::IPlayModeCallbacks, public dxs::ISceneCallbacks {
@@ -80,6 +95,9 @@ public:
     int m_nSaved = 0;
 };
 
+//==================================================================================
+// --- コールバックのインターフェースのテスト ---
+//==================================================================================
 void TestCallbackInterfaces() {
     CPlayModeListener listener;
     dxs::Scene scene;
@@ -94,6 +112,7 @@ void TestCallbackInterfaces() {
     Check(listener.m_nEnter == 1 && listener.m_nSaved == 1, "interface callbacks fire until the registration ends");
 }
 
+// テスト用のコルーチン: nFrames フレーム数える / 順番に進む / 例外を投げる
 dxs::Coroutine CountFrames(int& nCounter, int nFrames) {
     for (int nIndex = 0; nIndex < nFrames; ++nIndex) {
         ++nCounter;
@@ -102,13 +121,13 @@ dxs::Coroutine CountFrames(int& nCounter, int nFrames) {
 }
 
 dxs::Coroutine Sequence(std::vector<int>& vSteps, bool& bGate) {
-    vSteps.push_back(1); // runs inside StartCoroutine
+    vSteps.push_back(1); // StartCoroutine の中で実行される
     co_yield dxs::WaitForSeconds(0.5f);
     vSteps.push_back(2);
     co_yield dxs::WaitUntil([&] { return bGate; });
     vSteps.push_back(3);
     int nChildFrames = 0;
-    co_yield CountFrames(nChildFrames, 2); // waits for the nested coroutine
+    co_yield CountFrames(nChildFrames, 2); // 子コルーチンの終わりを待つ
     vSteps.push_back(10 + nChildFrames);
     co_yield dxs::WaitForFrames(2);
     vSteps.push_back(4);
@@ -119,6 +138,9 @@ dxs::Coroutine Throws() {
     throw std::runtime_error("boom");
 }
 
+//==================================================================================
+// --- コルーチンのテスト ---
+//==================================================================================
 void TestCoroutines() {
     dxs::CoroutineRunner runner;
     std::vector<int> vSteps;
@@ -132,10 +154,10 @@ void TestCoroutines() {
     runner.Tick(0.1f);
     Check(vSteps.size() == 2, "WaitUntil keeps waiting while false");
     bGate = true;
-    runner.Tick(0.1f); // gate opens -> push 3, start child (frame 1)
+    runner.Tick(0.1f); // ゲートが開く → 3 を追加し、子を開始（1 フレーム目）
     Check(vSteps.size() == 3, "WaitUntil resumes when true");
-    runner.Tick(0.1f); // child frame 2
-    runner.Tick(0.1f); // child done -> push 12
+    runner.Tick(0.1f); // 子の 2 フレーム目
+    runner.Tick(0.1f); // 子が終わる → 12 を追加
     Check(vSteps.size() == 4 && vSteps[3] == 12, "nested coroutine completes before the parent resumes");
     runner.Tick(0.1f);
     Check(runner.IsRunning(handle), "WaitForFrames(2) still waiting after one frame");
@@ -164,7 +186,10 @@ void TestCoroutines() {
     Check(vSteps.size() == 1, "time scale 0 pauses WaitForSeconds");
 }
 
-// Component-level coroutines run through UpdateUserComponents.
+//==================================================================================
+// --- コンポーネントのコルーチンのテスト ---
+//==================================================================================
+// コンポーネントのコルーチンは UpdateUserComponents で進む
 class CBlinker final : public dxs::Component {
 public:
     void Start(dxs::Entity& entity) override { StartCoroutine(Blink(entity)); }
@@ -207,7 +232,10 @@ void TestComponentCoroutines() {
     Check(nStarted == 1, "onComponentStarted fired once");
 }
 
-// The shipped CoroutineTemplate sample must run through all five steps.
+//==================================================================================
+// --- CoroutineTemplate のテスト ---
+//==================================================================================
+// 付属の CoroutineTemplate は 5 つの手順をすべて実行すること
 void TestCoroutineTemplate() {
     dxs::Scene scene;
     dxs::Entity entity;
@@ -216,7 +244,7 @@ void TestCoroutineTemplate() {
     Check(dxs::AttachComponent(entity, "CoroutineTemplate", error), "CoroutineTemplate is registered");
     scene.vEntities.push_back(entity);
     for (int nFrame = 0; nFrame < 300; ++nFrame) {
-        dxs::UpdateUserComponents(scene, 1.0f / 60.0f); // 5 s
+        dxs::UpdateUserComponents(scene, 1.0f / 60.0f); // 5 秒
     }
 
     const auto values = dxs::ComponentEditorValues(scene.vEntities[0], 0);
@@ -226,8 +254,11 @@ void TestCoroutineTemplate() {
           "CoroutineTemplate moved and stopped blinking");
 }
 
-// Log entries written by worker threads (background export) reach the
-// listeners only on the main thread, in order.
+//==================================================================================
+// --- ログのスレッドのテスト ---
+//==================================================================================
+// 作業スレッド（バックグラウンドの書き出し）が書いたログは、
+// メインスレッドでだけ、順番どおりに通知されること
 void TestLogThreads() {
     dxs::Debug::SetMainThread();
     std::vector<std::string> vSeen;
@@ -251,13 +282,16 @@ namespace dxs {
 void RegisterProjectComponents() {}
 } // namespace dxs
 
+//==================================================================================
+// --- メイン関数 ---
+//==================================================================================
 int main() {
     TestDelegates();
     TestCallbackInterfaces();
     TestCoroutines();
     TestComponentCoroutines();
     TestCoroutineTemplate();
-    TestLogThreads(); // last: makes this thread the log's main thread
+    TestLogThreads(); // 最後に行う: このスレッドをログのメインスレッドにするため
     if (g_nFailures) return 1;
     std::cout << "Delegate, callback interface, coroutine and log threading tests passed.\n";
     return 0;

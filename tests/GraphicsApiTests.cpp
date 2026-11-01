@@ -1,12 +1,24 @@
-// Renders the same scene, editor overlays and models with Direct3D 12, 11 and
-// 9, including resize and the precompiled shaders written by ExportGame.
+//==================================================================================
+//
+// グラフィックス API のテスト [GraphicsApiTests.cpp]
+//
+// 同じシーン・エディターの補助表示・モデルを Direct3D 12 / 11 / 9 で描く。
+// 大きさの変更と、ExportGame が書き出したコンパイル済みのシェーダーも確認する。
+//
+//==================================================================================
 
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Engine.h"
 
 #include <filesystem>
 #include <iostream>
 
 namespace {
+//==================================================================================
+// --- 数フレームの描画処理 ---
+//==================================================================================
 bool RenderFrames(dxs::Renderer& renderer, const std::vector<dxs::DrawItem>& vDraws, std::string& error) {
     for (const auto mode : {dxs::GizmoMode::Translate, dxs::GizmoMode::Rotate, dxs::GizmoMode::Scale}) {
         renderer.SetSelection({0, 1});
@@ -14,17 +26,20 @@ bool RenderFrames(dxs::Renderer& renderer, const std::vector<dxs::DrawItem>& vDr
         if (!renderer.Render(vDraws, error, 0, true, mode, true)) return false;
     }
 
-    // Scene view draw modes (wireframe pipelines exist on every backend).
+    // シーンビューの描画モード（ワイヤーフレームはどのバックエンドにもある）
     for (const auto drawMode : {dxs::DrawMode::WIREFRAME, dxs::DrawMode::SHADED_WIREFRAME, dxs::DrawMode::SHADED}) {
         renderer.SetDrawMode(drawMode);
         if (renderer.GetDrawMode() != drawMode || !renderer.Render(vDraws, error, 0, true)) return false;
     }
 
     renderer.SetMarquee(false, 0, 0, 0, 0);
-    return renderer.Render(vDraws, error); // game-style frame without overlays
+    return renderer.Render(vDraws, error); // 補助表示の無いゲームの描画
 }
 } // namespace
 
+//==================================================================================
+// --- メイン関数 ---
+//==================================================================================
 int main() {
     HINSTANCE instance = GetModuleHandleW(nullptr);
     WNDCLASSW windowClass{};
@@ -52,7 +67,7 @@ int main() {
     model.pVertices = pModel;
     vDraws.push_back(model);
 
-    // Shaded mesh (shade runs) and transparent objects exercise SCENE_TRANSPARENT.
+    // 陰影付きのメッシュと半透明の物体で SCENE_TRANSPARENT を通す
     model.pShadeRuns = std::make_shared<std::vector<std::uint32_t>>(std::vector<std::uint32_t>{0, 3});
     model.color.w = 0.4f;
     vDraws.push_back(model);
@@ -102,7 +117,7 @@ int main() {
                 nResult = 13;
             }
 
-            // CPU-side picking must not depend on the backend.
+            // CPU での選択はバックエンドに依存しないこと
             dxs::DrawItem cube;
             if (renderer.Pick(160, 120, {cube}) != 0) {
                 nResult = 14;
