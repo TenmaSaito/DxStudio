@@ -47,6 +47,11 @@ struct DrawItem {
     // （1 区間ごとの頂点数、暗い順）。単色のシェーダーでも面ごとに陰影が付き、
     // 立体に見える。空ならメッシュを 1 色で描く。
     std::shared_ptr<const std::vector<std::uint32_t>> pShadeRuns;
+
+    // 任意: 面ごとのマテリアルの色（スロットの数だけ）。あるときの pShadeRuns は
+    // 「スロット 0 の明るさ 0..L-1、スロット 1 の明るさ 0..L-1、...」の順に並び、
+    // 区間ごとに color × スロットの色で描く（L = 区間の数 / スロットの数）。
+    std::shared_ptr<const std::vector<DirectX::XMFLOAT4>> pRunColors;
 };
 
 //**********************************************************************************
@@ -112,6 +117,10 @@ public:
 
     // 画面上の範囲が四角形と重なるオブジェクトの番号一覧（範囲選択）
     std::vector<int> PickRect(int x0, int y0, int x1, int y1, const std::vector<DrawItem>& items) const;
+
+    // ビューポートのクライアント座標から伸ばした視線が、床（y = 0 の平面）と交わる点。
+    // 交わらない（カメラの後ろ、平行など）なら false。
+    bool GroundPoint(int x, int y, DirectX::XMFLOAT3& point) const;
     void SetSelection(const std::vector<int>& indices);            // 選択中（アウトラインを描く物）
     void SetMarquee(bool visible, int x0, int y0, int x1, int y1); // 範囲選択の四角形
     // シーンビューの補助線（コライダーの輪郭など）: ワールド座標の点 2 つで 1 本。

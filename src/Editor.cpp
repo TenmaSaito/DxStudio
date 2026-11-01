@@ -184,6 +184,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         e->ApplyTheme();
         e->LoadSettings();
         e->EnsureProjectPrimitives();
+        SetProjectThumbnailProvider(RenderAssetThumbnail); // Project パネルのモデル / マテリアルのサムネイル
         e->projectPanel = CreateProjectPanel(e->panels[3].window, e->instance, e->projectRoot, e->base);
         e->consolePanel = CreateConsolePanel(e->panels[3].window, e->instance);
         e->callbackRegistration = RegisterCallbacks(*e);
@@ -254,6 +255,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
 
         return 0;
     case WM_DXS_REBUILD_INSPECTOR: e->RebuildInspectorNow(); return 0;
+
+    case WM_DXS_PROJECT_ASSET_DROP: {
+        // Project パネルからのドラッグ＆ドロップ（モデルの配置 / マテリアルの設定）
+        if (const auto* pDrop = reinterpret_cast<const ProjectAssetDrop*>(lp)) {
+            e->DropProjectAsset(pDrop->file, pDrop->screen);
+        }
+
+        return 0;
+    }
 
     case WM_DXS_PROJECT_ASSET_COMMAND: {
         // Project パネルの右クリックメニューからの変換（物体には設定しない）

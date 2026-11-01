@@ -1296,6 +1296,159 @@ void Editor::ConvertFbxAsset(const std::filesystem::path& fbxFile, bool bAssign)
 }
 
 //==================================================================================
+// --- Project パネルからドロップされたファイルの処理 ---
+//==================================================================================
+void Editor::DropProjectAsset(const std::filesystem::path& file, POINT screen) {
+    // 種類: モデル（.x / .fbx）とマテリアル（.dxmat）だけを受け付ける
+    std::wstring sExtension = file.extension().wstring();
+    std::transform(sExtension.begin(), sExtension.end(), sExtension.begin(),
+                   [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+    const bool bModel = sExtension == L".x" || sExtension == L".fbx";
+    const bool bMaterial = sExtension == L".dxmat";
+    if (!bModel && !bMaterial) {
+        SetStatus(L"Only models (.x / .fbx) and materials (.dxmat) can be dropped here.");
+        return;
+    }
+
+    // シーンにはプロジェクトからの相対パスで保存する
+    std::error_code ec;
+    const auto relative =
+        std::filesystem::weakly_canonical(file, ec).lexically_relative(std::filesystem::weakly_canonical(projectRoot, ec));
+    if (relative.empty() || *relative.begin() == L"..") {
+        Error(window, "The file is outside the project folder.");
+        return;
+    }
+
+    const auto u8 = relative.generic_u8string();
+    const std::string sAsset(reinterpret_cast<const char*>(u8.data()), u8.size());
+
+    // 離した場所のウィンドウ（子コントロールの上でも、どのパネルか分かるように親をたどる）
+    HWND target = WindowFromPoint(screen);
+    auto within = [target](HWND parent) {
+        for (HWND current = target; current; current = GetParent(current)) {
+            if (current == parent) return true;
+        }
+
+        return false;
+    };
+
+    // 入力途中の値を先に反映する
+    if (InspectorHasPendingEdits() && !Apply()) return;
+
+    if (within(viewport)) {
+        // ---- シーンビュー ----
+        if (bGameView) {
+            SetStatus(L"Switch to the Scene view to drop assets.");
+            return;
+        }
+
+        POINT client = screen;
+        ScreenToClient(viewport, &client);
+        if (bModel) {
+            // カーソルの下の床に置く（床が見えない向きなら、カメラの注視点に置く）
+            DirectX::XMFLOAT3 position = camera.target;
+            renderer.GroundPoint(client.x, client.y, position);
+            PlaceModel(sAsset, file, position);
+            return;
+        }
+
+        // マテリアル: カーソルの下の物体に設定する
+        const int nHit = renderer.Pick(client.x, client.y, ResolveWorldDraws(scene));
+        if (nHit < 0) {
+            SetStatus(L"Drop the material on an object.");
+            return;
+        }
+
+        scene.vEntities[static_cast<size_t>(nHit)].sMaterialAsset = sAsset;
+        SetSelection({nHit}, nHit);
+        SetStatus(L"Material assigned. Save the scene to keep it.");
+        return;
+    }
+
+    if (within(hierarchy)) {
+        // ---- Hierarchy ----
+        if (bModel) {
+            PlaceModel(sAsset, file, {0.0f, 0.0f, 0.0f});
+            return;
+        }
+
+        // マテリアル: 離した行の物体に設定する
+        POINT client = screen;
+        ScreenToClient(hierarchy, &client);
+        const LRESULT result = SendMessageW(hierarchy, LB_ITEMFROMPOINT, 0, MAKELPARAM(client.x, client.y));
+        const int nRow = LOWORD(result);
+        if (HIWORD(result) != 0 || nRow < 0 || static_cast<size_t>(nRow) >= vHierarchyRows.size()) {
+            SetStatus(L"Drop the material on an object.");
+            return;
+        }
+
+        const int nEntity = vHierarchyRows[static_cast<size_t>(nRow)];
+        scene.vEntities[static_cast<size_t>(nEntity)].sMaterialAsset = sAsset;
+        SetSelection({nEntity}, nEntity);
+        SetStatus(L"Material assigned. Save the scene to keep it.");
+        return;
+    }
+
+    if (within(panels[2].window)) {
+        // ---- インスペクター: 選択中の物体（1 つ）に設定する ----
+        if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size() || vSelectedIndices.size() != 1) {
+            SetStatus(L"Select one object first.");
+            return;
+        }
+
+        auto& entity = scene.vEntities[static_cast<size_t>(nSelected)];
+        if (bModel) {
+            entity.sModelAsset = sAsset;
+            if (entity.renderer == Entity::RendererKind::None || entity.renderer == Entity::RendererKind::Polygon) {
+                entity.renderer = Entity::RendererKind::Mesh;
+            }
+
+            SetStatus(L"Mesh assigned. Save the scene to keep it.");
+        } else {
+            entity.sMaterialAsset = sAsset;
+            SetStatus(L"Material assigned. Save the scene to keep it.");
+        }
+
+        Populate();
+        return;
+    }
+
+    SetStatus(L"Drop assets on the Scene view, the Hierarchy or the Inspector.");
+}
+
+//==================================================================================
+// --- モデルの配置処理 ---
+//==================================================================================
+void Editor::PlaceModel(const std::string& sAsset, const std::filesystem::path& file, DirectX::XMFLOAT3 position) {
+    Entity entity;
+    entity.sName = Utf8(file.stem().wstring());
+    entity.renderer = Entity::RendererKind::Mesh;
+    entity.sModelAsset = sAsset;
+    entity.draw.color = {0.82f, 0.82f, 0.82f, 1.0f};
+
+    // 読めるモデルか確認し、底面が床（position の高さ）に来るよう持ち上げる
+    const DrawItem draw = MeshRenderer(file).BuildDrawItem(entity);
+    if (!draw.pVertices || draw.pVertices->empty()) {
+        Error(window, "The model could not be loaded: " + sAsset);
+        return;
+    }
+
+    float fMinY = 0.0f;
+    for (const auto& vertex : *draw.pVertices) {
+        fMinY = std::min(fMinY, vertex.y);
+    }
+
+    entity.draw.bIs2D = draw.bIs2D;
+    entity.draw.position = {position.x, position.y - fMinY * entity.draw.scale.y, position.z};
+
+    scene.vEntities.push_back(std::move(entity));
+    nSelected = static_cast<int>(scene.vEntities.size()) - 1;
+    vSelectedIndices = {nSelected};
+    Populate();
+    SetStatus(L"Model placed. Save the scene to keep it.");
+}
+
+//==================================================================================
 // --- 反映のエラーの通知処理 ---
 //==================================================================================
 void Editor::ReportApplyError(const std::string& message) {

@@ -11,6 +11,7 @@
 // *** インクルードファイル ***
 //**********************************************************************************
 #include "Engine.h"
+#include "ModelConvert.h" // X ファイルの Material の読み取り（ParseXMaterial）
 
 #include <d3dcompiler.h>
 #include <wrl/client.h>
@@ -137,13 +138,16 @@ using Mesh = std::vector<DirectX::XMFLOAT3>;  // 三角形リスト（3 頂点�
 using ShadeRuns = std::vector<std::uint32_t>; // 明るさごとの頂点数
 constexpr int SHADE_LEVELS = 8;               // 陰影の段階数
 
-// --- 三角形を明るさ順に並べ替える処理 ---
+// --- 三角形をマテリアル順・明るさ順に並べ替える処理 ---
 // メッシュ空間の固定の光で各三角形の明るさを求め、SHADE_LEVELS 段階に分ける。
 // これにより、単色のシェーダーでも立体の形が分かる。
-ShadeRuns SortByShade(Mesh& mesh) {
+// vFaceSlots（三角形ごとのマテリアルの番号）があれば、「スロット 0 の明るさ 0..7、
+// スロット 1 の明るさ 0..7、...」の順に並べる（区間の数 = nSlots × SHADE_LEVELS）。
+ShadeRuns SortByShade(Mesh& mesh, const std::vector<std::uint32_t>& vFaceSlots = {}, size_t nSlots = 1) {
     using namespace DirectX;
     const XMVECTOR light = XMVector3Normalize(XMVectorSet(-0.35f, 0.85f, -0.4f, 0));
-    std::vector<std::vector<XMFLOAT3>> vBuckets(SHADE_LEVELS);
+    nSlots = std::max<size_t>(nSlots, 1);
+    std::vector<std::vector<XMFLOAT3>> vBuckets(nSlots * SHADE_LEVELS);
     for (size_t nIndex = 0; nIndex + 2 < mesh.size(); nIndex += 3) {
         const XMVECTOR a = XMLoadFloat3(&mesh[nIndex]), b = XMLoadFloat3(&mesh[nIndex + 1]), c = XMLoadFloat3(&mesh[nIndex + 2]);
 
@@ -156,7 +160,10 @@ ShadeRuns SortByShade(Mesh& mesh) {
         }
 
         const int nLevel = std::clamp(static_cast<int>(fLight * SHADE_LEVELS), 0, SHADE_LEVELS - 1);
-        vBuckets[nLevel].insert(vBuckets[nLevel].end(), {mesh[nIndex], mesh[nIndex + 1], mesh[nIndex + 2]});
+        const size_t nTriangle = nIndex / 3;
+        const size_t nSlot = nTriangle < vFaceSlots.size() ? std::min<size_t>(vFaceSlots[nTriangle], nSlots - 1) : 0;
+        auto& bucket = vBuckets[nSlot * SHADE_LEVELS + static_cast<size_t>(nLevel)];
+        bucket.insert(bucket.end(), {mesh[nIndex], mesh[nIndex + 1], mesh[nIndex + 2]});
     }
 
     // 暗い順に連結し、区間ごとの頂点数を記録する
@@ -172,9 +179,17 @@ ShadeRuns SortByShade(Mesh& mesh) {
 
 // 読み込んだメッシュ
 struct LoadedMesh {
-    std::shared_ptr<const Mesh> pVertices;       // 頂点（正規化済み）
-    std::shared_ptr<const ShadeRuns> pShadeRuns; // 明るさごとの頂点数
-    bool bFlat = false;                          // すべての頂点が z = 0 上にある（2D の基本図形）
+    std::shared_ptr<const Mesh> pVertices;                            // 頂点（正規化済み）
+    std::shared_ptr<const ShadeRuns> pShadeRuns;                      // （マテリアル ×）明るさごとの頂点数
+    bool bFlat = false;                                               // すべての頂点が z = 0 上にある（2D の基本図形）
+    std::shared_ptr<const std::vector<MaterialSlot>> pSlots;          // モデルファイルのマテリアル（無ければ null）
+    std::shared_ptr<const std::vector<DirectX::XMFLOAT4>> pRunColors; // pSlots の色（描画用）
+};
+
+// 読み込み中の面ごとのマテリアル
+struct ModelMaterials {
+    std::vector<std::uint32_t> vFaceSlots; // 三角形ごとのスロットの番号
+    std::vector<MaterialSlot> vSlots;      // スロット（面ごとのマテリアルの番号の順）
 };
 
 // テキストから数値を順に読み取る（.x ファイル用。区切り文字は読み飛ばす）
@@ -230,7 +245,9 @@ size_t MatchingBrace(const std::string& text, size_t nOpen) {
 
 // --- X ファイルの Mesh の本体（'{' の直後から）を読み、world で変換して三角形を追加する処理 ---
 // 書式: 頂点数; x;y;z;, ...; 面数; 頂点数;番号,番号,...;, ...;（その後の子ブロックは読まない）
-bool ParseXMeshBody(const char* pBegin, const char* pEnd, const DirectX::XMFLOAT4X4& world, Mesh& triangles) {
+// vTrianglesPerFace には面ごとの三角形の数が入る（面ごとのマテリアルを三角形に割り当てるため）。
+bool ParseXMeshBody(const char* pBegin, const char* pEnd, const DirectX::XMFLOAT4X4& world, Mesh& triangles,
+                    std::vector<int>& vTrianglesPerFace) {
     using namespace DirectX;
     NumberScanner scan{pBegin, pEnd};
     const XMMATRIX matrix = XMLoadFloat4x4(&world);
@@ -264,6 +281,7 @@ bool ParseXMeshBody(const char* pBegin, const char* pEnd, const DirectX::XMFLOAT
             triangles.push_back(vPoints[vIds[nCorner + 1]]);
         }
 
+        vTrianglesPerFace.push_back(nCorners - 2);
         if (triangles.size() > 1000000) return false;
     }
 
@@ -276,12 +294,26 @@ bool ParseXMeshBody(const char* pBegin, const char* pEnd, const DirectX::XMFLOAT
 // ・template の宣言（template Mesh { ... } など）は読み飛ばす
 // ・Frame の FrameTransformMatrix を、子から親の順に掛けて頂点を変換する
 //   （X ファイルの行列は行ベクトル用: 頂点 * 子の行列 * 親の行列）
-// ・Mesh の中の子ブロック（法線、UV、マテリアル）は読まない
-bool ParseXMeshes(const std::string& text, Mesh& triangles) {
+// ・Mesh の中の MeshMaterialList から面ごとのマテリアルを読む（法線・UV は読まない）
+bool ParseXMeshes(const std::string& text, Mesh& triangles, ModelMaterials& materials) {
     using namespace DirectX;
 
     // ヘッダー（xof 0303txt 0032 など）を確認し、1 行目の後から読む
     if (text.size() < 16 || text.compare(0, 4, "xof ") != 0 || text.compare(8, 3, "txt") != 0) return false;
+
+    // 名前付きの Material（MeshMaterialList から { 名前 } で参照される）を先に集めておく
+    std::unordered_map<std::string, XMaterialInfo> namedMaterials;
+    for (size_t nFound = text.find("Material"); nFound != std::string::npos; nFound = text.find("Material", nFound + 8)) {
+        XMaterialInfo info;
+        size_t nNext = 0;
+        if (ParseXMaterial(text, nFound, info, nNext) && !info.sName.empty()) {
+            namedMaterials.emplace(info.sName, info);
+        }
+    }
+
+    auto toSlot = [](const XMaterialInfo& info) {
+        return MaterialSlot{info.sName, info.diffuse, info.sTexture};
+    };
     size_t nPos = text.find('\n');
     if (nPos == std::string::npos) return false;
 
@@ -378,7 +410,66 @@ bool ParseXMeshes(const std::string& text, Mesh& triangles) {
             if (nOpen >= text.size() || text[nOpen] != '{') continue;
             const size_t nClose = MatchingBrace(text, nOpen);
             if (nClose == std::string::npos) return false;
-            if (!ParseXMeshBody(text.data() + nOpen + 1, text.data() + nClose, world, triangles)) return false;
+            std::vector<int> vTrianglesPerFace;
+            if (!ParseXMeshBody(text.data() + nOpen + 1, text.data() + nClose, world, triangles, vTrianglesPerFace)) return false;
+
+            // MeshMaterialList { マテリアル数; 面の数; 番号, ...; Material {...} または { 名前 } ... }
+            std::vector<MaterialSlot> vMeshSlots;
+            std::vector<std::uint32_t> vFaceIndices;
+            const size_t nList = text.find("MeshMaterialList", nOpen);
+            const size_t nListOpen = nList < nClose ? text.find('{', nList) : std::string::npos;
+            const size_t nListClose = nListOpen < nClose ? MatchingBrace(text, nListOpen) : std::string::npos;
+            if (nListClose != std::string::npos) {
+                NumberScanner scan{text.data() + nListOpen + 1, text.data() + nListClose};
+                int nMaterialCount = 0, nIndexCount = 0;
+                if (scan.NextInt(nMaterialCount) && scan.NextInt(nIndexCount) && nIndexCount >= 0 && nIndexCount <= 1000000) {
+                    for (int nIndex = 0; nIndex < nIndexCount; ++nIndex) {
+                        int nValue = 0;
+                        if (!scan.NextInt(nValue)) break;
+                        vFaceIndices.push_back(static_cast<std::uint32_t>(std::max(nValue, 0)));
+                    }
+
+                    // 番号の後に並ぶマテリアル（埋め込み、または名前での参照）
+                    size_t nItem = static_cast<size_t>(scan.p - text.data());
+                    while (nItem < nListClose) {
+                        if (text.compare(nItem, 8, "Material") == 0 && !isIdentifierChar(text[nItem + 8])) {
+                            XMaterialInfo info;
+                            size_t nNext = nItem + 8;
+                            if (ParseXMaterial(text, nItem, info, nNext)) {
+                                vMeshSlots.push_back(toSlot(info));
+                            }
+
+                            nItem = nNext;
+                        } else if (text[nItem] == '{') {
+                            const size_t nRefClose = text.find('}', nItem);
+                            if (nRefClose == std::string::npos || nRefClose > nListClose) break;
+                            std::string sName = text.substr(nItem + 1, nRefClose - nItem - 1);
+                            sName.erase(0, sName.find_first_not_of(" \t\r\n"));
+                            sName.erase(sName.find_last_not_of(" \t\r\n") + 1);
+                            const auto found = namedMaterials.find(sName);
+                            vMeshSlots.push_back(found != namedMaterials.end() ? toSlot(found->second) : MaterialSlot{sName});
+                            nItem = nRefClose + 1;
+                        } else {
+                            ++nItem;
+                        }
+                    }
+                }
+            }
+
+            // 面ごとの番号を三角形ごとのスロットにする（番号が足りない面は最後の番号を使う）
+            if (vMeshSlots.empty()) {
+                vMeshSlots.push_back(MaterialSlot{}); // マテリアルの無い Mesh は白
+            }
+
+            const auto nBase = static_cast<std::uint32_t>(materials.vSlots.size());
+            for (size_t nFace = 0; nFace < vTrianglesPerFace.size(); ++nFace) {
+                std::uint32_t nSlot = vFaceIndices.empty() ? 0 : vFaceIndices[std::min(nFace, vFaceIndices.size() - 1)];
+                nSlot = std::min<std::uint32_t>(nSlot, static_cast<std::uint32_t>(vMeshSlots.size() - 1));
+                materials.vFaceSlots.insert(materials.vFaceSlots.end(), static_cast<size_t>(vTrianglesPerFace[nFace]),
+                                            nBase + nSlot);
+            }
+
+            materials.vSlots.insert(materials.vSlots.end(), vMeshSlots.begin(), vMeshSlots.end());
             nPos = nClose + 1;
         }
     }
@@ -435,11 +526,11 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
     if (!input) return {};
     std::string text((std::istreambuf_iterator<char>(input)), {});
     if (text.empty() || text.size() > 64u * 1024u * 1024u) return {};
-    std::vector<DirectX::XMFLOAT3> points;
     Mesh triangles;
+    ModelMaterials materials; // 面ごとのマテリアル
     if (_wcsicmp(ext.c_str(), L".x") == 0) {
         // DirectX のテキスト形式（template の宣言、Frame の階層、複数の Mesh に対応）
-        if (!ParseXMeshes(text, triangles)) return {};
+        if (!ParseXMeshes(text, triangles, materials)) return {};
     } else if (_wcsicmp(ext.c_str(), L".fbx") == 0) {
         // FBX: ufbx で読み込む
         ufbx_load_opts opts{};
@@ -465,6 +556,33 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
             }
         }
 
+        // FBX のマテリアル → スロットの番号（初めてのマテリアルならスロットを追加する）
+        std::unordered_map<const ufbx_material*, std::uint32_t> slotOf;
+        auto findSlot = [&](const ufbx_material* pMaterial) {
+            const auto found = slotOf.find(pMaterial);
+            if (found != slotOf.end()) return found->second;
+            MaterialSlot slot;
+            if (pMaterial) {
+                slot.sName.assign(pMaterial->name.data, pMaterial->name.length);
+                const ufbx_material_map& diffuse =
+                    pMaterial->fbx.diffuse_color.has_value ? pMaterial->fbx.diffuse_color : pMaterial->pbr.base_color;
+                const double dFactor = pMaterial->fbx.diffuse_factor.has_value ? pMaterial->fbx.diffuse_factor.value_real : 1.0;
+                slot.color = {static_cast<float>(diffuse.value_vec3.x * dFactor),
+                              static_cast<float>(diffuse.value_vec3.y * dFactor),
+                              static_cast<float>(diffuse.value_vec3.z * dFactor),
+                              pMaterial->pbr.opacity.has_value ? static_cast<float>(pMaterial->pbr.opacity.value_real) : 1.0f};
+                const ufbx_texture* pTexture = diffuse.texture ? diffuse.texture : pMaterial->pbr.base_color.texture;
+                if (pTexture) {
+                    slot.sTexture.assign(pTexture->relative_filename.data, pTexture->relative_filename.length);
+                }
+            }
+
+            const auto nSlot = static_cast<std::uint32_t>(materials.vSlots.size());
+            materials.vSlots.push_back(slot);
+            slotOf.emplace(pMaterial, nSlot);
+            return nSlot;
+        };
+
         // 全メッシュ・全インスタンスの面を三角形にし、ワールド座標へ変換して集める
         for (size_t m = 0; m < active->meshes.count; ++m) {
             const auto* mesh = active->meshes.data[m];
@@ -474,7 +592,15 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
             for (size_t instance = 0; instance < instanceCount; ++instance) {
                 const ufbx_matrix* matrix = mesh->instances.count ? &mesh->instances.data[instance]->geometry_to_world : nullptr;
                 for (size_t f = 0; f < mesh->faces.count; ++f) {
+                    // 面のマテリアル
+                    const ufbx_material* pMaterial = nullptr;
+                    if (f < mesh->face_material.count && mesh->face_material.data[f] < mesh->materials.count) {
+                        pMaterial = mesh->materials.data[mesh->face_material.data[f]];
+                    }
+
+                    const std::uint32_t nSlot = findSlot(pMaterial);
                     const uint32_t count = ufbx_triangulate_face(indices.data(), indices.size(), mesh, mesh->faces.data[f]);
+                    materials.vFaceSlots.insert(materials.vFaceSlots.end(), count, nSlot);
                     for (size_t t = 0; t < static_cast<size_t>(count) * 3; ++t) {
                         ufbx_vec3 value = ufbx_get_vertex_vec3(&mesh->skinned_position, indices[t]);
                         if (matrix) {
@@ -503,7 +629,25 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
     LoadedMesh result;
     result.bFlat =
         std::all_of(triangles.begin(), triangles.end(), [](const DirectX::XMFLOAT3& v) { return std::abs(v.z) < 1e-5f; });
-    result.pShadeRuns = std::make_shared<ShadeRuns>(SortByShade(triangles));
+
+    // マテリアルが 1 つも無い（すべて既定の白の）モデルは、面ごとの色を使わない
+    const bool bHasMaterials = std::any_of(materials.vSlots.begin(), materials.vSlots.end(), [](const MaterialSlot& slot) {
+        return !slot.sName.empty() || slot.color.x != 1.0f || slot.color.y != 1.0f || slot.color.z != 1.0f ||
+               slot.color.w != 1.0f;
+    });
+    if (bHasMaterials && materials.vFaceSlots.size() * 3 == triangles.size()) {
+        result.pShadeRuns = std::make_shared<ShadeRuns>(SortByShade(triangles, materials.vFaceSlots, materials.vSlots.size()));
+        auto pColors = std::make_shared<std::vector<DirectX::XMFLOAT4>>();
+        for (const auto& slot : materials.vSlots) {
+            pColors->push_back(slot.color);
+        }
+
+        result.pRunColors = std::move(pColors);
+        result.pSlots = std::make_shared<std::vector<MaterialSlot>>(std::move(materials.vSlots));
+    } else {
+        result.pShadeRuns = std::make_shared<ShadeRuns>(SortByShade(triangles));
+    }
+
     result.pVertices = std::make_shared<Mesh>(std::move(triangles));
     if (_wcsicmp(ext.c_str(), L".fbx") != 0 && !timeError) {
         cache[key] = {writeTime, result};
@@ -559,21 +703,46 @@ Entity& Entity::operator=(const Entity& other) {
 // --- マテリアルの読み込み処理 ---
 //==================================================================================
 // 書式: DXMATERIAL 1 "名前" R G B A "テクスチャ" "シェーダー"
+//       DXMATERIAL 2 ...（バージョン 1 と同じ）... スロット数 ("名前" R G B A "テクスチャ")...
 bool LoadMaterial(const std::filesystem::path& path, Material& material, std::string& error) {
     error.clear();
     std::ifstream file(path, std::ios::binary);
+    file.imbue(std::locale::classic());
     std::string magic;
     unsigned version = 0;
     Material loaded;
     if (!file ||
         !(file >> magic >> version >> std::quoted(loaded.sName) >> loaded.baseColor.x >> loaded.baseColor.y >>
           loaded.baseColor.z >> loaded.baseColor.w >> std::quoted(loaded.sTextureAsset) >> std::quoted(loaded.sShaderAsset)) ||
-        magic != "DXMATERIAL" || version != 1) {
+        magic != "DXMATERIAL" || (version != 1 && version != 2)) {
         error = "Invalid material file: " + PathText(path);
         return false;
     }
 
-    const float values[] = {loaded.baseColor.x, loaded.baseColor.y, loaded.baseColor.z, loaded.baseColor.w};
+    // バージョン 2: 面ごとの色（スロット）
+    if (version == 2) {
+        size_t nSlots = 0;
+        if (!(file >> nSlots) || nSlots > 4096) {
+            error = "Invalid material slots: " + PathText(path);
+            return false;
+        }
+
+        loaded.vSlots.resize(nSlots);
+        for (auto& slot : loaded.vSlots) {
+            if (!(file >> std::quoted(slot.sName) >> slot.color.x >> slot.color.y >> slot.color.z >> slot.color.w >>
+                  std::quoted(slot.sTexture))) {
+                error = "Invalid material slots: " + PathText(path);
+                return false;
+            }
+        }
+    }
+
+    // 色はすべて有限の値であること
+    std::vector<float> values = {loaded.baseColor.x, loaded.baseColor.y, loaded.baseColor.z, loaded.baseColor.w};
+    for (const auto& slot : loaded.vSlots) {
+        values.insert(values.end(), {slot.color.x, slot.color.y, slot.color.z, slot.color.w});
+    }
+
     for (float value : values) {
         if (!std::isfinite(value)) {
             error = "Material contains a non-finite color.";
@@ -607,9 +776,20 @@ bool SaveMaterial(const std::filesystem::path& path, const Material& material, s
         return false;
     }
 
-    file << "DXMATERIAL 1 " << std::quoted(material.sName) << ' ' << std::setprecision(std::numeric_limits<float>::max_digits10)
-         << material.baseColor.x << ' ' << material.baseColor.y << ' ' << material.baseColor.z << ' ' << material.baseColor.w
-         << ' ' << std::quoted(material.sTextureAsset) << ' ' << std::quoted(material.sShaderAsset) << '\n';
+    // スロットが無ければバージョン 1（以前のエディターでも読める）、あればバージョン 2
+    file.imbue(std::locale::classic());
+    file << "DXMATERIAL " << (material.vSlots.empty() ? 1 : 2) << ' ' << std::quoted(material.sName) << ' '
+         << std::setprecision(std::numeric_limits<float>::max_digits10) << material.baseColor.x << ' ' << material.baseColor.y
+         << ' ' << material.baseColor.z << ' ' << material.baseColor.w << ' ' << std::quoted(material.sTextureAsset) << ' '
+         << std::quoted(material.sShaderAsset) << '\n';
+    if (!material.vSlots.empty()) {
+        file << material.vSlots.size() << '\n';
+        for (const auto& slot : material.vSlots) {
+            file << std::quoted(slot.sName) << ' ' << slot.color.x << ' ' << slot.color.y << ' ' << slot.color.z << ' '
+                 << slot.color.w << ' ' << std::quoted(slot.sTexture) << '\n';
+        }
+    }
+
     file.close();
     if (!file || !MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         error = "Cannot save material (Windows error " + std::to_string(GetLastError()) + ").";
@@ -872,6 +1052,20 @@ bool RegisterComponent(const std::string& name, ComponentUpdate update) {
 //==================================================================================
 // --- 各レンダラーの描画情報の作成処理 ---
 //==================================================================================
+//==================================================================================
+// --- モデルファイルのマテリアルの取得処理 ---
+//==================================================================================
+bool LoadModelMaterials(const std::filesystem::path& file, std::vector<MaterialSlot>& vSlots) {
+    vSlots.clear();
+    const LoadedMesh mesh = LoadModelMesh(file);
+    if (!mesh.pVertices) return false;
+    if (mesh.pSlots) {
+        vSlots = *mesh.pSlots;
+    }
+
+    return true;
+}
+
 DrawItem PolygonRenderer::BuildDrawItem(const Entity& entity) const {
     return entity.draw;
 }
@@ -888,6 +1082,7 @@ DrawItem ModelRenderer::BuildDrawItem(const Entity& entity) const {
     const auto mesh = asset_.empty() ? LoadedMesh{} : LoadModelMesh(asset_, animationTime_, animationIndex_);
     result.pVertices = mesh.pVertices;
     result.pShadeRuns = mesh.pShadeRuns;
+    result.pRunColors = mesh.pRunColors;                   // モデルファイルの面ごとの色（マテリアルを設定すると置き換わる）
     result.bVisible = static_cast<bool>(result.pVertices); // 読めなければ描かない
     return result;
 }
@@ -897,7 +1092,8 @@ DrawItem MeshRenderer::BuildDrawItem(const Entity& entity) const {
     const auto mesh = m_mesh.empty() ? LoadedMesh{} : LoadModelMesh(m_mesh, m_fAnimationTime, m_nAnimationIndex);
     result.pVertices = mesh.pVertices;
     result.pShadeRuns = mesh.pShadeRuns;
-    result.bIs2D = mesh.bFlat; // 円 / 四角形 / 三角形は四角形として選択・アウトライン表示する
+    result.pRunColors = mesh.pRunColors; // モデルファイルの面ごとの色（マテリアルを設定すると置き換わる）
+    result.bIs2D = mesh.bFlat;           // 円 / 四角形 / 三角形は四角形として選択・アウトライン表示する
     result.bVisible = entity.draw.bVisible && static_cast<bool>(result.pVertices);
     return result;
 }
@@ -1599,7 +1795,7 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
             world = Image{}.BuildDrawItem(entity);
         }
 
-        // マテリアルの基本色を掛ける
+        // マテリアル: 基本色を全体に掛け、面ごとの色（スロット）があればモデルの色と置き換える
         if (!entity.sMaterialAsset.empty()) {
             Material material;
             std::string ignored;
@@ -1608,6 +1804,23 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
                 world.color.y *= material.baseColor.y;
                 world.color.z *= material.baseColor.z;
                 world.color.w *= material.baseColor.w;
+
+                if (material.vSlots.empty()) {
+                    world.pRunColors.reset(); // スロットの無いマテリアル: モデル全体を 1 色で描く
+                } else if (world.pRunColors && !world.pRunColors->empty()) {
+                    // モデルのスロットの数に合わせる（足りない分は最後のスロットの色）
+                    auto pColors = std::make_shared<std::vector<XMFLOAT4>>(world.pRunColors->size());
+                    for (size_t nSlot = 0; nSlot < pColors->size(); ++nSlot) {
+                        (*pColors)[nSlot] = material.vSlots[std::min(nSlot, material.vSlots.size() - 1)].color;
+                    }
+
+                    world.pRunColors = std::move(pColors);
+                } else {
+                    // 面ごとのマテリアルの無いモデル: 最初のスロットの色を全体に掛ける
+                    const auto& first = material.vSlots.front().color;
+                    world.color = {world.color.x * first.x, world.color.y * first.y, world.color.z * first.z,
+                                   world.color.w * first.w};
+                }
             }
         }
 

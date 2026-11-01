@@ -29,6 +29,7 @@
 #include "EditorUtility.h"
 #include "ConsolePanel.h"
 #include "ModelConvert.h"
+#include "AssetThumbnail.h"
 
 #include <algorithm>
 #include <cmath>
@@ -226,6 +227,15 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
 
     // FBX を X に変換する。bAssign = true なら選択中の物体のメッシュを X に差し替える。
     void ConvertFbxAsset(const std::filesystem::path& fbxFile, bool bAssign);
+
+    // Project パネルからドラッグしたファイルを、離した場所に応じて使う
+    //   シーンビュー   : モデル → カーソルの下の床に配置 / マテリアル → カーソルの下の物体に設定
+    //   Hierarchy      : モデル → 原点に配置 / マテリアル → 行の物体に設定
+    //   インスペクター : モデル → 選択中の物体のメッシュ / マテリアル → 選択中の物体のマテリアル
+    void DropProjectAsset(const std::filesystem::path& file, POINT screen);
+
+    // モデルを新しい物体（MeshRenderer）として position に置く（底面が position の高さに来る）
+    void PlaceModel(const std::string& sAsset, const std::filesystem::path& file, DirectX::XMFLOAT3 position);
 
     // メッシュ欄のアセットの拡張子（小文字。".x" / ".fbx" / ...）
     std::wstring SelectedMeshExtension() const;

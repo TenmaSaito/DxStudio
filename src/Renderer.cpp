@@ -563,6 +563,29 @@ int Renderer::Pick(int x, int y, const std::vector<DrawItem>& items) const {
 //==================================================================================
 // --- 範囲選択処理（画面上の外接四角形が重なる物） ---
 //==================================================================================
+//==================================================================================
+// --- カーソルの下の床の位置の計算処理 ---
+//==================================================================================
+bool Renderer::GroundPoint(int x, int y, DirectX::XMFLOAT3& point) const {
+    if (!p_ || !p_->uWidth || !p_->uHeight) return false;
+    const auto vp = ViewProjection(p_->camera, static_cast<float>(p_->uWidth) / p_->uHeight);
+    XMVECTOR hit;
+    if (!PlaneHit(x, y, p_->uWidth, p_->uHeight, vp, XMVectorZero(), XMVectorSet(0, 1, 0, 0), hit)) return false;
+
+    // カメラの後ろ側の交点と、遠すぎる交点は使わない
+    const XMVECTOR target = XMLoadFloat3(&p_->camera.target);
+    const float fCosPitch = std::cos(p_->camera.fPitch);
+    const XMVECTOR eye = XMVectorAdd(target, XMVectorSet(std::sin(p_->camera.fYaw) * fCosPitch * p_->camera.fDistance,
+                                                         std::sin(p_->camera.fPitch) * p_->camera.fDistance,
+                                                         -std::cos(p_->camera.fYaw) * fCosPitch * p_->camera.fDistance, 0));
+    const XMVECTOR toHit = XMVectorSubtract(hit, eye);
+    if (XMVectorGetX(XMVector3Dot(toHit, XMVectorSubtract(target, eye))) <= 0.0f) return false;
+    if (XMVectorGetX(XMVector3Length(toHit)) > p_->camera.fFarClip) return false;
+
+    XMStoreFloat3(&point, hit);
+    return true;
+}
+
 std::vector<int> Renderer::PickRect(int x0, int y0, int x1, int y1, const std::vector<DrawItem>& items) const {
     std::vector<int> vResult;
     if (!p_ || !p_->uWidth || !p_->uHeight) return vResult;
@@ -913,14 +936,25 @@ bool Renderer::Render(const std::vector<DrawItem>& items, std::string& error, in
             }
 
             if (pRuns && !pOverride && nRunTotal == vModelCounts[nIndex]) {
+                // 面ごとのマテリアルの色があれば、区間は「スロット × 明るさ」の順に並んでいる
+                const auto* pSlots = item.pRunColors.get();
+                const size_t nSlots = pSlots && !pSlots->empty() && pRuns->size() % pSlots->size() == 0 ? pSlots->size() : 1;
+                const size_t nLevels = pRuns->size() / nSlots;
                 UINT uStart = vModelStarts[nIndex];
-                for (size_t nLevel = 0; nLevel < pRuns->size(); ++nLevel) {
-                    const UINT uCount = (*pRuns)[nLevel];
+                for (size_t nRun = 0; nRun < pRuns->size(); ++nRun) {
+                    const UINT uCount = (*pRuns)[nRun];
                     if (uCount) {
-                        const float fShade =
-                            0.45f + 0.55f * (static_cast<float>(nLevel) + 0.5f) / static_cast<float>(pRuns->size());
-                        device.Draw(MakeConstants(mvp, {color.x * fShade, color.y * fShade, color.z * fShade, color.w}), uCount,
-                                    uStart);
+                        const size_t nLevel = nRun % nLevels;
+                        const float fShade = 0.45f + 0.55f * (static_cast<float>(nLevel) + 0.5f) / static_cast<float>(nLevels);
+                        XMFLOAT4 runColor = color;
+                        if (nSlots > 1 || (pSlots && pSlots->size() == 1)) {
+                            const XMFLOAT4& slot = (*pSlots)[nRun / nLevels];
+                            runColor = {color.x * slot.x, color.y * slot.y, color.z * slot.z, color.w * slot.w};
+                        }
+
+                        device.Draw(
+                            MakeConstants(mvp, {runColor.x * fShade, runColor.y * fShade, runColor.z * fShade, runColor.w}),
+                            uCount, uStart);
                     }
 
                     uStart += uCount;

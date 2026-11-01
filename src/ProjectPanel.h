@@ -9,10 +9,26 @@
 // *** インクルードファイル ***
 //**********************************************************************************
 #include <windows.h>
+#include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace dxs {
+// Project パネルのアイテムをパネルの外へドラッグして離したときに、最上位のウィンドウ
+// （エディター）へ送るメッセージ。lParam は ProjectAssetDrop*（SendMessage の間だけ有効）。
+constexpr UINT WM_DXS_PROJECT_ASSET_DROP = WM_APP + 44;
+
+struct ProjectAssetDrop {
+    std::filesystem::path file; // ドラッグしたファイル（絶対パス）
+    POINT screen{};             // 離した位置（スクリーン座標）
+};
+
+// サムネイルを描く関数（エディターが設定する。AssetThumbnail.h の RenderAssetThumbnail と同じ形）。
+// nSize x nSize の 0xAARRGGBB（上の行から、背景は透明）を返す。描けなければ false。
+using ProjectThumbnailProvider = bool (*)(const std::filesystem::path& file, int nSize, std::vector<std::uint32_t>& vPixels);
+void SetProjectThumbnailProvider(ProjectThumbnailProvider provider);
+
 // Project パネルから、パネルを持つ最上位のウィンドウ（エディター）へ送るメッセージ。
 //   wParam : PROJECT_ASSET_CREATE_MATERIAL（X → .dxmat）または PROJECT_ASSET_CONVERT_TO_X（FBX → X）
 //   lParam : 対象のファイル（const std::filesystem::path*。SendMessage の間だけ有効）

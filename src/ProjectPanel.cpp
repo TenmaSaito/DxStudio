@@ -29,6 +29,7 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <unordered_map>
 #include <vector>
 
 namespace dxs {
@@ -43,8 +44,14 @@ constexpr int TreeId = 7101, ListId = 7102, SearchId = 7103, RefreshId = 7104, I
 constexpr int NewComponentId = 7106, ChooseEditorId = 7107, AutomaticEditorId = 7108, OpenId = 7109;
 constexpr int CreateMaterialId = 7110, ConvertToXId = 7111; // X → マテリアル / FBX → X
 constexpr wchar_t WindowClass[] = L"DxStudioProjectPanel";  // ウィンドウクラス名
-constexpr int TOOLBAR_HEIGHT = 30;                          // 操作 / 検索の帯の高さ
-constexpr int SEARCH_INSET_LEFT = 20;                       // 虫めがねのアイコンの場所
+constexpr int TILE_SIZE = 64;                               // アイコン / サムネイルの大きさ（ピクセル）
+
+// 種類ごとのアイコンの画像の番号（画像リストの先頭に並べる。サムネイルはその後ろに追加する）
+enum TILE_ICON : int { TILE_FOLDER, TILE_MODEL, TILE_MATERIAL, TILE_SCRIPT, TILE_SCENE, TILE_IMAGE, TILE_FILE, TILE_ICON_COUNT };
+
+ProjectThumbnailProvider g_thumbnailProvider = nullptr; // サムネイルを描く関数（エディターが設定する）
+constexpr int TOOLBAR_HEIGHT = 30;                      // 操作 / 検索の帯の高さ
+constexpr int SEARCH_INSET_LEFT = 20;                   // 虫めがねのアイコンの場所
 
 //**********************************************************************************
 // *** 補助関数 ***
@@ -305,6 +312,22 @@ struct Panel {
     std::vector<Entry> entries;                       // 一覧の項目
     HTREEITEM currentNode{};                          // 表示中のフォルダーのツリーの項目
 
+    // ---- アイコン表示 ------------------------------------------------------------
+    HIMAGELIST tiles{};    // 種類ごとのアイコン + サムネイル（nTile の正方形）
+    int nTile = TILE_SIZE; // アイコンの大きさ（画面の拡大率に合わせる。100% で TILE_SIZE）
+
+    struct Thumbnail {
+        fs::file_time_type time;            // 作ったときのファイルの更新日時
+        std::vector<std::uint32_t> vPixels; // 0xAARRGGBB（空 = 作れなかった）
+    };
+
+    std::unordered_map<std::wstring, Thumbnail> thumbnails; // パス → サムネイル（更新日時が変わったら作り直す）
+
+    // ---- ドラッグ（パネルの外へのドラッグ＆ドロップ） ----------------------------
+    bool bDragging = false; // ドラッグ中か
+    fs::path dragFile;      // ドラッグしているファイル
+    HIMAGELIST dragImage{}; // カーソルに付いて動く画像
+
     //==============================================================================
     // --- 子コントロールの作成処理 ---
     //==============================================================================
@@ -402,30 +425,213 @@ struct Panel {
         }
 
         SetWindowTextW(breadcrumb, pathText.c_str());
+
+        // 前回のサムネイルを画像リストから外す（種類ごとのアイコンは残す）
+        while (tiles && ImageList_GetImageCount(tiles) > TILE_ICON_COUNT) {
+            ImageList_Remove(tiles, ImageList_GetImageCount(tiles) - 1);
+        }
+
         const auto filter = Lower(Text(search));
         for (const auto& entry : Enumerate(current)) {
             const std::wstring name = entry.path.filename().wstring();
             if (!filter.empty() && Lower(name).find(filter) == std::wstring::npos) continue;
             const int index = static_cast<int>(entries.size());
             entries.push_back(entry);
-            SHFILEINFOW info{};
-            const DWORD attr = entry.folder ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL;
-            SHGetFileInfoW(entry.path.c_str(), attr, &info, sizeof(info),
-                           SHGFI_SYSICONINDEX | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES);
             LVITEMW item{};
             item.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM;
             item.iItem = index;
             item.pszText = const_cast<wchar_t*>(name.c_str());
-            item.iImage = info.iIcon;
+            item.iImage = TileImage(entry);
             item.lParam = index;
             ListView_InsertItem(list, &item);
-            std::wstring kind = entry.folder ? editor::Tr(L"Folder") : entry.path.extension().wstring();
-            if (kind.empty()) {
-                kind = L"File";
+        }
+    }
+
+    //==============================================================================
+    // --- 項目の画像の番号の取得処理（モデル / マテリアルはサムネイル、それ以外は種類のアイコン） ---
+    //==============================================================================
+    int TileImage(const Entry& entry) {
+        if (entry.folder) return TILE_FOLDER;
+        const std::wstring extension = Lower(entry.path.extension().wstring());
+
+        // サムネイル（作れれば画像リストに追加して、その番号を使う）
+        if (const auto* pPixels = ThumbnailPixels(entry.path)) {
+            if (HBITMAP bitmap = MakeTileBitmap(pPixels, theme::Icon::NONE, 0)) {
+                const int image = ImageList_Add(tiles, bitmap, nullptr);
+                DeleteObject(bitmap);
+                if (image >= 0) return image;
+            }
+        }
+
+        if (extension == L".x" || extension == L".fbx") return TILE_MODEL;
+        if (extension == L".dxmat") return TILE_MATERIAL;
+        if (extension == L".dxs") return TILE_SCENE;
+        const wchar_t* scripts[] = {L".cpp", L".c", L".h", L".hpp", L".hlsl", L".hlsli"};
+        const wchar_t* images[] = {L".png", L".jpg", L".jpeg", L".bmp", L".tga", L".dds"};
+        auto contains = [&](const auto& list) {
+            return std::find_if(std::begin(list), std::end(list), [&](const wchar_t* value) { return extension == value; }) !=
+                   std::end(list);
+        };
+        if (contains(scripts)) return TILE_SCRIPT;
+        if (contains(images)) return TILE_IMAGE;
+        return TILE_FILE;
+    }
+
+    //==============================================================================
+    // --- サムネイルの取得処理（更新日時が同じならキャッシュを使う。作れなければ nullptr） ---
+    //==============================================================================
+    const std::vector<std::uint32_t>* ThumbnailPixels(const fs::path& file) {
+        if (!g_thumbnailProvider) return nullptr;
+        std::error_code ec;
+        const auto time = fs::last_write_time(file, ec);
+        if (ec) return nullptr;
+
+        auto& cached = thumbnails[file.wstring()];
+        if (cached.time != time || (!cached.vPixels.empty() && cached.vPixels.size() != static_cast<size_t>(nTile) * nTile)) {
+            cached.time = time;
+            cached.vPixels.clear();
+            if (!g_thumbnailProvider(file, nTile, cached.vPixels) ||
+                cached.vPixels.size() != static_cast<size_t>(nTile) * nTile) {
+                cached.vPixels.clear();
+            }
+        }
+
+        return cached.vPixels.empty() ? nullptr : &cached.vPixels;
+    }
+
+    //==============================================================================
+    // --- 画像リスト用のビットマップの作成処理 ---
+    //==============================================================================
+    // パネルの背景色の上に、サムネイル（pPixels）またはアイコン（icon）を描いた不透明な画像。
+    HBITMAP MakeTileBitmap(const std::vector<std::uint32_t>* pPixels, theme::Icon icon, COLORREF iconColor) {
+        BITMAPINFO info{};
+        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth = nTile;
+        info.bmiHeader.biHeight = -nTile; // 上の行から
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+        void* pBits = nullptr;
+        HBITMAP bitmap = CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &pBits, nullptr, 0);
+        if (!bitmap || !pBits) return nullptr;
+
+        auto* pTarget = static_cast<std::uint32_t*>(pBits);
+        const COLORREF back = theme::COLOR_PANEL;
+        const std::uint32_t uBackR = GetRValue(back), uBackG = GetGValue(back), uBackB = GetBValue(back);
+
+        if (pPixels) {
+            // サムネイルを背景色に重ねる（不透明度で混ぜる）
+            for (int index = 0; index < nTile * nTile; ++index) {
+                const std::uint32_t uPixel = (*pPixels)[static_cast<size_t>(index)];
+                const std::uint32_t uA = uPixel >> 24;
+                auto mix = [uA](std::uint32_t uValue, std::uint32_t uBack) {
+                    return (uValue * uA + uBack * (255 - uA)) / 255;
+                };
+                pTarget[index] = 0xFF000000 | (mix((uPixel >> 16) & 0xFF, uBackR) << 16) |
+                                 (mix((uPixel >> 8) & 0xFF, uBackG) << 8) | mix(uPixel & 0xFF, uBackB);
             }
 
-            ListView_SetItemText(list, index, 1, kind.data());
+            return bitmap;
         }
+
+        // 種類のアイコン: 背景色で塗り、中央にアイコンを描く
+        HDC dc = CreateCompatibleDC(nullptr);
+        HGDIOBJ old = SelectObject(dc, bitmap);
+        RECT all{0, 0, nTile, nTile};
+        theme::Fill(dc, all, back);
+        RECT box{nTile / 6, nTile / 6, nTile - nTile / 6, nTile - nTile / 6};
+        theme::DrawIcon(dc, icon, box, iconColor);
+        GdiFlush();
+        SelectObject(dc, old);
+        DeleteDC(dc);
+
+        // GDI は不透明度を書かないので、すべて不透明にする
+        for (int index = 0; index < nTile * nTile; ++index) {
+            pTarget[index] |= 0xFF000000;
+        }
+
+        return bitmap;
+    }
+
+    //==============================================================================
+    // --- 画像リストの作成処理（種類ごとのアイコンを TILE_ICON の順に並べる） ---
+    //==============================================================================
+    void CreateTiles() {
+        const UINT uDpi = GetDpiForWindow(window);
+        nTile = MulDiv(TILE_SIZE, uDpi ? static_cast<int>(uDpi) : 96, 96);
+        tiles = ImageList_Create(nTile, nTile, ILC_COLOR32, TILE_ICON_COUNT, 32);
+
+        const struct {
+            theme::Icon icon;
+            COLORREF color;
+        } icons[TILE_ICON_COUNT] = {
+            {theme::Icon::FOLDER, theme::COLOR_ICON_FOLDER}, {theme::Icon::MODEL, theme::COLOR_ICON_CUBE},
+            {theme::Icon::RENDERER, theme::COLOR_ICON_CUBE}, {theme::Icon::SCRIPT, theme::COLOR_ICON_SCRIPT},
+            {theme::Icon::SCENE, theme::COLOR_TEXT},         {theme::Icon::IMAGE, theme::COLOR_ICON_CUBE},
+            {theme::Icon::FILE, theme::COLOR_TEXT_DIM},
+        };
+
+        for (const auto& entry : icons) {
+            if (HBITMAP bitmap = MakeTileBitmap(nullptr, entry.icon, entry.color)) {
+                ImageList_Add(tiles, bitmap, nullptr);
+                DeleteObject(bitmap);
+            }
+        }
+
+        ListView_SetImageList(list, tiles, LVSIL_NORMAL);
+    }
+
+    //==============================================================================
+    // --- ドラッグの開始処理（LVN_BEGINDRAG） ---
+    //==============================================================================
+    void BeginDrag(const NMLISTVIEW& info) {
+        if (info.iItem < 0 || static_cast<size_t>(info.iItem) >= entries.size()) return;
+        const auto& entry = entries[static_cast<size_t>(info.iItem)];
+        if (entry.folder || !Allowed(entry.path)) return; // フォルダーはドラッグしない
+
+        dragFile = entry.path;
+        POINT imageOrigin{};
+        dragImage = ListView_CreateDragImage(list, info.iItem, &imageOrigin);
+        if (dragImage) {
+            // カーソルが画像のどこを持っているか（項目の左上からの位置）
+            ImageList_BeginDrag(dragImage, 0, info.ptAction.x - imageOrigin.x, info.ptAction.y - imageOrigin.y);
+            POINT cursor{};
+            GetCursorPos(&cursor);
+            ImageList_DragEnter(nullptr, cursor.x, cursor.y);
+        }
+
+        bDragging = true;
+        SetCapture(window);
+    }
+
+    //==============================================================================
+    // --- ドラッグの終了処理（bDrop = true ならパネルの外で離した物をエディターに渡す） ---
+    //==============================================================================
+    void EndDrag(bool bDrop) {
+        if (!bDragging) return;
+        bDragging = false;
+        if (dragImage) {
+            ImageList_DragLeave(nullptr);
+            ImageList_EndDrag();
+            ImageList_Destroy(dragImage);
+            dragImage = nullptr;
+        }
+
+        if (GetCapture() == window) {
+            ReleaseCapture();
+        }
+
+        if (!bDrop) return;
+
+        // パネルの中で離した場合は何もしない
+        POINT cursor{};
+        GetCursorPos(&cursor);
+        HWND target = WindowFromPoint(cursor);
+        if (target == window || IsChild(window, target)) return;
+
+        // 配置 / 設定はエンジンの機能なので、エディターのウィンドウに任せる
+        ProjectAssetDrop drop{dragFile, cursor};
+        SendMessageW(GetAncestor(window, GA_ROOTOWNER), WM_DXS_PROJECT_ASSET_DROP, 0, reinterpret_cast<LPARAM>(&drop));
     }
 
     //==============================================================================
@@ -696,7 +902,7 @@ struct Panel {
         } else if (command == CreateMaterialId || command == ConvertToXId) {
             // 変換はエンジンの機能なので、エディターのウィンドウに任せる
             const WPARAM action = command == CreateMaterialId ? PROJECT_ASSET_CREATE_MATERIAL : PROJECT_ASSET_CONVERT_TO_X;
-            SendMessageW(GetAncestor(window, GA_ROOT), WM_DXS_PROJECT_ASSET_COMMAND, action,
+            SendMessageW(GetAncestor(window, GA_ROOTOWNER), WM_DXS_PROJECT_ASSET_COMMAND, action,
                          reinterpret_cast<LPARAM>(&selectedFile));
             Refresh();
         }
@@ -858,8 +1064,7 @@ struct Panel {
         MoveWindow(tree, 0, TOOLBAR_HEIGHT, left, std::max(1, h - TOOLBAR_HEIGHT), TRUE);
         MoveWindow(list, left + 2, 56, std::max(1, w - left - 2), std::max(1, h - 56), TRUE);
         InvalidateRect(window, nullptr, TRUE);
-        ListView_SetColumnWidth(list, 0, std::max(120, w - left - 135));
-        ListView_SetColumnWidth(list, 1, 100);
+        ListView_Arrange(list, LVA_DEFAULT); // 幅に合わせてアイコンを並べ直す
     }
 };
 
@@ -899,7 +1104,9 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         p->breadcrumb = p->Make(L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS | SS_NOPREFIX);
         p->tree = p->Make(WC_TREEVIEWW, L"",
                           WS_TABSTOP | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS | TVS_FULLROWSELECT, TreeId);
-        p->list = p->Make(WC_LISTVIEWW, L"", WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS, ListId);
+
+        // 中身の一覧は大きなアイコン表示（Unity / UE の Project / Content Browser と同じ）
+        p->list = p->Make(WC_LISTVIEWW, L"", WS_TABSTOP | LVS_ICON | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_AUTOARRANGE, ListId);
         theme::ApplyDarkControl(p->tree);
         theme::ApplyDarkControl(p->list);
         SetWindowTheme(ListView_GetHeader(p->list), L"DarkMode_ItemsView", nullptr);
@@ -909,29 +1116,35 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         ListView_SetBkColor(p->list, theme::COLOR_PANEL);
         ListView_SetTextBkColor(p->list, theme::COLOR_PANEL);
         ListView_SetTextColor(p->list, theme::COLOR_TEXT);
-        ListView_SetExtendedListViewStyle(p->list, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
-        SHFILEINFOW info{};
-        auto images =
-            reinterpret_cast<HIMAGELIST>(SHGetFileInfoW(L"C:\\", FILE_ATTRIBUTE_DIRECTORY, &info, sizeof(info),
-                                                        SHGFI_SYSICONINDEX | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES));
-        if (images) {
-            ListView_SetImageList(p->list, images, LVSIL_SMALL);
-        }
+        ListView_SetExtendedListViewStyle(p->list, LVS_EX_DOUBLEBUFFER);
 
-        LVCOLUMNW column{};
-        column.mask = LVCF_TEXT | LVCF_WIDTH;
-        column.pszText = const_cast<wchar_t*>(editor::Tr(L"Name"));
-        column.cx = 200;
-        ListView_InsertColumn(p->list, 0, &column);
-        column.pszText = const_cast<wchar_t*>(editor::Tr(L"Type"));
-        column.cx = 100;
-        ListView_InsertColumn(p->list, 1, &column);
+        // アイコンの画像リストと、アイコンの間隔（名前が 2 行入る高さ）
+        p->CreateTiles();
+        ListView_SetIconSpacing(p->list, p->nTile + MulDiv(30, p->nTile, TILE_SIZE), p->nTile + MulDiv(40, p->nTile, TILE_SIZE));
         p->LoadEditor();
         p->Layout();
         p->Refresh();
         return 0;
     }
     case WM_SIZE: p->Layout(); return 0;
+
+    // ---- ドラッグ中（BeginDrag でマウスをキャプチャーしている） ----
+    case WM_MOUSEMOVE:
+        if (p->bDragging && p->dragImage) {
+            POINT cursor{};
+            GetCursorPos(&cursor);
+            ImageList_DragMove(cursor.x, cursor.y);
+        }
+
+        return 0;
+    case WM_LBUTTONUP: p->EndDrag(true); return 0;
+    case WM_CAPTURECHANGED:
+        if (reinterpret_cast<HWND>(lp) != hwnd) {
+            p->EndDrag(false); // 他のウィンドウにキャプチャーを取られたら取り消す
+        }
+
+        return 0;
+
     case WM_CONTEXTMENU: p->ContextMenu(reinterpret_cast<HWND>(wp), {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)}); return 0;
     case WM_COMMAND:
         if (LOWORD(wp) == SearchId && (HIWORD(wp) == EN_SETFOCUS || HIWORD(wp) == EN_KILLFOCUS)) {
@@ -957,6 +1170,9 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                 p->currentNode = change->itemNew.hItem;
                 p->PopulateList();
             }
+        } else if (hdr->idFrom == ListId && hdr->code == LVN_BEGINDRAG) {
+            // ファイルをシーンビュー / Hierarchy / インスペクターへドラッグする
+            p->BeginDrag(*reinterpret_cast<NMLISTVIEW*>(lp));
         } else if (hdr->idFrom == ListId && hdr->code == NM_DBLCLK) {
             auto* action = reinterpret_cast<NMITEMACTIVATE*>(lp);
             p->OpenEntry(action->iItem);
@@ -1007,7 +1223,11 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         return 1;
     }
     case WM_NCDESTROY:
-        // フォントとブラシはエディターのテーマのキャッシュが持つ
+        // フォントとブラシはエディターのテーマのキャッシュが持つ。画像リストはパネルが持つ。
+        if (p->tiles) {
+            ImageList_Destroy(p->tiles);
+        }
+
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         delete p;
         return DefWindowProcW(hwnd, message, wp, lp);
@@ -1016,6 +1236,13 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(hwnd, message, wp, lp);
 }
 } // namespace
+
+//==================================================================================
+// --- サムネイルを描く関数の設定処理 ---
+//==================================================================================
+void SetProjectThumbnailProvider(ProjectThumbnailProvider provider) {
+    g_thumbnailProvider = provider;
+}
 
 //==================================================================================
 // --- Visual Studio のプロジェクトの生成処理 ---

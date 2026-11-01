@@ -89,37 +89,63 @@ void TestMaterialsFromX(const fs::path& root) {
     assert(vMaterials[1].sName == "Blue" && vMaterials[1].sTexture.empty());
     assert(std::abs(vMaterials[1].diffuse.z - 1.0f) < 1e-6f);
 
-    // 作成: マテリアルごとに 1 ファイル、プロジェクトからの相対パスで返る
+    // モデルのマテリアル（スロット）: MeshMaterialList の順（{ Red } の参照、埋め込みの Blue）
+    std::vector<dxs::MaterialSlot> vSlots;
+    assert(dxs::LoadModelMaterials(xFile, vSlots));
+    assert(vSlots.size() == 2 && vSlots[0].sName == "Red" && vSlots[1].sName == "Blue");
+    assert(std::abs(vSlots[0].color.x - 1.0f) < 1e-6f && std::abs(vSlots[1].color.z - 1.0f) < 1e-6f);
+
+    // 作成: すべてのマテリアルを 1 つのファイルにまとめる（プロジェクトからの相対パスで返る）
     std::vector<std::string> vCreated;
     assert(dxs::CreateMaterialsFromX(root, xFile, vCreated, error));
-    assert(vCreated.size() == 2);
-    assert(vCreated[0] == "Assets/Models/Box_Red.dxmat");
-    assert(vCreated[1] == "Assets/Models/Box_Blue.dxmat");
+    assert(vCreated.size() == 1 && vCreated[0] == "Assets/Models/Box.dxmat");
 
     dxs::Material material;
     assert(dxs::LoadMaterial(root / fs::u8path(vCreated[0]), material, error));
-    assert(material.sName == "Red");
-    assert(std::abs(material.baseColor.x - 1.0f) < 1e-6f && std::abs(material.baseColor.w - 0.5f) < 1e-6f);
+    assert(material.sName == "Box" && material.sShaderAsset == "Default.hlsl");
+    assert(std::abs(material.baseColor.x - 1.0f) < 1e-6f && std::abs(material.baseColor.w - 1.0f) < 1e-6f); // 全体は白
+    assert(material.vSlots.size() == 2);
+    assert(material.vSlots[0].sName == "Red" && std::abs(material.vSlots[0].color.w - 0.5f) < 1e-6f);
+    assert(material.vSlots[0].sTexture == "Assets/Models/Textures/red.png");
+    assert(material.vSlots[1].sName == "Blue" && material.vSlots[1].sTexture.empty());
     assert(material.sTextureAsset == "Assets/Models/Textures/red.png");
-    assert(material.sShaderAsset == "Default.hlsl");
 
     // もう一度作っても既存のファイルは上書きせず、_1 を付ける
     std::vector<std::string> vSecond;
     assert(dxs::CreateMaterialsFromX(root, xFile, vSecond, error));
-    assert(vSecond.size() == 2 && vSecond[0] == "Assets/Models/Box_Red_1.dxmat");
+    assert(vSecond.size() == 1 && vSecond[0] == "Assets/Models/Box_1.dxmat");
 
-    // マテリアルを使う物体は、どの API でも基本色が掛かる（描画情報の段階で反映される）
+    // マテリアル未設定の物体: モデルファイルの面ごとの色で描く（面は Red を使う）
     dxs::Scene scene;
     scene.projectRoot = root;
     dxs::Entity entity;
     entity.sName = "Box";
     entity.renderer = dxs::Entity::RendererKind::Mesh;
     entity.sModelAsset = "Assets/Models/Box.x";
-    entity.sMaterialAsset = vCreated[1];
     scene.vEntities.push_back(entity);
-    const auto draws = dxs::ResolveWorldDraws(scene);
+    auto draws = dxs::ResolveWorldDraws(scene);
     assert(draws.size() == 1 && draws[0].pVertices && draws[0].pVertices->size() == 3);
-    assert(std::abs(draws[0].color.x) < 1e-6f && std::abs(draws[0].color.z - 1.0f) < 1e-6f);
+    assert(draws[0].pRunColors && draws[0].pRunColors->size() == 2);
+    assert(draws[0].pShadeRuns && draws[0].pShadeRuns->size() == 2 * 8); // スロット × 明るさ 8 段階
+    assert(std::abs((*draws[0].pRunColors)[0].x - 1.0f) < 1e-6f);
+
+    // まとめたマテリアルの色を変えて設定すると、面ごとの色が置き換わる（どの API でも同じ）
+    material.vSlots[0].color = {0.0f, 1.0f, 0.0f, 1.0f};
+    material.baseColor = {0.5f, 0.5f, 0.5f, 1.0f};
+    assert(dxs::SaveMaterial(root / fs::u8path(vCreated[0]), material, error));
+    scene.vEntities[0].sMaterialAsset = vCreated[0];
+    draws = dxs::ResolveWorldDraws(scene);
+    assert(draws[0].pRunColors && draws[0].pRunColors->size() == 2);
+    assert(std::abs((*draws[0].pRunColors)[0].y - 1.0f) < 1e-6f && std::abs((*draws[0].pRunColors)[0].x) < 1e-6f);
+    assert(std::abs(draws[0].color.x - 0.5f) < 1e-6f); // 基本色は全体に掛かる
+
+    // 1 色だけのマテリアル（バージョン 1）は、モデル全体をその色で描く
+    dxs::Material single;
+    single.baseColor = {0.0f, 0.0f, 1.0f, 1.0f};
+    assert(dxs::SaveMaterial(root / L"Assets" / L"Models" / L"Single.dxmat", single, error));
+    scene.vEntities[0].sMaterialAsset = "Assets/Models/Single.dxmat";
+    draws = dxs::ResolveWorldDraws(scene);
+    assert(!draws[0].pRunColors && std::abs(draws[0].color.z - 1.0f) < 1e-6f && std::abs(draws[0].color.x) < 1e-6f);
 
     // Material の無い X（組み込みの基本図形と同じ形）からは、白のマテリアルが 1 つできる
     const fs::path plain = root / L"Assets" / L"Models" / L"Plain.x";
@@ -295,7 +321,16 @@ Frame Right {
     dxs::Material material;
     assert(dxs::LoadMaterial(root / fs::u8path(vCreated[0]), material, error));
     assert(material.sTextureAsset == vMaterials[0].sTexture); // プロジェクトの外のパスは書いてあるまま
-    assert(std::abs(material.baseColor.x - 1.0f) < 1e-6f && std::abs(material.baseColor.y) < 1e-6f);
+
+    // スロット: 左の Mesh の「赤」と、マテリアルの無い右の Mesh の白（1 つのファイルにまとまる）
+    assert(material.vSlots.size() == 2);
+    assert(material.vSlots[0].sName == "\xE8\xB5\xA4" && material.vSlots[0].sTexture == vMaterials[0].sTexture);
+    assert(std::abs(material.vSlots[0].color.x - 1.0f) < 1e-6f && std::abs(material.vSlots[0].color.y) < 1e-6f);
+    assert(std::abs(material.vSlots[1].color.y - 1.0f) < 1e-6f);
+
+    // 描画: 左の三角形は赤、右の三角形は白（区間は スロット × 明るさ）
+    const auto colored = dxs::MeshRenderer(xFile).BuildDrawItem(dxs::Entity{});
+    assert(colored.pRunColors && colored.pRunColors->size() == 2 && colored.pShadeRuns->size() == 16);
 }
 
 } // namespace

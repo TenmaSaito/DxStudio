@@ -42,16 +42,31 @@ struct Entity;
 //**********************************************************************************
 // *** マテリアル ***
 //**********************************************************************************
+// モデルの面が使うマテリアル 1 つ分（スロット）。モデルファイルの面ごとのマテリアル番号の順に並ぶ。
+struct MaterialSlot {
+    std::string sName;                   // 名前（無ければ空）
+    DirectX::XMFLOAT4 color{1, 1, 1, 1}; // 色（拡散色）
+    std::string sTexture;                // テクスチャ（プロジェクトからの相対パス。まだ描画には使わない）
+};
+
 struct Material {
     std::string sName = "Material";            // 名前
-    DirectX::XMFLOAT4 baseColor{1, 1, 1, 1};   // 基本色
+    DirectX::XMFLOAT4 baseColor{1, 1, 1, 1};   // 基本色（全体に掛ける色）
     std::string sTextureAsset;                 // テクスチャのアセット
     std::string sShaderAsset = "Default.hlsl"; // シェーダーのアセット
+    // 面ごとの色（X / FBX のマテリアルをまとめた物）。空なら全体を baseColor の 1 色で描く。
+    std::vector<MaterialSlot> vSlots;
 };
 
 // マテリアルファイル（.dxmat）の読み込み / 保存
+//   バージョン 1: DXMATERIAL 1 "名前" R G B A "テクスチャ" "シェーダー"
+//   バージョン 2: バージョン 1 の後に スロット数 ("名前" R G B A "テクスチャ")...（vSlots があるとき）
 bool LoadMaterial(const std::filesystem::path& path, Material& material, std::string& error);
 bool SaveMaterial(const std::filesystem::path& path, const Material& material, std::string& error);
+
+// モデルファイル（.x / .fbx）が持つマテリアルを、面ごとのマテリアル番号の順に取得する
+// （MeshRenderer の描画と同じ順）。マテリアルが無いモデルは空で true。
+bool LoadModelMaterials(const std::filesystem::path& file, std::vector<MaterialSlot>& vSlots);
 
 //**********************************************************************************
 // *** 描画コンポーネント ***

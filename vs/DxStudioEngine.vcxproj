@@ -35,6 +35,7 @@
     <ClCompile Include="..\src\Engine.cpp" />
     <ClCompile Include="..\src\Primitives.cpp" />
     <ClCompile Include="..\src\ModelConvert.cpp" />
+    <ClCompile Include="..\src\AssetThumbnail.cpp" />
     <ClCompile Include="..\src\Physics.cpp" />
     <ClCompile Include="..\src\Input\input.cpp" />
     <ClCompile Include="..\src\Input\joypad.cpp" />
@@ -58,6 +59,7 @@
     <ClInclude Include="..\src\Engine.h" />
     <ClInclude Include="..\src\Primitives.h" />
     <ClInclude Include="..\src\ModelConvert.h" />
+    <ClInclude Include="..\src\AssetThumbnail.h" />
     <ClInclude Include="..\src\Physics.h" />
     <ClInclude Include="..\src\Renderer.h" />
     <ClInclude Include="..\src\OverlayPS.h" />

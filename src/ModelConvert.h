@@ -40,10 +40,14 @@ struct XMaterialInfo {
 // 空の配列で true を返す。バイナリ形式の X ファイルは失敗する。
 bool ReadXMaterials(const std::filesystem::path& xFile, std::vector<XMaterialInfo>& vOut, std::string& error);
 
-// X ファイルの Material から .dxmat を作る（X ファイルと同じフォルダー）。
-//   ・Material が 1 つ（または無い）なら <名前>.dxmat、複数なら <名前>_<マテリアル名>.dxmat
+// sText の位置 nWord にある "Material [名前] { ... }" を 1 つ読む（テンプレートの宣言や
+// "MeshMaterialList" の一部なら false）。nNext には読み終えた位置が入る。
+bool ParseXMaterial(const std::string& sText, std::size_t nWord, XMaterialInfo& material, std::size_t& nNext);
+
+// X ファイルのすべての Material を、1 つの .dxmat（<名前>.dxmat、X ファイルと同じフォルダー）に
+// 面ごとの色（スロット）としてまとめて作る。スロットの順はエンジンが面に割り当てる順と同じ。
 //   ・同じ名前のファイルがあれば _1、_2 ... を付け、既存のファイルは上書きしない
-//   ・vCreatedAssets には projectRoot からの相対パス（'/' 区切り）が入る
+//   ・vCreatedAssets には作ったファイル（1 つ）の projectRoot からの相対パス（'/' 区切り）が入る
 bool CreateMaterialsFromX(const std::filesystem::path& projectRoot, const std::filesystem::path& xFile,
                           std::vector<std::string>& vCreatedAssets, std::string& error);
 

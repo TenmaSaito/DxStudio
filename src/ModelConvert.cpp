@@ -473,6 +473,26 @@ std::string BuildXText(const std::vector<XVertex>& vVertices, const std::vector<
 } // namespace
 
 //==================================================================================
+// --- X ファイルの Material 1 つ分の読み取り処理（エンジンのメッシュの読み込みからも使う） ---
+//==================================================================================
+bool ParseXMaterial(const std::string& sText, std::size_t nWord, XMaterialInfo& material, std::size_t& nNext) {
+    constexpr std::string_view WORD = "Material";
+    nNext = nWord + WORD.size();
+    if (sText.compare(nWord, WORD.size(), WORD) != 0) return false;
+
+    // "MeshMaterialList" などの一部や、テンプレートの宣言は Material ではない
+    const bool bWordStart = nWord == 0 || !IsIdentifierChar(sText[nWord - 1]);
+    const bool bWordEnd = nNext >= sText.size() || !IsIdentifierChar(sText[nNext]);
+    if (!bWordStart || !bWordEnd || IsTemplateDeclaration(sText, nWord)) return false;
+
+    try {
+        return ParseMaterialAt(sText, nWord, material, nNext);
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+//==================================================================================
 // --- 重複しないファイル名の作成処理 ---
 //==================================================================================
 std::filesystem::path UniqueFilePath(const std::filesystem::path& folder, const std::wstring& sStem,
@@ -535,58 +555,67 @@ static bool CreateMaterialsFromXImpl(const std::filesystem::path& projectRoot, c
                                      std::vector<std::string>& vCreatedAssets, std::string& error) {
     vCreatedAssets.clear();
 
-    std::vector<XMaterialInfo> vMaterials;
-    if (!ReadXMaterials(xFile, vMaterials, error)) return false;
+    // X ファイルとして読めるか（テキスト形式か）を先に確かめる（理由をエラーに入れるため）
+    std::vector<XMaterialInfo> vCheck;
+    if (!ReadXMaterials(xFile, vCheck, error)) return false;
 
-    // Material が無い X ファイルでも、白のマテリアルを 1 つ作る
-    if (vMaterials.empty()) {
-        vMaterials.push_back({});
+    // モデルのマテリアルを、エンジンが面に割り当てるのと同じ順（スロット）で取得する
+    std::vector<MaterialSlot> vSlots;
+    if (!LoadModelMaterials(xFile, vSlots)) {
+        error = "The model could not be loaded: " + PathUtf8(xFile);
+        return false;
     }
 
     const auto folder = xFile.parent_path();
-    const std::wstring sStem = xFile.stem().wstring();
     std::error_code ec;
     const auto root = std::filesystem::weakly_canonical(projectRoot, ec);
 
-    for (std::size_t nIndex = 0; nIndex < vMaterials.size(); ++nIndex) {
-        const auto& source = vMaterials[nIndex];
-
-        // ファイル名: 1 つなら <X の名前>、複数なら <X の名前>_<マテリアル名 または 番号>
-        std::wstring sFileStem = sStem;
-        if (vMaterials.size() > 1) {
-            sFileStem += L"_" + (source.sName.empty() ? std::to_wstring(nIndex) : SafeFileStem(source.sName));
+    // テクスチャ: X ファイルからの相対パスを、プロジェクトからの相対パスにする
+    auto toProjectPath = [&](const std::string& sTexture) {
+        if (sTexture.empty()) return sTexture;
+        const auto texture = std::filesystem::weakly_canonical(folder / std::filesystem::u8path(sTexture), ec);
+        auto relative = texture.lexically_relative(root);
+        if (relative.empty() || *relative.begin() == L"..") {
+            relative = std::filesystem::u8path(sTexture); // プロジェクトの外: 書いてあるまま残す
         }
 
-        const auto output = UniqueFilePath(folder, sFileStem, L".dxmat");
+        return PathUtf8(relative.generic_wstring());
+    };
 
-        // Direct3D 11 / 12 の描画は baseColor を使う（拡散色をそのまま入れる）
-        Material material;
-        material.sName = source.sName.empty() ? PathUtf8(xFile.stem()) : source.sName;
-        material.baseColor = source.diffuse;
-        material.sShaderAsset = "Default.hlsl";
-
-        // テクスチャ: X ファイルからの相対パスを、プロジェクトからの相対パスにする
-        if (!source.sTexture.empty()) {
-            const auto texture = std::filesystem::weakly_canonical(folder / std::filesystem::u8path(source.sTexture), ec);
-            auto relative = texture.lexically_relative(root);
-            if (relative.empty() || *relative.begin() == L"..") {
-                relative = std::filesystem::u8path(source.sTexture); // プロジェクトの外: 書いてあるまま残す
-            }
-
-            material.sTextureAsset = PathUtf8(relative.generic_wstring());
-        }
-
-        if (!SaveMaterial(output, material, error)) return false;
-
-        // 作ったファイルをプロジェクトからの相対パスで返す
-        auto asset = std::filesystem::weakly_canonical(output, ec).lexically_relative(root);
-        if (asset.empty() || *asset.begin() == L"..") {
-            asset = output;
-        }
-
-        vCreatedAssets.push_back(PathUtf8(asset.generic_wstring()));
+    // 1 つのマテリアルファイルに、すべてのマテリアルを面ごとの色（スロット）としてまとめる。
+    // 基本色は白（全体の色合いを変えたいときは基本色を変える）。
+    Material material;
+    material.sName = PathUtf8(xFile.stem());
+    material.sShaderAsset = "Default.hlsl";
+    for (auto slot : vSlots) {
+        slot.sTexture = toProjectPath(slot.sTexture);
+        material.vSlots.push_back(std::move(slot));
     }
 
+    // マテリアルの無い X ファイルでも、白のスロットを 1 つ作る
+    if (material.vSlots.empty()) {
+        material.vSlots.push_back(MaterialSlot{material.sName});
+    }
+
+    // 最初のテクスチャを、マテリアル全体のテクスチャとしても記録する（以前の形式との互換）
+    for (const auto& slot : material.vSlots) {
+        if (!slot.sTexture.empty()) {
+            material.sTextureAsset = slot.sTexture;
+            break;
+        }
+    }
+
+    // <X の名前>.dxmat（既にあれば _1、_2 ... を付け、上書きしない）
+    const auto output = UniqueFilePath(folder, xFile.stem().wstring(), L".dxmat");
+    if (!SaveMaterial(output, material, error)) return false;
+
+    // 作ったファイルをプロジェクトからの相対パスで返す
+    auto asset = std::filesystem::weakly_canonical(output, ec).lexically_relative(root);
+    if (asset.empty() || *asset.begin() == L"..") {
+        asset = output;
+    }
+
+    vCreatedAssets.push_back(PathUtf8(asset.generic_wstring()));
     return true;
 }
 
