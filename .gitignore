@@ -21,3 +21,6 @@
 **/EditorLayout.dxl
 /projects/
 /dist/
+
+# Left behind when a test aborts
+dxstudio-scene-test-*/

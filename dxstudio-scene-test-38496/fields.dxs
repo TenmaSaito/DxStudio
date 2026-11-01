@@ -1,3 +1,0 @@
-DXSCENE 8 1
-CAMERA 0 0 0 0 0 0.321750551 6.3245554
-"Fields" 1 "FieldKinds" -1 1 "" "" "" 1 0 0 17 "FieldKinds" "Mode" "Run" "FieldKinds" "Size" "1,2" "FieldKinds" "Offset" "4,5,6" "FieldKinds" "Volume" "1" "FieldKinds" "Level" "1" "FieldKinds" "Weights.Size" "3" "FieldKinds" "Weights[0]" "0.25" "FieldKinds" "Weights[1]" "0" "FieldKinds" "Modes.Size" "1" "FieldKinds" "Weights[2]" "9.5" "FieldKinds" "Flags.Size" "2" "FieldKinds" "Flags[0]" "true" "FieldKinds" "Flags[1]" "true" "FieldKinds" "Points.Size" "2" "FieldKinds" "Points[0]" "0,0,0" "FieldKinds" "Points[1]" "7,8,9" "FieldKinds" "Modes[0]" "Idle" 0 0 0 0 0 0 0 1 1 1 1 1 1 1
