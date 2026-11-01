@@ -1,4 +1,5 @@
 #include "EditorUtility.h"
+#include "EditorLocale.h"
 #include "Core/Log.h"
 
 #include <commdlg.h>
@@ -33,9 +34,10 @@ std::wstring Text(HWND control) {
     result.resize(n);
     return result;
 }
-void Error(HWND window, const std::string& message) {
+void Error(HWND window, const std::string& rawMessage) {
+    const std::string message = TrUtf8(rawMessage); // 表示言語に翻訳（訳が無ければ英語のまま）
     Debug::LogError(message);
-    MessageBoxW(window, Wide(message).c_str(), L"DxStudio", MB_ICONERROR | MB_OK);
+    MessageBoxL(window, Wide(message).c_str(), L"DxStudio", MB_ICONERROR | MB_OK);
 }
 
 // The shell folder picker creates a real filesystem directory selection and

@@ -1,5 +1,6 @@
 #include "ConsolePanel.h"
 #include "Core/Log.h"
+#include "EditorLocale.h"
 #include "EditorTheme.h"
 
 #include <windowsx.h>
@@ -46,7 +47,7 @@ public:
     ScopedDelegateHandle m_logSubscription;
 
     HWND Make(const wchar_t* pClass, const wchar_t* pText, DWORD dwStyle, int nId) {
-        HWND hControl = CreateWindowExW(0, pClass, pText, WS_CHILD | WS_VISIBLE | dwStyle, 0, 0, 1, 1, m_hWindow,
+        HWND hControl = CreateWindowExW(0, pClass, editor::LocalizedControlText(pClass, pText), WS_CHILD | WS_VISIBLE | dwStyle, 0, 0, 1, 1, m_hWindow,
                                         reinterpret_cast<HMENU>(static_cast<INT_PTR>(nId)), m_hInstance, nullptr);
         SendMessageW(hControl, WM_SETFONT, reinterpret_cast<WPARAM>(theme::GetFonts().hRegular), TRUE);
         return hControl;
@@ -266,8 +267,8 @@ LRESULT CALLBACK ConsoleWindowProc(HWND hWindow, UINT uMessage, WPARAM wParam, L
     }
     case WM_CONTEXTMENU: {
         HMENU hMenu = CreatePopupMenu();
-        AppendMenuW(hMenu, MF_STRING, 1, L"Copy\tCtrl+C");
-        AppendMenuW(hMenu, MF_STRING, 2, L"Clear");
+        editor::AppendMenuL(hMenu, MF_STRING, 1, L"Copy\tCtrl+C");
+        editor::AppendMenuL(hMenu, MF_STRING, 2, L"Clear");
         POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         if (point.x == -1 && point.y == -1) GetCursorPos(&point);
         const int nChoice = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, hWindow, nullptr);

@@ -357,7 +357,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         if (p->index != 3 && p->index != 1) { // panels 1 and 3 use tab buttons
             HGDIOBJ old = SelectObject(dc, fonts.hBold);
             SIZE size{};
-            GetTextExtentPoint32W(dc, PANEL_NAMES[p->index], static_cast<int>(wcslen(PANEL_NAMES[p->index])), &size);
+            GetTextExtentPoint32W(dc, Tr(PANEL_NAMES[p->index]), static_cast<int>(wcslen(Tr(PANEL_NAMES[p->index]))), &size);
             SelectObject(dc, old);
             RECT tab{0, 2, std::min<LONG>(r.right - 70, 34 + size.cx + 14), header};
             theme::Fill(dc, tab, theme::COLOR_TAB_ACTIVE);
@@ -368,7 +368,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             RECT icon{10, 8, 24, 22};
             theme::DrawIcon(dc, PANEL_ICONS[p->index], icon, theme::COLOR_TEXT);
             RECT text{30, 2, tab.right - 4, header};
-            theme::DrawLabel(dc, PANEL_NAMES[p->index], text, theme::COLOR_TEXT_BRIGHT, fonts.hBold,
+            theme::DrawLabel(dc, Tr(PANEL_NAMES[p->index]), text, theme::COLOR_TEXT_BRIGHT, fonts.hBold,
                              DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         }
         if (p->index == 0 && !p->collapsed) {

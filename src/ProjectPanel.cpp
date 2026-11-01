@@ -1,4 +1,5 @@
 #include "ProjectPanel.h"
+#include "EditorLocale.h"
 #include "EditorTheme.h"
 #include <uxtheme.h>
 #include <commctrl.h>
@@ -85,7 +86,7 @@ struct ModalRoot {
 };
 void Error(HWND h, const std::wstring& msg) {
     ModalRoot modal(h);
-    MessageBoxW(modal.owner ? modal.owner : h, msg.c_str(), L"Project", MB_OK | MB_ICONERROR);
+    editor::MessageBoxL(modal.owner ? modal.owner : h, msg.c_str(), L"Project", MB_OK | MB_ICONERROR);
 }
 
 bool Reparse(const fs::path& path) {
@@ -136,7 +137,7 @@ LRESULT CALLBACK NamePromptProc(HWND window, UINT message, WPARAM wp, LPARAM lp)
     if (message == WM_CREATE) {
         auto instance = reinterpret_cast<CREATESTRUCTW*>(lp)->hInstance;
         auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id) {
-            auto control = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, window,
+            auto control = CreateWindowExW(0, cls, editor::LocalizedControlText(cls, text), WS_CHILD | WS_VISIBLE | style, x, y, w, h, window,
                                            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
             return control;
@@ -176,7 +177,7 @@ bool PromptComponentName(HWND panel, HINSTANCE instance, std::wstring& value) {
     RECT size{0, 0, 394, 162};
     AdjustWindowRectEx(&size, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
     NamePrompt prompt;
-    HWND dialog = CreateWindowExW(WS_EX_DLGMODALFRAME, wc.lpszClassName, L"New C++ Component", WS_CAPTION | WS_SYSMENU,
+    HWND dialog = CreateWindowExW(WS_EX_DLGMODALFRAME, wc.lpszClassName, editor::Tr(L"New C++ Component"), WS_CAPTION | WS_SYSMENU,
                                   area.left + std::max(0L, (area.right - area.left - (size.right - size.left)) / 2),
                                   area.top + std::max(0L, (area.bottom - area.top - (size.bottom - size.top)) / 2),
                                   size.right - size.left, size.bottom - size.top, owner, nullptr, instance, &prompt);
@@ -220,7 +221,7 @@ struct Panel {
     HTREEITEM currentNode{};
 
     HWND Make(const wchar_t* cls, const wchar_t* text, DWORD style, int id = 0, DWORD ex = 0) {
-        HWND h = CreateWindowExW(ex, cls, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 1, 1, window,
+        HWND h = CreateWindowExW(ex, cls, editor::LocalizedControlText(cls, text), WS_CHILD | WS_VISIBLE | style, 0, 0, 1, 1, window,
                                  reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
         SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         return h;
@@ -276,7 +277,7 @@ struct Panel {
         ListView_DeleteAllItems(list);
         entries.clear();
         if (!Allowed(current)) {
-            SetWindowTextW(breadcrumb, L"Project folder unavailable");
+            SetWindowTextW(breadcrumb, editor::Tr(L"Project folder unavailable"));
             return;
         }
         std::wstring pathText = L"Project";
@@ -300,7 +301,7 @@ struct Panel {
             item.iImage = info.iIcon;
             item.lParam = index;
             ListView_InsertItem(list, &item);
-            std::wstring kind = entry.folder ? L"Folder" : entry.path.extension().wstring();
+            std::wstring kind = entry.folder ? editor::Tr(L"Folder") : entry.path.extension().wstring();
             if (kind.empty()) kind = L"File";
             ListView_SetItemText(list, index, 1, kind.data());
         }
@@ -438,7 +439,7 @@ struct Panel {
             }
         }
         ModalRoot modal(window);
-        MessageBoxW(modal.owner,
+        editor::MessageBoxL(modal.owner,
                     L"Created the header and registered C++ component in project/Scripts.\n\nDouble-click the source to edit it. "
                     L"Run build.cmd and restart the editor to attach the new component.",
                     L"Component created", MB_OK | MB_ICONINFORMATION);
@@ -463,14 +464,14 @@ struct Panel {
         }
         HMENU menu = CreatePopupMenu();
         const int selected = ListView_GetNextItem(list, -1, LVNI_SELECTED);
-        AppendMenuW(menu, MF_STRING | (selected < 0 ? MF_GRAYED : 0), OpenId, L"Open");
-        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(menu, MF_STRING, NewComponentId, L"Create > C++ Component...");
-        AppendMenuW(menu, MF_STRING, ImportId, L"Import file...");
-        AppendMenuW(menu, MF_STRING, RefreshId, L"Refresh");
-        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(menu, MF_STRING, ChooseEditorId, L"Choose script editor...");
-        AppendMenuW(menu, MF_STRING | (scriptEditor.empty() ? MF_CHECKED : 0), AutomaticEditorId,
+        editor::AppendMenuL(menu, MF_STRING | (selected < 0 ? MF_GRAYED : 0), OpenId, L"Open");
+        editor::AppendMenuL(menu, MF_SEPARATOR, 0, nullptr);
+        editor::AppendMenuL(menu, MF_STRING, NewComponentId, L"Create > C++ Component...");
+        editor::AppendMenuL(menu, MF_STRING, ImportId, L"Import file...");
+        editor::AppendMenuL(menu, MF_STRING, RefreshId, L"Refresh");
+        editor::AppendMenuL(menu, MF_SEPARATOR, 0, nullptr);
+        editor::AppendMenuL(menu, MF_STRING, ChooseEditorId, L"Choose script editor...");
+        editor::AppendMenuL(menu, MF_STRING | (scriptEditor.empty() ? MF_CHECKED : 0), AutomaticEditorId,
                     L"Automatic editor (Visual Studio / default app)");
         const auto command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, 0, window, nullptr);
         DestroyMenu(menu);
@@ -586,8 +587,8 @@ struct Panel {
         // Unity Project window: toolbar (actions left, search right), folder
         // tree on the left, breadcrumb + contents on the right.
         MoveWindow(title, 8, 5, 80, 22, TRUE);
-        MoveWindow(import, 4, 3, 92, 24, TRUE);
-        MoveWindow(refresh, 100, 3, 86, 24, TRUE);
+        MoveWindow(import, 4, 3, 112, 24, TRUE);  // 「インポート...」が収まる幅
+        MoveWindow(refresh, 120, 3, 86, 24, TRUE);
         const int searchWidth = std::clamp(w / 3, 140, 320);
         MoveWindow(search, w - searchWidth - 4 + SEARCH_INSET_LEFT, 5, searchWidth - SEARCH_INSET_LEFT - 4, 20, TRUE);
         const int left = std::min(220, std::max(120, w / 4));
@@ -627,7 +628,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         toolSpec.icon = theme::Icon::ROTATE;
         theme::SetButtonSpec(p->refresh, toolSpec);
         p->search = p->Make(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, SearchId);
-        SendMessageW(p->search, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"Search current folder"));
+        SendMessageW(p->search, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(editor::Tr(L"Search current folder")));
         p->breadcrumb = p->Make(L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS | SS_NOPREFIX);
         p->tree = p->Make(WC_TREEVIEWW, L"",
                           WS_TABSTOP | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS | TVS_FULLROWSELECT, TreeId);
@@ -649,10 +650,10 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         if (images) ListView_SetImageList(p->list, images, LVSIL_SMALL);
         LVCOLUMNW column{};
         column.mask = LVCF_TEXT | LVCF_WIDTH;
-        column.pszText = const_cast<wchar_t*>(L"Name");
+        column.pszText = const_cast<wchar_t*>(editor::Tr(L"Name"));
         column.cx = 200;
         ListView_InsertColumn(p->list, 0, &column);
-        column.pszText = const_cast<wchar_t*>(L"Type");
+        column.pszText = const_cast<wchar_t*>(editor::Tr(L"Type"));
         column.cx = 100;
         ListView_InsertColumn(p->list, 1, &column);
         p->LoadEditor();

@@ -10,8 +10,9 @@ void Editor::AddTooltip(HWND control, const wchar_t* text) {
     info.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
     info.hwnd = GetParent(control);
     info.uId = reinterpret_cast<UINT_PTR>(control);
-    info.lpszText = const_cast<wchar_t*>(text);
+    info.lpszText = const_cast<wchar_t*>(Tr(text));
     SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&info));
+    if (text && *text) vLocalizedTips.emplace_back(control, text); // 言語切り替え用
 }
 
 void Editor::ApplyTheme() {
@@ -307,79 +308,126 @@ void Editor::CreateMainMenu() {
     HMENU file = CreatePopupMenu(), edit = CreatePopupMenu(), assets = CreatePopupMenu(), objects = CreatePopupMenu();
     HMENU components = CreatePopupMenu(), build = CreatePopupMenu(), windows = CreatePopupMenu(), help = CreatePopupMenu();
     HMENU settings = CreatePopupMenu(), graphics = CreatePopupMenu();
-    AppendMenuW(file, MF_STRING, ID_SAVE, L"Save scene\tCtrl+S");
-    AppendMenuW(file, MF_STRING, ID_LOAD, L"Reload scene");
-    AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(file, MF_STRING, ID_NEW_PROJECT, L"New project...");
-    AppendMenuW(file, MF_STRING, ID_OPEN_PROJECT, L"Open project...");
-    AppendMenuW(file, MF_STRING, ID_SAVE_PROJECT_AS, L"Save project file as...");
-    AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(file, MF_STRING, ID_EXPORT, L"Build and export Windows game...");
-    AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(file, MF_STRING, ID_EXIT, L"Exit");
-    AppendMenuW(edit, MF_STRING, ID_DUPLICATE, L"Duplicate\tCtrl+D");
-    AppendMenuW(edit, MF_STRING, ID_DELETE, L"Delete\tDel");
-    AppendMenuW(edit, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(edit, MF_STRING, ID_FRAME_SELECTION, L"Frame Selected\tF");
-    AppendMenuW(edit, MF_STRING, ID_APPLY, L"Apply Inspector Changes\tEnter");
-    AppendMenuW(edit, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(edit, MF_STRING, ID_BUILD_DEBUG, L"Play\tCtrl+P");
-    AppendMenuW(edit, MF_STRING, ID_PAUSE, L"Pause\tCtrl+Shift+P");
-    AppendMenuW(edit, MF_STRING, ID_STEP, L"Step\tCtrl+Alt+P");
-    AppendMenuW(edit, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(graphics, MF_STRING, ID_GRAPHICS_D3D12, L"DirectX 12");
-    AppendMenuW(graphics, MF_STRING, ID_GRAPHICS_D3D11, L"DirectX 11");
-    AppendMenuW(graphics, MF_STRING, ID_GRAPHICS_D3D9, L"DirectX 9");
-    AppendMenuW(settings, MF_POPUP, reinterpret_cast<UINT_PTR>(graphics), L"Graphics API");
-    AppendMenuW(settings, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(settings, MF_STRING, ID_CHOOSE_SCRIPT_EDITOR, L"Script editor...");
-    AppendMenuW(settings, MF_STRING, ID_AUTOMATIC_SCRIPT_EDITOR, L"Use automatic Visual Studio detection");
-    AppendMenuW(settings, MF_STRING, ID_RELOAD_SHADER, L"Reload shader");
-    AppendMenuW(settings, MF_STRING, ID_FRONT_VIEW, L"Front orthographic view");
-    AppendMenuW(edit, MF_POPUP, reinterpret_cast<UINT_PTR>(settings), L"Project Settings");
-    AppendMenuW(assets, MF_STRING, ID_RELOAD_SHADER, L"Reimport / Reload shader");
-    AppendMenuW(assets, MF_STRING, ID_CHOOSE_SCRIPT_EDITOR, L"Open selected script editor...");
-    AppendMenuW(objects, MF_STRING, ID_ADD_EMPTY, L"Create Empty");
+    AppendMenuL(file, MF_STRING, ID_SAVE, L"Save scene\tCtrl+S");
+    AppendMenuL(file, MF_STRING, ID_LOAD, L"Reload scene");
+    AppendMenuL(file, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(file, MF_STRING, ID_NEW_PROJECT, L"New project...");
+    AppendMenuL(file, MF_STRING, ID_OPEN_PROJECT, L"Open project...");
+    AppendMenuL(file, MF_STRING, ID_SAVE_PROJECT_AS, L"Save project file as...");
+    AppendMenuL(file, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(file, MF_STRING, ID_EXPORT, L"Build and export Windows game...");
+    AppendMenuL(file, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(file, MF_STRING, ID_EXIT, L"Exit");
+    AppendMenuL(edit, MF_STRING, ID_DUPLICATE, L"Duplicate\tCtrl+D");
+    AppendMenuL(edit, MF_STRING, ID_DELETE, L"Delete\tDel");
+    AppendMenuL(edit, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(edit, MF_STRING, ID_FRAME_SELECTION, L"Frame Selected\tF");
+    AppendMenuL(edit, MF_STRING, ID_APPLY, L"Apply Inspector Changes\tEnter");
+    AppendMenuL(edit, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(edit, MF_STRING, ID_BUILD_DEBUG, L"Play\tCtrl+P");
+    AppendMenuL(edit, MF_STRING, ID_PAUSE, L"Pause\tCtrl+Shift+P");
+    AppendMenuL(edit, MF_STRING, ID_STEP, L"Step\tCtrl+Alt+P");
+    AppendMenuL(edit, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(graphics, MF_STRING, ID_GRAPHICS_D3D12, L"DirectX 12");
+    AppendMenuL(graphics, MF_STRING, ID_GRAPHICS_D3D11, L"DirectX 11");
+    AppendMenuL(graphics, MF_STRING, ID_GRAPHICS_D3D9, L"DirectX 9");
+    AppendMenuL(settings, MF_POPUP, reinterpret_cast<UINT_PTR>(graphics), L"Graphics API");
+    AppendMenuL(settings, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(settings, MF_STRING, ID_CHOOSE_SCRIPT_EDITOR, L"Script editor...");
+    AppendMenuL(settings, MF_STRING, ID_AUTOMATIC_SCRIPT_EDITOR, L"Use automatic Visual Studio detection");
+    AppendMenuL(settings, MF_STRING, ID_RELOAD_SHADER, L"Reload shader");
+    AppendMenuL(settings, MF_STRING, ID_FRONT_VIEW, L"Front orthographic view");
+    AppendMenuL(edit, MF_POPUP, reinterpret_cast<UINT_PTR>(settings), L"Project Settings");
+    // Edit > Preferences > Language（Unity と同じ場所）
+    HMENU preferences = CreatePopupMenu(), language = CreatePopupMenu();
+    AppendMenuW(language, MF_STRING, ID_LANGUAGE_ENGLISH, L"English");
+    AppendMenuW(language, MF_STRING, ID_LANGUAGE_JAPANESE, L"日本語");
+    AppendMenuL(preferences, MF_POPUP, reinterpret_cast<UINT_PTR>(language), L"Language");
+    AppendMenuL(edit, MF_POPUP, reinterpret_cast<UINT_PTR>(preferences), L"Preferences");
+    AppendMenuL(assets, MF_STRING, ID_RELOAD_SHADER, L"Reimport / Reload shader");
+    AppendMenuL(assets, MF_STRING, ID_CHOOSE_SCRIPT_EDITOR, L"Open selected script editor...");
+    AppendMenuL(objects, MF_STRING, ID_ADD_EMPTY, L"Create Empty");
     AppendPrimitiveMenus(objects);
-    AppendMenuW(objects, MF_STRING, ID_ADD_MODEL, L"Place X / FBX model...");
-    AppendMenuW(objects, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(objects, MF_STRING, ID_FRAME_SELECTION, L"Frame selection\tF");
-    AppendMenuW(objects, MF_STRING, ID_DUPLICATE, L"Duplicate\tCtrl+D");
-    AppendMenuW(objects, MF_STRING, ID_DELETE, L"Delete selection");
+    AppendMenuL(objects, MF_STRING, ID_ADD_MODEL, L"Place X / FBX model...");
+    AppendMenuL(objects, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(objects, MF_STRING, ID_FRAME_SELECTION, L"Frame selection\tF");
+    AppendMenuL(objects, MF_STRING, ID_DUPLICATE, L"Duplicate\tCtrl+D");
+    AppendMenuL(objects, MF_STRING, ID_DELETE, L"Delete selection");
     // Component menu: every registered class, like Unity's Component menu.
     const auto names = RegisteredComponentNames();
     for (size_t i = 0; i < names.size() && ID_ADD_COMPONENT_MENU_FIRST + static_cast<int>(i) <= ID_ADD_COMPONENT_MENU_LAST;
          ++i)
-        AppendMenuW(components, MF_STRING, ID_ADD_COMPONENT_MENU_FIRST + static_cast<int>(i),
+        AppendMenuL(components, MF_STRING, ID_ADD_COMPONENT_MENU_FIRST + static_cast<int>(i),
                     Wide("Add " + names[i]).c_str());
-    AppendMenuW(build, MF_STRING, ID_EXPORT, L"Export Windows game...");
-    AppendMenuW(build, MF_STRING, ID_BUILD_DEBUG, L"Play in Editor\tCtrl+P");
-    AppendMenuW(build, MF_STRING, ID_BUILD_ANDROID, L"Build Android Debug APK");
-    AppendMenuW(build, MF_STRING, ID_CANCEL_BUILD, L"Cancel build");
-    AppendMenuW(build, MF_STRING, ID_PLATFORM_INFO, L"Build platforms...");
+    AppendMenuL(build, MF_STRING, ID_EXPORT, L"Export Windows game...");
+    AppendMenuL(build, MF_STRING, ID_BUILD_DEBUG, L"Play in Editor\tCtrl+P");
+    AppendMenuL(build, MF_STRING, ID_BUILD_ANDROID, L"Build Android Debug APK");
+    AppendMenuL(build, MF_STRING, ID_CANCEL_BUILD, L"Cancel build");
+    AppendMenuL(build, MF_STRING, ID_PLATFORM_INFO, L"Build platforms...");
     for (int i = 0; i < 4; ++i) {
         HMENU submenu = CreatePopupMenu();
-        AppendMenuW(submenu, MF_STRING, ID_PANEL_SHOW + i, L"Show / restore");
-        AppendMenuW(submenu, MF_STRING, ID_PANEL_FLOAT + i, L"Float / dock");
-        AppendMenuW(submenu, MF_STRING, ID_PANEL_MINIMIZE + i, L"Minimize / expand");
-        AppendMenuW(submenu, MF_STRING, ID_PANEL_HIDE + i, L"Hide");
-        AppendMenuW(windows, MF_POPUP, reinterpret_cast<UINT_PTR>(submenu), PANEL_NAMES[i]);
+        AppendMenuL(submenu, MF_STRING, ID_PANEL_SHOW + i, L"Show / restore");
+        AppendMenuL(submenu, MF_STRING, ID_PANEL_FLOAT + i, L"Float / dock");
+        AppendMenuL(submenu, MF_STRING, ID_PANEL_MINIMIZE + i, L"Minimize / expand");
+        AppendMenuL(submenu, MF_STRING, ID_PANEL_HIDE + i, L"Hide");
+        AppendMenuL(windows, MF_POPUP, reinterpret_cast<UINT_PTR>(submenu), PANEL_NAMES[i]);
     }
-    AppendMenuW(windows, MF_STRING, ID_SHOW_CONSOLE, L"Console\tCtrl+Shift+C");
-    AppendMenuW(windows, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(windows, MF_STRING, ID_SAVE_LAYOUT, L"Save current layout");
-    AppendMenuW(windows, MF_STRING, ID_LOAD_LAYOUT, L"Load saved layout");
-    AppendMenuW(windows, MF_STRING, ID_RESET_LAYOUT, L"Reset layout");
-    AppendMenuW(help, MF_STRING, ID_OPEN_README, L"DxStudio manual (README)");
-    AppendMenuW(help, MF_STRING, ID_PLATFORM_INFO, L"Build platforms...");
-    AppendMenuW(help, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(help, MF_STRING, ID_ABOUT, L"About DxStudio");
+    AppendMenuL(windows, MF_STRING, ID_SHOW_CONSOLE, L"Console\tCtrl+Shift+C");
+    AppendMenuL(windows, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(windows, MF_STRING, ID_SAVE_LAYOUT, L"Save current layout");
+    AppendMenuL(windows, MF_STRING, ID_LOAD_LAYOUT, L"Load saved layout");
+    AppendMenuL(windows, MF_STRING, ID_RESET_LAYOUT, L"Reset layout");
+    AppendMenuL(help, MF_STRING, ID_OPEN_README, L"DxStudio manual (README)");
+    AppendMenuL(help, MF_STRING, ID_PLATFORM_INFO, L"Build platforms...");
+    AppendMenuL(help, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(help, MF_STRING, ID_ABOUT, L"About DxStudio");
     const HMENU popups[MENU_COUNT] = {file, edit, assets, objects, components, build, windows, help};
     for (int m = 0; m < MENU_COUNT; ++m) {
         menuPopups[m] = popups[m];
         menuButtons[m] = Make(L"BUTTON", MENU_NAMES[m], BS_OWNERDRAW, ID_MENU_BAR_FIRST + m);
         theme::SetButtonSpec(menuButtons[m], {theme::ButtonRole::MENU_BAR});
     }
+}
+
+//==================================================================================
+// --- 表示言語の切り替え処理 ---
+//==================================================================================
+void Editor::ApplyLanguage(EditorLanguage language) {
+    if (!SetLanguage(language)) Debug::LogWarning("The language setting could not be saved; it applies to this session only.");
+    // 起動時に作ったボタン・ラベル・ツールチップを訳し直す
+    for (const auto& [hControl, sEnglish] : vLocalizedControls) {
+        if (!IsWindow(hControl)) continue;
+        SetWindowTextW(hControl, Tr(sEnglish.c_str()));
+        InvalidateRect(hControl, nullptr, TRUE);
+    }
+    for (const auto& [hControl, sEnglish] : vLocalizedTips) {
+        TTTOOLINFOW info{sizeof(info)};
+        info.hwnd = GetParent(hControl);
+        info.uId = reinterpret_cast<UINT_PTR>(hControl);
+        info.lpszText = const_cast<wchar_t*>(Tr(sEnglish.c_str()));
+        SendMessageW(tooltip, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&info));
+    }
+    SendMessageW(hierarchySearch, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(Tr(L"Search Hierarchy")));
+    // メニューを作り直す
+    for (int m = 0; m < MENU_COUNT; ++m) {
+        if (menuButtons[m]) DestroyWindow(menuButtons[m]);
+        if (menuPopups[m]) DestroyMenu(menuPopups[m]);
+        menuButtons[m] = nullptr;
+        menuPopups[m] = nullptr;
+    }
+    CreateMainMenu();
+    // Project / Console パネルは作り直す（ログはコンソールが履歴から復元する）
+    if (projectPanel) DestroyWindow(projectPanel);
+    projectPanel = CreateProjectPanel(panels[3].window, instance, projectRoot, base);
+    if (consolePanel) DestroyWindow(consolePanel);
+    consolePanel = CreateConsolePanel(panels[3].window, instance);
+    // 見出し・インスペクター・レイアウトを更新
+    RebuildInspectorNow();
+    Layout();
+    for (auto& panel : panels) InvalidateRect(panel.window, nullptr, TRUE);
+    UpdateMenuChecks();
+    RefreshTransport();
+    SetStatus(L"Language changed.");
 }
 
 void Editor::OpenMainMenu(int index) {
@@ -404,6 +452,8 @@ void Editor::UpdateMenuChecks() {
         EnableMenuItem(menu, ID_PAUSE, MF_BYCOMMAND | (bPlaying ? MF_ENABLED : MF_GRAYED));
         CheckMenuItem(menu, ID_PAUSE, MF_BYCOMMAND | (bPaused ? MF_CHECKED : MF_UNCHECKED));
         CheckMenuItem(menu, ID_BUILD_DEBUG, MF_BYCOMMAND | (bPlaying ? MF_CHECKED : MF_UNCHECKED));
+        CheckMenuRadioItem(menu, ID_LANGUAGE_ENGLISH, ID_LANGUAGE_JAPANESE,
+                           GetLanguage() == EditorLanguage::JAPANESE ? ID_LANGUAGE_JAPANESE : ID_LANGUAGE_ENGLISH, MF_BYCOMMAND);
     }
 }
 
@@ -416,7 +466,7 @@ void Editor::ShowViewDropdown(int id) {
     HMENU menu = CreatePopupMenu();
     const int count = drawModes ? 3 : ASPECT_COUNT;
     for (int i = 0; i < count; ++i)
-        AppendMenuW(menu, MF_STRING, (drawModes ? ID_DRAW_MODE_FIRST : ID_ASPECT_FIRST) + i, drawModes ? DRAW_MODE_NAMES[i] : ASPECT_NAMES[i]);
+        AppendMenuL(menu, MF_STRING, (drawModes ? ID_DRAW_MODE_FIRST : ID_ASPECT_FIRST) + i, drawModes ? DRAW_MODE_NAMES[i] : ASPECT_NAMES[i]);
     const int first = drawModes ? ID_DRAW_MODE_FIRST : ID_ASPECT_FIRST;
     CheckMenuRadioItem(menu, first, first + count - 1, first + (drawModes ? static_cast<int>(drawMode) : nGameAspect), MF_BYCOMMAND);
     const int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN, r.left, r.bottom, 0, window, nullptr);
@@ -430,9 +480,9 @@ void Editor::ShowToolbarDropdown(int id) {
     GetWindowRect(button, &r);
     HMENU menu = CreatePopupMenu();
     if (id == ID_GRAPHICS_MENU) {
-        AppendMenuW(menu, MF_STRING, ID_GRAPHICS_D3D12, L"DirectX 12  (Direct3D 12)");
-        AppendMenuW(menu, MF_STRING, ID_GRAPHICS_D3D11, L"DirectX 11  (Direct3D 11)");
-        AppendMenuW(menu, MF_STRING, ID_GRAPHICS_D3D9, L"DirectX 9  (Direct3D 9, Shader Model 3)");
+        AppendMenuL(menu, MF_STRING, ID_GRAPHICS_D3D12, L"DirectX 12  (Direct3D 12)");
+        AppendMenuL(menu, MF_STRING, ID_GRAPHICS_D3D11, L"DirectX 11  (Direct3D 11)");
+        AppendMenuL(menu, MF_STRING, ID_GRAPHICS_D3D9, L"DirectX 9  (Direct3D 9, Shader Model 3)");
         const auto api = projectSettings.graphicsApi;
         CheckMenuRadioItem(menu, ID_GRAPHICS_D3D12, ID_GRAPHICS_D3D9,
                            api == GraphicsApi::DIRECT3D12   ? ID_GRAPHICS_D3D12
@@ -440,10 +490,10 @@ void Editor::ShowToolbarDropdown(int id) {
                                                             : ID_GRAPHICS_D3D9,
                            MF_BYCOMMAND);
     } else {
-        AppendMenuW(menu, MF_STRING, ID_SAVE_LAYOUT, L"Save Layout");
-        AppendMenuW(menu, MF_STRING, ID_LOAD_LAYOUT, L"Load Layout");
-        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(menu, MF_STRING, ID_RESET_LAYOUT, L"Revert Factory Settings");
+        AppendMenuL(menu, MF_STRING, ID_SAVE_LAYOUT, L"Save Layout");
+        AppendMenuL(menu, MF_STRING, ID_LOAD_LAYOUT, L"Load Layout");
+        AppendMenuL(menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuL(menu, MF_STRING, ID_RESET_LAYOUT, L"Revert Factory Settings");
     }
     const int command =
         TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_TOPALIGN, r.right, r.bottom, 0, window, nullptr);

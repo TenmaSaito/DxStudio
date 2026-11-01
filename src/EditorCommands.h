@@ -34,6 +34,7 @@ constexpr int ID_GRAPHICS_D3D12 = 170, ID_GRAPHICS_D3D11 = 171, ID_GRAPHICS_D3D9
 constexpr int ID_DRAW_MODE_MENU = 164, ID_ASPECT_MENU = 165;
 constexpr int ID_DRAW_MODE_FIRST = 180; // Shaded, Wireframe, Shaded Wireframe
 constexpr int ID_ASPECT_FIRST = 185;    // Free, 16:9, 16:10, 4:3, 1:1
+constexpr int ID_LANGUAGE_ENGLISH = 195, ID_LANGUAGE_JAPANESE = 196; // Edit > Preferences > Language
 constexpr int ID_CLEAR_CONSOLE = 175, ID_SHOW_CONSOLE = 176, ID_ABOUT = 177, ID_OPEN_README = 178, ID_CANCEL_BUILD = 179;
 constexpr int ID_COMPONENT_HEADER_FIRST = 700;  // Inspector component titlebars
 constexpr int ID_COMPONENT_FIELD_FIRST = 800;   // Inspector property fields

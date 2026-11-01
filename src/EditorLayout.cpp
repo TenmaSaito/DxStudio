@@ -41,7 +41,7 @@ void Editor::FloatPanel(int index) {
         SetParent(p.window, window);
         SetWindowPos(p.window, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
     }
-    SetWindowTextW(p.buttons[0], p.floating ? L"Dock" : L"Float");
+    SetWindowTextW(p.buttons[0], Tr(p.floating ? L"Dock" : L"Float"));
     theme::SetButtonIcon(p.buttons[0], p.floating ? theme::Icon::DOCK : theme::Icon::FLOAT);
     Layout();
     // Areas a floating panel passed over must repaint, including owner-drawn children.
@@ -129,16 +129,16 @@ void Editor::DockPanelInSlot(int panelIndex, int slot) {
 
 void Editor::SetDrawMode(int index) {
     drawMode = static_cast<DrawMode>(std::clamp(index, 0, 2));
-    SetWindowTextW(drawModeButton, DRAW_MODE_NAMES[static_cast<int>(drawMode)]);
+    SetWindowTextW(drawModeButton, Tr(DRAW_MODE_NAMES[static_cast<int>(drawMode)]));
     renderer.SetDrawMode(drawMode);
     InvalidateRect(drawModeButton, nullptr, FALSE);
-    const std::wstring message = std::wstring(L"Scene draw mode: ") + DRAW_MODE_NAMES[static_cast<int>(drawMode)];
+    const std::wstring message = std::wstring(L"Scene draw mode: ") + Tr(DRAW_MODE_NAMES[static_cast<int>(drawMode)]);
     SetStatus(message.c_str());
 }
 
 void Editor::SetGameAspect(int index) {
     nGameAspect = std::clamp(index, 0, ASPECT_COUNT - 1);
-    SetWindowTextW(aspectButton, ASPECT_NAMES[nGameAspect]);
+    SetWindowTextW(aspectButton, Tr(ASPECT_NAMES[nGameAspect]));
     InvalidateRect(aspectButton, nullptr, FALSE);
     LayoutPanel(1);
 }
@@ -198,7 +198,7 @@ void Editor::Layout() {
     int x = 30;
     for (int m = 0; m < MENU_COUNT; ++m) {
         SIZE size{};
-        GetTextExtentPoint32W(dc, MENU_NAMES[m], static_cast<int>(wcslen(MENU_NAMES[m])), &size);
+        GetTextExtentPoint32W(dc, Tr(MENU_NAMES[m]), static_cast<int>(wcslen(Tr(MENU_NAMES[m]))), &size);
         const int width = size.cx + 18;
         MoveWindow(menuButtons[m], x, 1, width, theme::MENU_BAR_HEIGHT - 2, TRUE);
         x += width;
@@ -241,12 +241,12 @@ void Editor::Layout() {
     placeRight(controls[7], widths[6]);
     ShowWindow(controls[8], SW_HIDE);
     const int gaugeW = IsTaskRunning() ? 220 : 0;
-    MoveWindow(status, 30, h - bottom + 3, std::max(1, w - 340 - gaugeW), bottom - 5, TRUE);
+    MoveWindow(status, 30, h - bottom + 3, std::max(1, w - 370 - gaugeW), bottom - 5, TRUE);
     if (progressGauge) {
-        MoveWindow(progressGauge, w - 306 - gaugeW, h - bottom + 5, std::max(1, gaugeW - 12), std::max(1, bottom - 9), TRUE);
+        MoveWindow(progressGauge, w - 336 - gaugeW, h - bottom + 5, std::max(1, gaugeW - 12), std::max(1, bottom - 9), TRUE);
         ShowWindow(progressGauge, gaugeW ? SW_SHOWNA : SW_HIDE);
     }
-    MoveWindow(statusRight, w - 300, h - bottom + 3, 290, bottom - 5, TRUE);
+    MoveWindow(statusRight, w - 330, h - bottom + 3, 320, bottom - 5, TRUE); // 「一時停止中」なども収まる幅
     InvalidateRect(window, nullptr, TRUE);
     bArranging = false;
 }
@@ -343,9 +343,9 @@ void Editor::LayoutPanel(int index) {
     } else if (index == 3) {
         int tabX = 0;
         for (int t = 0; t < BOTTOM_TAB_COUNT; ++t) {
-            MoveWindow(bottomTabs[t], tabX, 2, 108, header - 2, TRUE);
+            MoveWindow(bottomTabs[t], tabX, 2, 124, header - 2, TRUE); // 「プロジェクト」が収まる幅
             ShowWindow(bottomTabs[t], SW_SHOWNA);
-            tabX += 108;
+            tabX += 124;
         }
         place(projectPanel, 0, header, w, std::max(1, h - header), nBottomTab == 0);
         place(consolePanel, 0, header, w, std::max(1, h - header), nBottomTab == 1);
@@ -365,7 +365,7 @@ void Editor::LayoutPanel(int index) {
         place(inspectorEnabled, S(36), y0 + S(3), S(18), S(18));
         place(edits[0], S(58), y0 + S(2), w - S(58) - padRight, box);
         const int tagY = y0 + S(28);
-        const int tagLabelW = S(30), layerLabelW = S(38);
+        const int tagLabelW = S(34), layerLabelW = S(54); // 「タグ」「レイヤー」が収まる幅
         const int popupW = std::max(S(40), (w - S(8) - tagLabelW - layerLabelW - S(6) - padRight) / 2);
         place(inspectorTagLabel, S(8), tagY, tagLabelW, line);
         place(inspectorTagValue, S(8) + tagLabelW, tagY, popupW, box);
@@ -386,7 +386,7 @@ void Editor::LayoutPanel(int index) {
             }
         };
         // Transform
-        SetWindowTextW(groupLabels[0], L"Transform");
+        SetWindowTextW(groupLabels[0], Tr(L"Transform"));
         theme::SetButtonExpanded(groupLabels[0], aSectionOpen[0]);
         place(groupLabels[0], 0, y, w, titlebar);
         y += titlebar + gap;
@@ -400,10 +400,10 @@ void Editor::LayoutPanel(int index) {
         const bool validEntity = nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size();
         const auto rendererKind = validEntity && vSelectedIndices.size() == 1 ? scene.vEntities[nSelected].renderer : Entity::RendererKind::None;
         const bool hasRenderer = rendererKind != Entity::RendererKind::None;
-        SetWindowTextW(groupLabels[1], rendererKind == Entity::RendererKind::Mesh    ? L"Mesh Renderer"
+        SetWindowTextW(groupLabels[1], Tr(rendererKind == Entity::RendererKind::Mesh    ? L"Mesh Renderer"
                                        : rendererKind == Entity::RendererKind::Model ? L"Model Renderer"
                                        : rendererKind == Entity::RendererKind::Image ? L"Image"
-                                                                                     : L"Polygon Renderer");
+                                                                                     : L"Polygon Renderer"));
         theme::SetButtonExpanded(groupLabels[1], aSectionOpen[1]);
         place(groupLabels[1], 0, y, w, titlebar, hasRenderer);
         const bool showRenderer = hasRenderer && aSectionOpen[1];

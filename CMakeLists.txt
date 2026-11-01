@@ -22,7 +22,7 @@ target_compile_definitions(DxStudioCore PUBLIC _SILENCE_CXX20_U8PATH_DEPRECATION
 # Compile project scripts into both the editor's picker and the player.
 file(GLOB PROJECT_SCRIPTS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/project/Scripts/*.cpp")
 add_executable(DxStudio WIN32 src/EditorMain.cpp src/Editor.cpp src/EditorPanels.cpp src/EditorChrome.cpp
-  src/EditorLayout.cpp src/EditorActions.cpp src/EditorInspector.cpp src/EditorTheme.cpp src/EditorUtility.cpp
+  src/EditorLayout.cpp src/EditorActions.cpp src/EditorInspector.cpp src/EditorTheme.cpp src/EditorUtility.cpp src/EditorLocale.cpp
   src/ConsolePanel.cpp src/ProjectPanel.cpp ${PROJECT_SCRIPTS})
 target_link_libraries(DxStudio PRIVATE DxStudioCore comctl32 comdlg32 ole32 shell32 uuid dwmapi uxtheme gdiplus)
 

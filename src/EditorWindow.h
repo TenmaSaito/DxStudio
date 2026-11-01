@@ -8,6 +8,7 @@
 #include "ProjectPanel.h"
 #include "EditorInteraction.h"
 #include "EditorCommands.h"
+#include "EditorLocale.h"
 #include "EditorTheme.h"
 #include "EditorUtility.h"
 #include "ConsolePanel.h"
@@ -325,12 +326,21 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     void UpdateGroup(const DrawItem& updated);
     void FrameSelection();
 
+    // 子コントロールを作成する。ボタン / ラベルの文字列は現在の言語に翻訳し、
+    // 起動時に作るもの（ツールバー・見出しなど）は言語切り替え用に英語を覚えておく。
     HWND Make(const wchar_t* cls, const wchar_t* text, DWORD style, int id = 0, DWORD ex = 0) {
-        HWND h = CreateWindowExW(ex, cls, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 1, 1, window,
+        HWND h = CreateWindowExW(ex, cls, LocalizedControlText(cls, text), WS_CHILD | WS_VISIBLE | style, 0, 0, 1, 1, window,
                                  reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
         SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+        if (!bShellReady && h && text && *text && (_wcsicmp(cls, L"BUTTON") == 0 || _wcsicmp(cls, L"STATIC") == 0))
+            vLocalizedControls.emplace_back(h, text);
         return h;
     }
+    // 言語切り替え用: 起動時に作ったコントロール / ツールチップの英語の文字列
+    std::vector<std::pair<HWND, std::wstring>> vLocalizedControls;
+    std::vector<std::pair<HWND, std::wstring>> vLocalizedTips;
+    // 表示言語を切り替えて、メニュー・パネル・インスペクターを作り直す
+    void ApplyLanguage(EditorLanguage language);
     // ---- Theme ------------------------------------------------------------------
     HWND tooltip{};
     void AddTooltip(HWND control, const wchar_t* text);
@@ -360,7 +370,7 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     void ShowObjectMenu(POINT point);
     void ShowComponentMenu(POINT point);
     void SetStatus(const wchar_t* text) {
-        SetWindowTextW(status, text);
+        SetWindowTextW(status, Tr(text));
         RECT r{};
         GetClientRect(window, &r);
         RECT bar{0, r.bottom - theme::STATUS_BAR_HEIGHT, r.right, r.bottom};

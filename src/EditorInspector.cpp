@@ -380,12 +380,15 @@ void Editor::RebuildComponentViews() {
         InspectorComponentView view;
         view.nComponentIndex = nIndex;
         view.sName = entity.vComponents[nIndex];
+        // エンジン組み込みのコンポーネントは Unity と同じく "(Script)" と Script 行を付けない
         const bool camera = view.sName == "Camera";
-        view.hHeader = make(L"BUTTON", Wide(camera ? view.sName : view.sName + " (Script)"), BS_OWNERDRAW,
+        const bool builtin = camera || view.sName == "Rigidbody" || view.sName == "BoxCollider" || view.sName == "SphereCollider" ||
+                             view.sName == "MeshCollider" || view.sName == "PlayerInput";
+        view.hHeader = make(L"BUTTON", builtin ? Wide(view.sName) : Wide(view.sName) + Tr(L" (Script)"), BS_OWNERDRAW,
                             ID_COMPONENT_HEADER_FIRST + static_cast<int>(nIndex));
-        theme::SetButtonSpec(view.hHeader, {theme::ButtonRole::HEADER, camera ? theme::Icon::CAMERA : theme::Icon::SCRIPT,
-                                            camera ? theme::COLOR_TEXT : theme::COLOR_ICON_SCRIPT});
-        if (!camera) {
+        const theme::Icon headerIcon = camera ? theme::Icon::CAMERA : builtin ? theme::Icon::CUBE : theme::Icon::SCRIPT;
+        theme::SetButtonSpec(view.hHeader, {theme::ButtonRole::HEADER, headerIcon, builtin ? theme::COLOR_TEXT : theme::COLOR_ICON_SCRIPT});
+        if (!builtin) {
             // Unity shows the MonoScript as a read-only object field.
             view.hScriptLabel = make(L"STATIC", L"Script", SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, 0);
             view.hScriptValue = make(L"EDIT", Wide(view.sName), ES_AUTOHSCROLL | ES_READONLY, 0);
@@ -757,7 +760,7 @@ void Editor::ShowTitlebarMenu(HWND header) {
     if (header == groupLabels[0]) {
         // Transform: Unity's "Reset".
         HMENU menu = CreatePopupMenu();
-        AppendMenuW(menu, MF_STRING | (vSelectedIndices.size() == 1 ? 0 : MF_GRAYED), 1, L"Reset");
+        AppendMenuL(menu, MF_STRING | (vSelectedIndices.size() == 1 ? 0 : MF_GRAYED), 1, L"Reset");
         const int choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_TOPALIGN, rect.right, rect.bottom, 0, window, nullptr);
         DestroyMenu(menu);
         if (choice == 1 && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size()) {
@@ -790,13 +793,13 @@ void Editor::ShowAddComponentMenu() {
         const bool isAttached = std::find(attached.begin(), attached.end(), Utf8(text)) != attached.end();
         const bool physicsComponent = text == L"Rigidbody" || text == L"BoxCollider" || text == L"SphereCollider" || text == L"MeshCollider";
         const bool inputComponent = text == L"PlayerInput";
-        AppendMenuW(renderer ? rendering : physicsComponent ? physicsMenu : inputComponent ? inputMenu : scripts, MF_STRING | (isAttached ? MF_GRAYED : 0), 1 + nIndex,
+        AppendMenuL(renderer ? rendering : physicsComponent ? physicsMenu : inputComponent ? inputMenu : scripts, MF_STRING | (isAttached ? MF_GRAYED : 0), 1 + nIndex,
                     text.c_str());
     }
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(rendering), L"Rendering");
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(physicsMenu), L"Physics");
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(inputMenu), L"Input");
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(scripts), L"Scripts");
+    AppendMenuL(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(rendering), L"Rendering");
+    AppendMenuL(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(physicsMenu), L"Physics");
+    AppendMenuL(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(inputMenu), L"Input");
+    AppendMenuL(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(scripts), L"Scripts");
     const int choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_CENTERALIGN | TPM_TOPALIGN, (rect.left + rect.right) / 2, rect.bottom, 0, window, nullptr);
     DestroyMenu(menu);
     if (choice <= 0) return;
@@ -812,12 +815,12 @@ void Editor::EnsureProjectPrimitives() {
 void Editor::AppendPrimitiveMenus(HMENU menu) {
     HMENU objects3D = CreatePopupMenu(), objects2D = CreatePopupMenu();
     for (size_t nIndex = 0; nIndex < PRIMITIVES.size(); ++nIndex)
-        AppendMenuW(PRIMITIVES[nIndex].bFlat ? objects2D : objects3D, MF_STRING, ID_ADD_PRIMITIVE_FIRST + static_cast<int>(nIndex),
+        AppendMenuL(PRIMITIVES[nIndex].bFlat ? objects2D : objects3D, MF_STRING, ID_ADD_PRIMITIVE_FIRST + static_cast<int>(nIndex),
                     Wide(PRIMITIVES[nIndex].pName).c_str());
-    AppendMenuW(objects2D, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(objects2D, MF_STRING, ID_ADD_SPRITE, L"World Quad (Polygon Renderer)");
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(objects3D), L"3D Object");
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(objects2D), L"2D Object");
+    AppendMenuL(objects2D, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(objects2D, MF_STRING, ID_ADD_SPRITE, L"World Quad (Polygon Renderer)");
+    AppendMenuL(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(objects3D), L"3D Object");
+    AppendMenuL(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(objects2D), L"2D Object");
 }
 
 void Editor::AddPrimitive(PrimitiveShape shape) {
@@ -848,12 +851,12 @@ void Editor::ShowMeshPicker() {
     const auto& current = scene.vEntities[nSelected].sModelAsset;
     for (size_t nIndex = 0; nIndex < PRIMITIVES.size(); ++nIndex) {
         const bool bCurrent = current == PrimitiveAssetPath(PRIMITIVES[nIndex].shape);
-        AppendMenuW(menu, MF_STRING | (bCurrent ? MF_CHECKED : 0), 1 + static_cast<int>(nIndex), Wide(PRIMITIVES[nIndex].pName).c_str());
+        AppendMenuL(menu, MF_STRING | (bCurrent ? MF_CHECKED : 0), 1 + static_cast<int>(nIndex), Wide(PRIMITIVES[nIndex].pName).c_str());
         if (nIndex + 1 < PRIMITIVES.size() && PRIMITIVES[nIndex].bFlat != PRIMITIVES[nIndex + 1].bFlat)
-            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            AppendMenuL(menu, MF_SEPARATOR, 0, nullptr);
     }
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, BROWSE, L"Browse X / FBX...");
+    AppendMenuL(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(menu, MF_STRING, BROWSE, L"Browse X / FBX...");
     const int choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_TOPALIGN, rect.right, rect.bottom, 0, window, nullptr);
     DestroyMenu(menu);
     if (choice <= 0) return;

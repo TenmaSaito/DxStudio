@@ -7,6 +7,10 @@
 namespace dxs::editor {
 
 bool Editor::ShellCommand(int id) {
+    if (id == ID_LANGUAGE_ENGLISH || id == ID_LANGUAGE_JAPANESE) {
+        ApplyLanguage(id == ID_LANGUAGE_JAPANESE ? EditorLanguage::JAPANESE : EditorLanguage::ENGLISH);
+        return true;
+    }
     if (id == ID_EXIT) {
         SendMessageW(window, WM_CLOSE, 0, 0);
         return true;
@@ -82,7 +86,7 @@ bool Editor::ShellCommand(int id) {
         const std::wstring text = L"DxStudio\n\nUnity / Unreal style C++20 editor.\nRenderer: " +
                                   Wide(GraphicsApiDisplayName(renderer.Api())) +
                                   L"\nSwitch backends in Edit > Project Settings > Graphics API.";
-        MessageBoxW(window, text.c_str(), L"About DxStudio", MB_OK | MB_ICONINFORMATION);
+        MessageBoxL(window, text.c_str(), L"About DxStudio", MB_OK | MB_ICONINFORMATION);
         return true;
     }
     if (id >= ID_SECTION_TOGGLE && id < ID_SECTION_TOGGLE + 3 && IsOverTitlebarMenu(groupLabels[id - ID_SECTION_TOGGLE])) {
@@ -210,13 +214,13 @@ bool Editor::ShellCommand(int id) {
 void Editor::ShowObjectMenu(POINT point) {
     if (point.x == -1 && point.y == -1) GetCursorPos(&point);
     HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING, ID_ADD_EMPTY, L"Create Empty");
+    AppendMenuL(menu, MF_STRING, ID_ADD_EMPTY, L"Create Empty");
     AppendPrimitiveMenus(menu);
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(menu, MF_SEPARATOR, 0, nullptr);
     const UINT availability = vSelectedIndices.empty() ? MF_GRAYED : 0;
-    AppendMenuW(menu, MF_STRING | availability, ID_FRAME_SELECTION, L"Frame selection\tF");
-    AppendMenuW(menu, MF_STRING | availability, ID_DUPLICATE, L"Duplicate\tCtrl+D");
-    AppendMenuW(menu, MF_STRING | availability, ID_DELETE, L"Delete selection");
+    AppendMenuL(menu, MF_STRING | availability, ID_FRAME_SELECTION, L"Frame selection\tF");
+    AppendMenuL(menu, MF_STRING | availability, ID_DUPLICATE, L"Duplicate\tCtrl+D");
+    AppendMenuL(menu, MF_STRING | availability, ID_DELETE, L"Delete selection");
     const int action = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, window, nullptr);
     DestroyMenu(menu);
     if (action) Command(action, BN_CLICKED);
@@ -231,10 +235,10 @@ void Editor::ShowComponentMenu(POINT point) {
     const int componentIndex = selectedRow - offset;
     const bool custom = componentIndex >= 0 && static_cast<size_t>(componentIndex) < entity.vComponents.size();
     HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING | (selectedRow == LB_ERR ? MF_GRAYED : 0), ID_REMOVE_COMPONENT, L"Remove Component");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING | (!custom || componentIndex == 0 ? MF_GRAYED : 0), ID_MOVE_COMPONENT_UP, L"Move Up");
-    AppendMenuW(menu,
+    AppendMenuL(menu, MF_STRING | (selectedRow == LB_ERR ? MF_GRAYED : 0), ID_REMOVE_COMPONENT, L"Remove Component");
+    AppendMenuL(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuL(menu, MF_STRING | (!custom || componentIndex == 0 ? MF_GRAYED : 0), ID_MOVE_COMPONENT_UP, L"Move Up");
+    AppendMenuL(menu,
                 MF_STRING | (!custom || static_cast<size_t>(componentIndex + 1) >= entity.vComponents.size() ? MF_GRAYED : 0),
                 ID_MOVE_COMPONENT_DOWN, L"Move Down");
     const int action = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, window, nullptr);
@@ -266,7 +270,7 @@ void Editor::TogglePlay() {
         bPaused = bStepRequested = false;
         nPlayTick = GetTickCount64();
         Time::Reset();
-        SetWindowTextW(controls[9], L"Stop");
+        SetWindowTextW(controls[9], Tr(L"Stop"));
         renderer.SetCamera(ActiveGameCamera(scene));
         SetStatus(L"PLAY MODE: project components are running. Press Stop or Ctrl+P to restore the edited scene.");
         EngineEvents::Get().onEnterPlayMode.Broadcast(scene);
@@ -278,7 +282,7 @@ void Editor::TogglePlay() {
         scene = std::move(editSceneSnapshot);
         camera = editCameraSnapshot;
         nPlayTick = 0;
-        SetWindowTextW(controls[9], L"Play");
+        SetWindowTextW(controls[9], Tr(L"Play"));
         renderer.SetCamera(camera);
         vSelectedIndices.erase(
             std::remove_if(vSelectedIndices.begin(), vSelectedIndices.end(),
@@ -525,7 +529,7 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
             const auto completed = sLabel + L" build completed.";
             SetStatus(completed.c_str());
             Debug::Log(Utf8(completed));
-            MessageBoxW(window, completed.c_str(), L"Build", MB_OK | MB_ICONINFORMATION);
+            MessageBoxL(window, completed.c_str(), L"Build", MB_OK | MB_ICONINFORMATION);
         },
         hJob);
     if (pTask) pTask->progress = [log, nExpectedTasks] { return BuildLogProgress(log, nExpectedTasks); };
@@ -769,7 +773,7 @@ void Editor::UpdateFrameStats() {
     nFpsTick = now;
     wchar_t text[128];
     swprintf_s(text, L"%hs   |   %.0f FPS   |   %ls", GraphicsApiDisplayName(renderer.Api()), fps,
-               bPlaying ? (bPaused ? L"Paused" : L"Playing") : L"Edit Mode");
+               Tr(bPlaying ? (bPaused ? L"Paused" : L"Playing") : L"Edit Mode"));
     SetWindowTextW(statusRight, text);
 }
 
@@ -846,7 +850,7 @@ void Editor::Command(int id, int notification) {
         return;
     }
     if (id == ID_PLATFORM_INFO) {
-        MessageBoxW(window,
+        MessageBoxL(window,
                     L"Windows x64: DirectX 12 export and in-editor Play Mode are available.\n\n"
                     L"Android: OpenGL ES Debug APK build is available when Android SDK/NDK are installed.\n\n"
                     L"Use the Build menu or the toolbar buttons.",
@@ -1072,7 +1076,7 @@ void Editor::Command(int id, int notification) {
             SetStatus(L"Selection duplicated. Ctrl+D repeats this action.");
         }
     } else if (id == ID_DELETE && nSelected >= 0 && nSelected < static_cast<int>(scene.vEntities.size())) {
-        if (vSelectedIndices.size() > 1 && MessageBoxW(window, L"Remove all selected objects from the scene?",
+        if (vSelectedIndices.size() > 1 && MessageBoxL(window, L"Remove all selected objects from the scene?",
                                                       L"Delete objects", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
             return;
         for (auto it = vSelectedIndices.rbegin(); it != vSelectedIndices.rend(); ++it) {
@@ -1140,7 +1144,7 @@ void Editor::Command(int id, int notification) {
             }
         }
         if (existing &&
-            MessageBoxW(window, L"The selected folder already contains one or more exported game files. Replace them?",
+            MessageBoxL(window, L"The selected folder already contains one or more exported game files. Replace them?",
                         L"Export", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
             return;
         if (IsTaskRunning()) {
@@ -1163,7 +1167,7 @@ void Editor::Command(int id, int notification) {
                     return;
                 }
                 SetStatus(L"Export complete. Run Game.exe in the selected folder.");
-                MessageBoxW(window, (L"Exported to:\n" + destination.wstring()).c_str(), L"Export complete", MB_OK);
+                MessageBoxL(window, (L"Exported to:\n" + destination.wstring()).c_str(), L"Export complete", MB_OK);
             });
     } else if (id == ID_RELOAD_SHADER) {
         InitRenderer();

@@ -62,7 +62,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         SetParent(e->hierarchy, e->panels[0].window);
         SetWindowSubclass(e->hierarchy, HierarchySubclassProc, 1, reinterpret_cast<DWORD_PTR>(e));
         e->hierarchySearch = e->Make(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, ID_HIERARCHY_SEARCH);
-        SendMessageW(e->hierarchySearch, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Search Hierarchy"));
+        SendMessageW(e->hierarchySearch, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(Tr(L"Search Hierarchy")));
         SetParent(e->hierarchySearch, e->panels[0].window);
         e->viewport = CreateWindowExW(0, L"DxStudioViewport", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 1, 1,
                                       e->panels[1].window, nullptr, e->instance, e);
@@ -158,6 +158,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             e->scene.vEntities.push_back(cube);
         }
         e->camera = Camera{};
+        // 作成後に名前を変えたコントロール（"Position X" → "X" など）もあるので、
+        // 起動完了時点の文字列を言語切り替えの基準として記録し直す。
+        for (auto& [hControl, sEnglish] : e->vLocalizedControls) {
+            const std::wstring sCurrent = Text(hControl);
+            if (sCurrent != Tr(sEnglish.c_str())) sEnglish = sCurrent;
+        }
+        std::erase_if(e->vLocalizedControls, [](const auto& record) { return record.second.empty(); });
         e->bShellReady = true;
         e->nSelected = e->scene.vEntities.empty() ? -1 : 0;
         if (e->nSelected >= 0) e->vSelectedIndices = {e->nSelected};
@@ -382,6 +389,7 @@ using namespace editor;
 int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const std::filesystem::path& initialProjectFile) {
     RegisterProjectComponents();
     Debug::SetMainThread(); // Console updates stay on the UI thread
+    LoadLanguagePreference(); // 表示言語（設定ファイル → Windows の表示言語）
     INITCOMMONCONTROLSEX commonControls{sizeof(commonControls), ICC_WIN95_CLASSES | ICC_STANDARD_CLASSES};
     InitCommonControlsEx(&commonControls);
     theme::EnableDarkMode();
