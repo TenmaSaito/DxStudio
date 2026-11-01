@@ -25,7 +25,7 @@ call :run ExportLaunch "tests\ExportLaunch.cpp %DXS_ENGINE_SOURCES%" "%DXS_WINDO
 if errorlevel 1 exit /b 1
 call :run ExportSafety "tests\ExportSafety.cpp %DXS_ENGINE_SOURCES%" "%DXS_WINDOW_LIBS% d3dcompiler.lib"
 if errorlevel 1 exit /b 1
-call :run ProjectPanelTests "tests\ProjectPanelTests.cpp src\ProjectPanel.cpp src\EditorTheme.cpp" "%DXS_WINDOW_LIBS% %DXS_EDITOR_LIBS%"
+call :run ProjectPanelTests "tests\ProjectPanelTests.cpp src\ProjectPanel.cpp src\EditorTheme.cpp src\EditorLocale.cpp" "%DXS_WINDOW_LIBS% %DXS_EDITOR_LIBS%"
 if errorlevel 1 exit /b 1
 echo All tests passed.
 exit /b 0
