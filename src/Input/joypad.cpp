@@ -1,3 +1,12 @@
+//==================================================================================
+//
+// ジョイパッドクラスのソースファイル [joypad.cpp]
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Input/joypad.h"
 
 #include <algorithm>
@@ -5,10 +14,11 @@
 
 namespace dxs {
 namespace {
+// --- パッド番号 / ボタン番号が範囲内か ---
 bool ValidPad(int nPadID) { return nPadID >= 0 && nPadID < MAX_JOYPAD; }
 bool ValidKey(int nKey) { return nKey >= 0 && nKey < CJoypad::KEY_MAX; }
 
-// Thumb value in -1..1 with the dead zone removed.
+// --- スティックの値を -1..1 にし、デッドゾーン内は 0 にする ---
 float Thumb(SHORT sValue) {
     const float fValue = std::max(static_cast<float>(sValue) / 32767.0f, -1.0f);
     return std::abs(fValue) < STICK_DEADZONE ? 0.0f : fValue;
@@ -18,16 +28,22 @@ float Thumb(SHORT sValue) {
 CJoypad::CJoypad() {}
 CJoypad::~CJoypad() {}
 
+//==================================================================================
+// --- 初期化 / 終了処理 ---
+//==================================================================================
 void CJoypad::Init(void) {
     for (auto& pad : m_aJoypad) pad = {};
 }
 
 void CJoypad::Uninit(void) {
     for (int nPadID = 0; nPadID < MAX_JOYPAD; ++nPadID)
-        if (m_aJoypad[nPadID].nCounterVibration > 0) CInput::Source().SetJoypadVibration(nPadID, XINPUT_VIBRATION{});
+        if (m_aJoypad[nPadID].nCounterVibration > 0) CInput::Source().SetJoypadVibration(nPadID, XINPUT_VIBRATION{}); // 振動中なら止める
     Init();
 }
 
+//==================================================================================
+// --- 更新処理 ---
+//==================================================================================
 void CJoypad::Update(void) {
     auto& source = CInput::Source();
     const bool bFocus = source.HasFocus();
@@ -35,13 +51,15 @@ void CJoypad::Update(void) {
         auto& pad = m_aJoypad[nPadID];
         XINPUT_STATE state{};
         pad.bConnected = source.ReadJoypad(nPadID, state);
-        if (!bFocus) state.Gamepad = {}; // like the keyboard: no input without focus
+        if (!bFocus) state.Gamepad = {}; // キーボードと同じく、フォーカスが無ければ入力なし
         const WORD wOld = pad.joykeyState.Gamepad.wButtons, wNew = state.Gamepad.wButtons;
+        // ボタンのトリガー / リリース（ビット演算でまとめて求める）
         pad.joykeyStateTrigger.Gamepad.wButtons = static_cast<WORD>((wOld ^ wNew) & wNew);
         pad.joykeyStateRelease.Gamepad.wButtons = static_cast<WORD>(wOld & (wOld ^ wNew));
         for (int nKey = 0; nKey < KEY_MAX; ++nKey)
             if (((wOld ^ wNew) >> nKey) & 1) pad.nJoykeyStateRepeat[nKey] = 0;
         pad.joykeyState = state;
+        // 振動の時間を数え、0 になったら止める
         if (pad.nCounterVibration > 0 && --pad.nCounterVibration == 0) {
             pad.vibration = {};
             source.SetJoypadVibration(nPadID, pad.vibration);
@@ -49,6 +67,9 @@ void CJoypad::Update(void) {
     }
 }
 
+//==================================================================================
+// --- プレス / トリガー / リリース / リピートの判定処理 ---
+//==================================================================================
 bool CJoypad::GetPress(const KEY key, const int nPadID) {
     return ValidPad(nPadID) && ValidKey(key) && (m_aJoypad[nPadID].joykeyState.Gamepad.wButtons & (1u << key));
 }
@@ -69,6 +90,9 @@ bool CJoypad::GetRepeat(const KEY key, const int nWaitPress, const int nInterval
     return nInterval > 0 && nRepeat % nInterval == 0 && GetPress(key, nPadID);
 }
 
+//==================================================================================
+// --- 軸の値の取得処理 ---
+//==================================================================================
 float CJoypad::GetAxis(const AXIS axis, const int nPadID) {
     if (!ValidPad(nPadID)) return 0.0f;
     const auto& gamepad = m_aJoypad[nPadID].joykeyState.Gamepad;
@@ -83,6 +107,9 @@ float CJoypad::GetAxis(const AXIS axis, const int nPadID) {
     }
 }
 
+//==================================================================================
+// --- 方向スティックの倒し具合の取得処理 ---
+//==================================================================================
 float CJoypad::StickDirection(const STICK stick, const int nPadID) {
     const bool bLeft = stick <= STICK_LEFT_RIGHT;
     const float fX = GetAxis(bLeft ? AXIS_LEFT_X : AXIS_RIGHT_X, nPadID);
@@ -96,6 +123,9 @@ float CJoypad::StickDirection(const STICK stick, const int nPadID) {
     }
 }
 
+//==================================================================================
+// --- スティックの判定 / 値の取得処理 ---
+//==================================================================================
 bool CJoypad::GetStick(const STICK stick, const float fRange, const int nPadID) {
     return ValidPad(nPadID) && stick >= 0 && stick < STICK_MAX && StickDirection(stick, nPadID) > fRange;
 }
@@ -109,13 +139,16 @@ bool CJoypad::GetStick(const STICK stick, Vector3* pOut, const int nPadID) {
         pOut->x = GetAxis(bLeft ? AXIS_LEFT_X : AXIS_RIGHT_X, nPadID);
         pOut->y = GetAxis(bLeft ? AXIS_LEFT_Y : AXIS_RIGHT_Y, nPadID);
         const float fLength = std::sqrt(pOut->x * pOut->x + pOut->y * pOut->y);
-        if (fLength > 1.0f) *pOut = {pOut->x / fLength, pOut->y / fLength, 0.0f};
+        if (fLength > 1.0f) *pOut = {pOut->x / fLength, pOut->y / fLength, 0.0f}; // 斜めが 1 を超えないようにする
     } else {
         pOut->x = StickDirection(stick, nPadID);
     }
     return pOut->x != 0.0f || pOut->y != 0.0f;
 }
 
+//==================================================================================
+// --- スティックのリピート判定処理 ---
+//==================================================================================
 bool CJoypad::GetStickRepeat(const STICK stick, const float fRange, const int nWaitPress, const int nInterval, const int nPadID) {
     if (!ValidPad(nPadID) || stick < 0 || stick >= STICK_MAX) return false;
     int& nRepeat = m_aJoypad[nPadID].nJoythumbRepeat[stick];
@@ -129,6 +162,9 @@ bool CJoypad::GetStickRepeat(const STICK stick, const float fRange, const int nW
     return nRepeat >= nWaitPress && nInterval > 0 && nRepeat % nInterval == 0;
 }
 
+//==================================================================================
+// --- 振動の設定処理（nTime フレームで止まる） ---
+//==================================================================================
 void CJoypad::SetVibration(const int nLPower, const int nRPower, const int nTime, const int nPadID) {
     if (!ValidPad(nPadID)) return;
     auto& pad = m_aJoypad[nPadID];

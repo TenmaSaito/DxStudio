@@ -1,3 +1,12 @@
+//==================================================================================
+//
+// インプットシステムクラスのソースファイル [inputSystem.cpp]
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Input/inputSystem.h"
 
 #include "Core/Log.h"
@@ -16,9 +25,12 @@
 
 namespace dxs {
 namespace {
-constexpr const char* KEY_TABLE_FILE = "Assets/Input/keyboardKeys.csv";
+//**********************************************************************************
+// *** 定数宣言 ***
+//**********************************************************************************
+constexpr const char* KEY_TABLE_FILE = "Assets/Input/keyboardKeys.csv"; // キー名表のファイル
 
-// Used when keyboardKeys.csv is missing: the most common DIK names.
+// keyboardKeys.csv が無い場合に使う、よく使う DIK のキー名
 constexpr struct {
     const char* pName;
     int nCode;
@@ -34,6 +46,7 @@ constexpr struct {
     {"RIGHT", 0xCD}, {"END", 0xCF}, {"DOWN", 0xD0}, {"NEXT", 0xD1}, {"INSERT", 0xD2}, {"DELETE", 0xD3},
 };
 
+// 既定のアクション定義（DefaultInputActions.dxinput と同じ内容）
 const char* DEFAULT_ACTIONS = R"(# DxStudio input actions (CInputSystem::LoadActionsText)
 #   map <name>                         starts an action map
 #   action <name> <BUTTON|VALUE_1D|VALUE_2D> [pressPoint]
@@ -65,30 +78,42 @@ axis1d Q E
 stick1d Pad.RightTrigger
 )";
 
+// --- 小文字への変換処理 ---
 std::string Lower(std::string_view sText) {
     std::string sResult(sText);
     std::transform(sResult.begin(), sResult.end(), sResult.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return sResult;
 }
 
+// --- 1 行を空白区切りで分割する処理（# 以降はコメント） ---
 std::vector<std::string> Tokens(const std::string& sLine) {
     std::vector<std::string> vTokens;
     std::istringstream in(sLine);
     for (std::string sToken; in >> sToken;) {
-        if (sToken[0] == '#') break; // trailing comment
+        if (sToken[0] == '#') break; // 行末のコメント
         vTokens.push_back(sToken);
     }
     return vTokens;
 }
 } // namespace
 
+//==================================================================================
+// --- コンストラクタ / デストラクタ ---
+//==================================================================================
 CInputSystem::CInputSystem() {}
 CInputSystem::~CInputSystem() {}
 
+//==================================================================================
+// --- 既定のアクション定義の取得処理 ---
+//==================================================================================
 const char* CInputSystem::DefaultActionsText(void) { return DEFAULT_ACTIONS; }
 
+//==================================================================================
+// --- 初期化処理 ---
+//==================================================================================
 HRESULT CInputSystem::Init(const HINSTANCE hInstance, const HWND hWnd) {
     HRESULT hr = S_OK;
+    // キーボード → マウス → ジョイパッドの順に生成・初期化（生成済みなら初期化のみ）
     if (!m_pKeyboard) m_pKeyboard = std::make_unique<CInputKeyboard>();
     hr = m_pKeyboard->Init(hInstance, hWnd);
     if (FAILED(hr)) return hr;
@@ -102,6 +127,9 @@ HRESULT CInputSystem::Init(const HINSTANCE hInstance, const HWND hWnd) {
     return hr;
 }
 
+//==================================================================================
+// --- 終了処理 ---
+//==================================================================================
 void CInputSystem::Uninit(void) {
     for (auto& pActionMap : m_vpActionMap)
         if (pActionMap) pActionMap->Uninit();
@@ -115,8 +143,12 @@ void CInputSystem::Uninit(void) {
     m_pKeyboard.reset();
 }
 
+//==================================================================================
+// --- 更新処理 ---
+//==================================================================================
 void CInputSystem::Update(void) {
-    if (!IsInitialized()) Init(GetModuleHandleW(nullptr), nullptr); // added: lazy start
+    if (!IsInitialized()) Init(GetModuleHandleW(nullptr), nullptr); // 追加: 未初期化なら初回の更新で初期化する
+    // 各デバイスの更新 → アクションマップの更新
     if (m_pKeyboard) m_pKeyboard->Update();
     if (m_pMouse) m_pMouse->Update();
     if (m_pJoypad) m_pJoypad->Update();
@@ -124,20 +156,29 @@ void CInputSystem::Update(void) {
         if (pActionMap) pActionMap->Update(*this);
 }
 
+//==================================================================================
+// --- アクションマップの作成処理 ---
+//==================================================================================
 CInputActionMap* CInputSystem::CreateActionMap(std::string_view sName) {
     if (sName.empty()) return nullptr;
-    if (auto* pExisting = FindActionMap(sName)) return pExisting; // no duplicates
+    if (auto* pExisting = FindActionMap(sName)) return pExisting; // 多重生成防止: 同じ名前のマップがあればそれを返す
     auto& pActionMap = m_vpActionMap.emplace_back(std::make_unique<CInputActionMap>());
     pActionMap->Init(sName);
     return pActionMap.get();
 }
 
+//==================================================================================
+// --- アクションマップの検索処理 ---
+//==================================================================================
 CInputActionMap* CInputSystem::FindActionMap(std::string_view sName) const {
     for (const auto& pActionMap : m_vpActionMap)
         if (pActionMap && pActionMap->IsEqualName(sName)) return pActionMap.get();
     return nullptr;
 }
 
+//==================================================================================
+// --- アクションの検索処理 ---
+//==================================================================================
 CInputAction* CInputSystem::FindAction(std::string_view sMapName, std::string_view sActionName) const {
     if (sMapName.empty() || sActionName.empty()) return nullptr;
     for (const auto& pActionMap : m_vpActionMap) {
@@ -147,6 +188,9 @@ CInputAction* CInputSystem::FindAction(std::string_view sMapName, std::string_vi
     return nullptr;
 }
 
+//==================================================================================
+// --- ボタン入力の取得処理 ---
+//==================================================================================
 float CInputSystem::ReadControl(const INPUT_CONTROL_PATH& path) const {
     if (!(path.device > INPUT_DEVICE::NONE && path.device < INPUT_DEVICE::MAX) || !IsInitialized()) return 0.0f;
     switch (path.device) {
@@ -159,7 +203,7 @@ float CInputSystem::ReadControl(const INPUT_CONTROL_PATH& path) const {
         if (!(path.nIdxDevice >= 0 && path.nIdxDevice < MAX_JOYPAD)) return 0.0f;
         return m_pJoypad->GetAxis(static_cast<CJoypad::AXIS>(path.nControl), path.nIdxDevice);
     case INPUT_DEVICE::JOYPAD_STICK: {
-        // Added: a direction stick reads 0..1; a whole stick reads its tilt.
+        // 追加: 方向スティックは 0..1、スティック全体は倒し具合を返す
         const Vector3 value = ReadStick(path);
         return std::sqrt(value.x * value.x + value.y * value.y);
     }
@@ -167,6 +211,9 @@ float CInputSystem::ReadControl(const INPUT_CONTROL_PATH& path) const {
     }
 }
 
+//==================================================================================
+// --- スティック入力の取得処理 ---
+//==================================================================================
 Vector3 CInputSystem::ReadStick(const INPUT_CONTROL_PATH& path) const {
     if (path.device != INPUT_DEVICE::JOYPAD_STICK || !(path.nIdxDevice >= 0 && path.nIdxDevice < MAX_JOYPAD) || !m_pJoypad) return VECTOR3_NULL;
     Vector3 value = VECTOR3_NULL;
@@ -174,14 +221,23 @@ Vector3 CInputSystem::ReadStick(const INPUT_CONTROL_PATH& path) const {
     return value;
 }
 
+//==================================================================================
+// --- 読み取り元の差し替え処理 ---
+//==================================================================================
 void CInputSystem::SetSource(IInputSource* pSource) { CInput::SetSource(pSource); }
 
+//==================================================================================
+// --- プロジェクトのフォルダーの設定処理 ---
+//==================================================================================
 void CInputSystem::SetAssetRoot(const std::filesystem::path& root) {
     if (root == m_assetRoot) return;
     m_assetRoot = root;
-    m_bKeyTableTried = false;
+    m_bKeyTableTried = false; // フォルダーが変わったらキー名表を読み直せるようにする
 }
 
+//==================================================================================
+// --- キー名表の読み込み処理（1 回だけ） ---
+//==================================================================================
 void CInputSystem::EnsureKeyTable(void) {
     auto* pTable = CInputKeyTable::GetInstance();
     if (pTable->IsLoaded() || m_bKeyTableTried) return;
@@ -194,9 +250,12 @@ void CInputSystem::EnsureKeyTable(void) {
     }
 }
 
+//==================================================================================
+// --- 操作の名前の読み取り処理 ---
+//==================================================================================
 bool CInputSystem::ParseControl(std::string_view sName, INPUT_CONTROL_PATH& path) const {
     const std::string sLower = Lower(sName);
-    if (sLower.rfind("mouse.", 0) == 0) {
+    if (sLower.rfind("mouse.", 0) == 0) { // マウス
         const std::string sButton = sLower.substr(6);
         const int nButton = sButton == "left" ? CInputMouse::KEY_LEFT : sButton == "right" ? CInputMouse::KEY_RIGHT
                           : sButton == "middle" || sButton == "wheel" ? CInputMouse::KEY_WHEEL : -1;
@@ -205,7 +264,7 @@ bool CInputSystem::ParseControl(std::string_view sName, INPUT_CONTROL_PATH& path
         return true;
     }
     if (sLower.rfind("pad", 0) == 0) {
-        // Pad.A (pad 0) or Pad2.A (second pad).
+        // ジョイパッド: Pad.A（1 台目）または Pad2.A（2 台目）
         const auto nDot = sLower.find('.');
         if (nDot == std::string::npos) return false;
         int nPad = 0;
@@ -235,7 +294,7 @@ bool CInputSystem::ParseControl(std::string_view sName, INPUT_CONTROL_PATH& path
             if (sControl == axis.pName) { path = MakePathJoypadAxis(axis.nAxis, nPad); return true; }
         return false;
     }
-    // Keyboard: 0x scan code, key table name, or a built-in name.
+    // キーボード: 0x のスキャンコード、キー名表の名前、組み込みの名前の順に試す
     if (sLower.size() > 2 && sLower.rfind("0x", 0) == 0) {
         try {
             const int nCode = std::stoi(sLower.substr(2), nullptr, 16);
@@ -254,12 +313,15 @@ bool CInputSystem::ParseControl(std::string_view sName, INPUT_CONTROL_PATH& path
     return false;
 }
 
+//==================================================================================
+// --- アクションファイルの読み込み処理 ---
+//==================================================================================
 bool CInputSystem::LoadActionsFile(const std::filesystem::path& file, std::string& error) {
     error.clear();
     const auto full = file.is_absolute() ? file : m_assetRoot / file;
     std::error_code ec;
     const auto canonical = std::filesystem::weakly_canonical(full, ec);
-    if (std::find(m_vLoadedFiles.begin(), m_vLoadedFiles.end(), canonical) != m_vLoadedFiles.end()) return true;
+    if (std::find(m_vLoadedFiles.begin(), m_vLoadedFiles.end(), canonical) != m_vLoadedFiles.end()) return true; // 読み込み済み
     std::ifstream in(full, std::ios::binary);
     if (!in) {
         const auto u8 = full.u8string();
@@ -276,10 +338,13 @@ bool CInputSystem::LoadActionsFile(const std::filesystem::path& file, std::strin
     return true;
 }
 
+//==================================================================================
+// --- アクション定義の読み込み処理（テキスト） ---
+//==================================================================================
 bool CInputSystem::LoadActionsText(std::string_view sText, std::string& error, std::string_view sSourceName) {
     error.clear();
     EnsureKeyTable();
-    // Parse everything first; nothing is created when the text has an error.
+    // まず全体を読み取る。途中に誤りがあれば何も作らない。
     struct BindingSpec {
         std::string sKind;
         std::vector<INPUT_CONTROL_PATH> vPaths;
@@ -302,6 +367,7 @@ bool CInputSystem::LoadActionsText(std::string_view sText, std::string& error, s
         error = std::string(sSourceName) + "(" + std::to_string(nLine) + "): " + sMessage;
         return false;
     };
+    // 1 行ずつ: map / action / バインディング / processor
     for (std::string sLine; std::getline(in, sLine);) {
         ++nLine;
         const auto vTokens = Tokens(sLine);
@@ -354,7 +420,7 @@ bool CInputSystem::LoadActionsText(std::string_view sText, std::string& error, s
             return fail("unknown command '" + vTokens[0] + "'");
         }
     }
-    // Build.
+    // 読み取った内容からマップ・アクション・バインディング・加工処理を作る
     for (const auto& mapSpec : vMaps) {
         auto* pMap = CreateActionMap(mapSpec.sName);
         for (const auto& actionSpec : mapSpec.vActions) {
