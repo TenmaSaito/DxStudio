@@ -1,3 +1,15 @@
+//==================================================================================
+//
+// エンジン本体のソースファイル [Engine.cpp]
+//
+// シーンの読み込み / 保存、メッシュの読み込み、コンポーネントの登録と実行、
+// インスペクターの値の読み書き、親子関係の計算、ゲームの書き出しを行う。
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Engine.h"
 
 #include <d3dcompiler.h>
@@ -14,10 +26,14 @@
 #include <array>
 #include <functional>
 #include <cstdlib>
-#include "../third_party/ufbx/ufbx.h"
+#include "../third_party/ufbx/ufbx.h" // FBX の読み込みライブラリ
 
 namespace dxs {
 namespace {
+//**********************************************************************************
+// *** 値の検証 ***
+//**********************************************************************************
+// --- カメラの値が有効か（有限の値で、距離・角度が範囲内か） ---
 bool ValidCamera(const Camera& camera) {
     const float values[] = {camera.target.x, camera.target.y,    camera.target.z, camera.fYaw,    camera.fPitch,
                             camera.fDistance, camera.fFieldOfView, camera.fNearClip, camera.fFarClip};
@@ -28,19 +44,23 @@ bool ValidCamera(const Camera& camera) {
            camera.fFarClip > camera.fNearClip;
 }
 
+// --- エンティティの値が有効か（名前・コンポーネント・保存値・トランスフォーム） ---
 bool Valid(const Entity& e) {
     const auto& d = e.draw;
     const float values[] = {d.position.x, d.position.y, d.position.z, d.rotation.x, d.rotation.y, d.rotation.z, d.scale.x,
                             d.scale.y,    d.scale.z,    d.color.x,    d.color.y,    d.color.z,    d.color.w};
+    // 名前は 1..1024 文字で改行なし、コンポーネント数は上限以内
     if (e.sName.empty() || e.sName.size() > 1024 || e.sName.find_first_of("\r\n") != std::string::npos ||
         e.vComponents.size() > MaxComponentsPerEntity)
         return false;
+    // コンポーネント名: 空でなく、128 文字以内、改行なし、重複なし
     for (size_t i = 0; i < e.vComponents.size(); ++i) {
         const auto& component = e.vComponents[i];
         if (component.empty() || component.size() > 128 || component.find_first_of("\r\n") != std::string::npos ||
             std::find(e.vComponents.begin(), e.vComponents.begin() + i, component) != e.vComponents.begin() + i)
             return false;
     }
+    // 保存値: 名前と値の長さ、改行を含まないこと
     for (const auto& [component, fields] : e.componentProperties) {
         if (component.empty() || component.size() > 128 || fields.size() > 128) return false;
         for (const auto& [name, value] : fields)
@@ -48,15 +68,22 @@ bool Valid(const Entity& e) {
                 value.find_first_of("\r\n") != std::string::npos)
                 return false;
     }
+    // トランスフォームと色はすべて有限の値
     for (float v : values)
         if (!std::isfinite(v)) return false;
     return true;
 }
 
+// --- パスを UTF-8 の文字列にする処理（エラーメッセージ用） ---
 std::string PathText(const std::filesystem::path& p) {
     const auto text = p.u8string();
     return {reinterpret_cast<const char*>(text.data()), text.size()};
 }
+
+//**********************************************************************************
+// *** コンポーネントの登録表 ***
+//**********************************************************************************
+// 名前 → 生成関数。組み込みのコンポーネントは初回のアクセス時に登録する。
 using Factory = std::function<std::unique_ptr<Component>()>;
 std::unordered_map<std::string, Factory>& Components() {
     static std::unordered_map<std::string, Factory> components;
@@ -73,10 +100,12 @@ std::unordered_map<std::string, Factory>& Components() {
     return components;
 }
 
+// --- 親子関係が有効か（範囲内で、自分自身や循環を含まない） ---
 bool ValidParents(const Scene& scene) {
     for (size_t i = 0; i < scene.vEntities.size(); ++i) {
         int parent = scene.vEntities[i].nParent;
         if (parent < -1 || parent >= static_cast<int>(scene.vEntities.size()) || parent == static_cast<int>(i)) return false;
+        // 親をたどり、エンティティ数より多く進んだら循環している
         size_t steps = 0;
         while (parent >= 0) {
             if (++steps > scene.vEntities.size()) return false;
@@ -86,18 +115,23 @@ bool ValidParents(const Scene& scene) {
     return true;
 }
 
-using Mesh = std::vector<DirectX::XMFLOAT3>;
-using ShadeRuns = std::vector<std::uint32_t>;
-constexpr int SHADE_LEVELS = 8;
+//**********************************************************************************
+// *** メッシュの読み込み ***
+//**********************************************************************************
+using Mesh = std::vector<DirectX::XMFLOAT3>;     // 三角形リスト（3 頂点で 1 つ）
+using ShadeRuns = std::vector<std::uint32_t>; // 明るさごとの頂点数
+constexpr int SHADE_LEVELS = 8;                 // 陰影の段階数
 
-// Sorts triangles into SHADE_LEVELS brightness runs using a fixed light in
-// mesh space, so the flat-colour shader still shows the 3D form.
+// --- 三角形を明るさ順に並べ替える処理 ---
+// メッシュ空間の固定の光で各三角形の明るさを求め、SHADE_LEVELS 段階に分ける。
+// これにより、単色のシェーダーでも立体の形が分かる。
 ShadeRuns SortByShade(Mesh& mesh) {
     using namespace DirectX;
     const XMVECTOR light = XMVector3Normalize(XMVectorSet(-0.35f, 0.85f, -0.4f, 0));
     std::vector<std::vector<XMFLOAT3>> vBuckets(SHADE_LEVELS);
     for (size_t nIndex = 0; nIndex + 2 < mesh.size(); nIndex += 3) {
         const XMVECTOR a = XMLoadFloat3(&mesh[nIndex]), b = XMLoadFloat3(&mesh[nIndex + 1]), c = XMLoadFloat3(&mesh[nIndex + 2]);
+        // 面の法線と光の向きの内積を 0..1 の明るさにする
         XMVECTOR normal = XMVector3Cross(XMVectorSubtract(b, a), XMVectorSubtract(c, a));
         const float fLength = XMVectorGetX(XMVector3Length(normal));
         float fLight = 0.5f;
@@ -105,6 +139,7 @@ ShadeRuns SortByShade(Mesh& mesh) {
         const int nLevel = std::clamp(static_cast<int>(fLight * SHADE_LEVELS), 0, SHADE_LEVELS - 1);
         vBuckets[nLevel].insert(vBuckets[nLevel].end(), {mesh[nIndex], mesh[nIndex + 1], mesh[nIndex + 2]});
     }
+    // 暗い順に連結し、区間ごとの頂点数を記録する
     ShadeRuns vRuns;
     mesh.clear();
     for (auto& bucket : vBuckets) {
@@ -114,27 +149,31 @@ ShadeRuns SortByShade(Mesh& mesh) {
     return vRuns;
 }
 
+// 読み込んだメッシュ
 struct LoadedMesh {
-    std::shared_ptr<const Mesh> pVertices;
-    std::shared_ptr<const ShadeRuns> pShadeRuns;
-    bool bFlat = false; // all vertices on z = 0 (2D primitive)
+    std::shared_ptr<const Mesh> pVertices;       // 頂点（正規化済み）
+    std::shared_ptr<const ShadeRuns> pShadeRuns; // 明るさごとの頂点数
+    bool bFlat = false; // すべての頂点が z = 0 上にある（2D の基本図形）
 };
+// テキストから数値を順に読み取る（.x ファイル用。区切り文字は読み飛ばす）
 struct NumberScanner {
-    const char* p{};
-    const char* end{};
+    const char* p{};   // 現在の位置
+    const char* end{}; // 終端
+    // 次の数値を読む
     bool Next(double& value) {
         while (p < end && !((*p >= '0' && *p <= '9') || *p == '-' || *p == '+' || *p == '.'))
             ++p;
         if (p >= end) return false;
         char* next{};
         value = std::strtod(p, &next);
-        if (next == p) {
+        if (next == p) { // 数値として読めなかった（"-" だけなど）ので 1 文字進めてやり直す
             ++p;
             return Next(value);
         }
         p = next;
         return std::isfinite(value);
     }
+    // 次の数値を整数として読む
     bool NextInt(int& value) {
         double number{};
         if (!Next(number)) return false;
@@ -142,6 +181,7 @@ struct NumberScanner {
         return true;
     }
 };
+// --- メッシュを単位ボックス [-0.5, 0.5] に収める処理（中心を原点へ、最も長い辺を 1 に） ---
 void Normalize(Mesh& mesh) {
     if (mesh.empty()) return;
     DirectX::XMFLOAT3 lo = mesh.front(), hi = mesh.front();
@@ -161,9 +201,12 @@ void Normalize(Mesh& mesh) {
         v.z = (v.z - center.z) / extent;
     }
 }
+//==================================================================================
+// --- モデルファイル（.x / .fbx）の読み込み処理 ---
+//==================================================================================
 LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime = 0.0f, int animationIndex = 0) {
-    // Static meshes (.x) are cached per path and file time, so editing a
-    // file on disk is picked up; animated FBX is evaluated every frame.
+    // 静的なメッシュ（.x）はパスと更新日時ごとにキャッシュする（ディスク上で
+    // ファイルを編集すれば反映される）。アニメーションする FBX は毎フレーム評価する。
     struct CacheEntry {
         std::filesystem::file_time_type time;
         LoadedMesh mesh;
@@ -176,6 +219,7 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
     if (_wcsicmp(ext.c_str(), L".fbx") != 0)
         if (auto found = cache.find(key); found != cache.end() && !timeError && found->second.time == writeTime)
             return found->second.mesh;
+    // ファイル全体を読み込む（64MB まで）
     std::ifstream input(path, std::ios::binary);
     if (!input) return {};
     std::string text((std::istreambuf_iterator<char>(input)), {});
@@ -183,6 +227,7 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
     std::vector<DirectX::XMFLOAT3> points;
     Mesh triangles;
     if (_wcsicmp(ext.c_str(), L".x") == 0) {
+        // DirectX のテキスト形式: Mesh { 頂点数; 頂点...; 面数; 面（頂点数; 番号...）... }
         const auto begin = text.find("Mesh");
         const auto brace = begin == std::string::npos ? begin : text.find('{', begin);
         if (brace == std::string::npos) return {};
@@ -203,6 +248,7 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
             std::vector<int> ids(n);
             for (int& id : ids)
                 if (!scan.NextInt(id) || id < 0 || id >= count) return {};
+            // 多角形を扇状に三角形へ分割する
             for (int i = 1; i + 1 < n; ++i) {
                 triangles.push_back(points[ids[0]]);
                 triangles.push_back(points[ids[i]]);
@@ -210,6 +256,7 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
             }
         }
     } else if (_wcsicmp(ext.c_str(), L".fbx") == 0) {
+        // FBX: ufbx で読み込む
         ufbx_load_opts opts{};
         opts.generate_missing_normals = true;
         ufbx_error loadError{};
@@ -218,6 +265,7 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
         if (!source) return {};
         ufbx_scene* evaluated = nullptr;
         ufbx_scene* active = source;
+        // アニメーションがあれば、指定した時間（ループ）の姿勢を評価する
         if (source->anim_stacks.count > 0) {
             const size_t clip = std::min(static_cast<size_t>(std::max(animationIndex, 0)), source->anim_stacks.count - 1);
             const auto* stack = source->anim_stacks.data[clip];
@@ -228,6 +276,7 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
             evaluated = ufbx_evaluate_scene(source, stack->anim, time, nullptr, &evaluateError);
             if (evaluated) active = evaluated;
         }
+        // 全メッシュ・全インスタンスの面を三角形にし、ワールド座標へ変換して集める
         for (size_t m = 0; m < active->meshes.count; ++m) {
             const auto* mesh = active->meshes.data[m];
             if (!mesh || !mesh->vertex_position.exists) continue;
@@ -250,6 +299,7 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
         ufbx_free_scene(source);
     } else
         return {};
+    // 正規化 → 2D 判定 → 明るさ順の並べ替え → キャッシュ
     if (triangles.empty() || triangles.size() > 1000000) return {};
     Normalize(triangles);
     LoadedMesh result;
@@ -261,6 +311,11 @@ LoadedMesh LoadModelMesh(const std::filesystem::path& path, float animationTime 
 }
 } // namespace
 
+//**********************************************************************************
+// *** エンティティ ***
+//**********************************************************************************
+// コピーは保存される情報だけを複製し、実行中のインスタンスは複製しない
+// （コピー先では Play 時に作り直される）。
 Entity::~Entity() = default;
 Entity::Entity(Entity&&) noexcept = default;
 Entity& Entity::operator=(Entity&&) noexcept = default;
@@ -283,6 +338,7 @@ Entity& Entity::operator=(const Entity& other) {
         nAnimationIndex = other.nAnimationIndex;
         vComponents = other.vComponents;
         componentProperties = other.componentProperties;
+        // 実行中のインスタンスは破棄する
         vRuntimeComponentNames.clear();
         vRuntimeComponents.clear();
         vRuntimeComponentStarted.clear();
@@ -290,6 +346,13 @@ Entity& Entity::operator=(const Entity& other) {
     return *this;
 }
 
+//**********************************************************************************
+// *** マテリアル ***
+//**********************************************************************************
+//==================================================================================
+// --- マテリアルの読み込み処理 ---
+//==================================================================================
+// 書式: DXMATERIAL 1 "名前" R G B A "テクスチャ" "シェーダー"
 bool LoadMaterial(const std::filesystem::path& path, Material& material, std::string& error) {
     error.clear();
     std::ifstream file(path, std::ios::binary);
@@ -309,6 +372,7 @@ bool LoadMaterial(const std::filesystem::path& path, Material& material, std::st
             error = "Material contains a non-finite color.";
             return false;
         }
+    // 余計なデータが続いていないか
     file >> std::ws;
     if (file.peek() != std::char_traits<char>::eof()) {
         error = "Unexpected data in material file.";
@@ -318,8 +382,12 @@ bool LoadMaterial(const std::filesystem::path& path, Material& material, std::st
     return true;
 }
 
+//==================================================================================
+// --- マテリアルの保存処理 ---
+//==================================================================================
 bool SaveMaterial(const std::filesystem::path& path, const Material& material, std::string& error) {
     error.clear();
+    // 一時ファイルに書いてから置き換える（書き込み途中で壊れないように）
     auto temp = path;
     temp += L".tmp";
     std::ofstream file(temp, std::ios::binary | std::ios::trunc);
@@ -340,10 +408,23 @@ bool SaveMaterial(const std::filesystem::path& path, const Material& material, s
     return true;
 }
 
+//**********************************************************************************
+// *** シーン ***
+//**********************************************************************************
+//==================================================================================
+// --- シーンの読み込み処理 ---
+//==================================================================================
+// 書式（バージョン 8）:
+//   DXSCENE 8 <エンティティ数>
+//   CAMERA <平行投影> <注視点 x y z> <yaw> <pitch> <距離>
+//   "名前" <コンポーネント数> "名前"... <親> <レンダラー> "モデル" "マテリアル" "テクスチャ"
+//     <アニメ再生> <アニメ時間> <アニメ番号> <保存値の数> ("コンポーネント" "変数" "値")...
+//     <2D> <位置 x y z> <回転 x y z> <拡大率 x y z> <色 r g b a>
+// 古いバージョン（1..7）も読める（無い項目は既定値）。
 bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& error) {
     error.clear();
     std::ifstream file(path, std::ios::binary);
-    file.imbue(std::locale::classic());
+    file.imbue(std::locale::classic()); // 地域設定に関係なく "." を小数点にする
     if (!file) {
         error = "Cannot open scene: " + PathText(path);
         return false;
@@ -355,8 +436,9 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
         error = "Invalid scene header (expected DXSCENE 1-8 and an entity count up to 10000).";
         return false;
     }
+    // 一時的なシーンに読み込み、成功したときだけ置き換える
     Scene loaded;
-    if (version >= 4) {
+    if (version >= 4) { // カメラ（バージョン 4 以降）
         int orthographic = 0;
         auto& camera = loaded.camera;
         if (!(file >> magic >> orthographic >> camera.target.x >> camera.target.y >> camera.target.z >> camera.fYaw >>
@@ -372,6 +454,7 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
         Entity e;
         int is2D = 0;
         auto& d = e.draw;
+        // 名前とコンポーネント（バージョン 2 は 1 つ、3 以降は個数付き）
         bool headerValid = static_cast<bool>(file >> std::quoted(e.sName));
         if (headerValid && version == 2) {
             std::string component;
@@ -386,14 +469,14 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
                 if (headerValid) e.vComponents.push_back(std::move(component));
             }
         }
-        if (headerValid && version >= 5) headerValid = static_cast<bool>(file >> e.nParent);
-        if (headerValid && version >= 6) {
+        if (headerValid && version >= 5) headerValid = static_cast<bool>(file >> e.nParent); // 親（5 以降）
+        if (headerValid && version >= 6) { // レンダラーとモデル（6 以降。種類の上限はバージョンで変わる）
             unsigned renderer = 0;
             headerValid =
                 static_cast<bool>(file >> renderer >> std::quoted(e.sModelAsset)) && renderer <= (version >= 8 ? 4u : version >= 7 ? 3u : 2u);
             e.renderer = static_cast<Entity::RendererKind>(renderer);
         }
-        if (headerValid && version >= 7) {
+        if (headerValid && version >= 7) { // マテリアル・テクスチャ・アニメーション・保存値（7 以降）
             size_t propertyCount = 0;
             int playAnimation = 0;
             headerValid = static_cast<bool>(file >> std::quoted(e.sMaterialAsset) >> std::quoted(e.sTextureAsset) >>
@@ -407,6 +490,7 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
                 if (headerValid) e.componentProperties[component][field] = value;
             }
         }
+        // トランスフォームと色
         if (!headerValid ||
             !(file >> is2D >> d.position.x >> d.position.y >> d.position.z >> d.rotation.x >> d.rotation.y >> d.rotation.z >>
               d.scale.x >> d.scale.y >> d.scale.z >> d.color.x >> d.color.y >> d.color.z >> d.color.w) ||
@@ -427,14 +511,19 @@ bool LoadScene(const std::filesystem::path& path, Scene& scene, std::string& err
         error = "Unexpected data after the scene entities.";
         return false;
     }
+    // 成功: シーンを置き換えて通知する
     loaded.projectRoot = path.parent_path();
     scene = std::move(loaded);
     EngineEvents::Get().onSceneLoaded.Broadcast(scene);
     return true;
 }
 
+//==================================================================================
+// --- シーンの保存処理（常に最新のバージョン 8 で書く） ---
+//==================================================================================
 bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::string& error) {
     error.clear();
+    // 保存する前にすべての値を検証する
     if (scene.vEntities.size() > 10000) {
         error = "Too many entities (maximum 10000).";
         return false;
@@ -453,6 +542,7 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
             return false;
         }
     }
+    // まずメモリ上に書き出す（float は元の値に戻せる桁数で）
     std::ostringstream out;
     out.imbue(std::locale::classic());
     out << "DXSCENE 8 " << scene.vEntities.size() << '\n';
@@ -478,7 +568,7 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
             << ' ' << d.rotation.y << ' ' << d.rotation.z << ' ' << d.scale.x << ' ' << d.scale.y << ' ' << d.scale.z << ' '
             << d.color.x << ' ' << d.color.y << ' ' << d.color.z << ' ' << d.color.w << '\n';
     }
-    // Stage in the same directory and replace only after writing succeeds.
+    // 同じフォルダーの一時ファイルに書き、成功したときだけ置き換える
     auto temp = path;
     temp += L".tmp";
     {
@@ -504,8 +594,15 @@ bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::strin
     return true;
 }
 
+//**********************************************************************************
+// *** レンダラー / コンポーネントの登録 ***
+//**********************************************************************************
+//==================================================================================
+// --- 関数によるコンポーネントの登録処理 ---
+//==================================================================================
 bool RegisterComponent(const std::string& name, ComponentUpdate update) {
     if (name.empty() || name.size() > 128 || name.find_first_of("\r\n") != std::string::npos || !update) return false;
+    // 関数を Update で呼ぶだけのコンポーネントで包む
     struct CallbackComponent final : Component {
         explicit CallbackComponent(ComponentUpdate callback) : callback_(callback) {}
         void Update(Entity& entity, float dt) override { callback_(entity, dt); }
@@ -514,6 +611,9 @@ bool RegisterComponent(const std::string& name, ComponentUpdate update) {
     return Components().emplace(name, [update]() { return std::make_unique<CallbackComponent>(update); }).second;
 }
 
+//==================================================================================
+// --- 各レンダラーの描画情報の作成処理 ---
+//==================================================================================
 DrawItem PolygonRenderer::BuildDrawItem(const Entity& entity) const {
     return entity.draw;
 }
@@ -528,7 +628,7 @@ DrawItem ModelRenderer::BuildDrawItem(const Entity& entity) const {
     const auto mesh = asset_.empty() ? LoadedMesh{} : LoadModelMesh(asset_, animationTime_, animationIndex_);
     result.pVertices = mesh.pVertices;
     result.pShadeRuns = mesh.pShadeRuns;
-    result.bVisible = static_cast<bool>(result.pVertices);
+    result.bVisible = static_cast<bool>(result.pVertices); // 読めなければ描かない
     return result;
 }
 DrawItem MeshRenderer::BuildDrawItem(const Entity& entity) const {
@@ -536,20 +636,29 @@ DrawItem MeshRenderer::BuildDrawItem(const Entity& entity) const {
     const auto mesh = m_mesh.empty() ? LoadedMesh{} : LoadModelMesh(m_mesh, m_fAnimationTime, m_nAnimationIndex);
     result.pVertices = mesh.pVertices;
     result.pShadeRuns = mesh.pShadeRuns;
-    result.bIs2D = mesh.bFlat; // circle / square / triangle pick and outline as quads
+    result.bIs2D = mesh.bFlat; // 円 / 四角形 / 三角形は四角形として選択・アウトライン表示する
     result.bVisible = entity.draw.bVisible && static_cast<bool>(result.pVertices);
     return result;
 }
 
+//==================================================================================
+// --- クラスによるコンポーネントの登録処理 ---
+//==================================================================================
 bool RegisterComponentClass(const std::string& name, ComponentFactory factory) {
     if (name.empty() || name.size() > 128 || name.find_first_of("\r\n") != std::string::npos || !factory) return false;
     return Components().emplace(name, factory).second;
 }
 
+//==================================================================================
+// --- 登録済みかの判定処理 ---
+//==================================================================================
 bool IsComponentRegistered(const std::string& name) {
     return Components().find(name) != Components().end();
 }
 
+//==================================================================================
+// --- コンポーネントの追加処理 ---
+//==================================================================================
 bool AttachComponent(Entity& entity, const std::string& name, std::string& error) {
     error.clear();
     if (!IsComponentRegistered(name)) {
@@ -569,11 +678,14 @@ bool AttachComponent(Entity& entity, const std::string& name, std::string& error
     return true;
 }
 
+//==================================================================================
+// --- コンポーネントの削除処理 ---
+//==================================================================================
 bool DetachComponent(Entity& entity, std::size_t componentIndex) {
     if (componentIndex >= entity.vComponents.size()) return false;
     const auto removed = entity.vComponents[componentIndex];
     entity.vComponents.erase(entity.vComponents.begin() + static_cast<std::ptrdiff_t>(componentIndex));
-    entity.componentProperties.erase(removed);
+    entity.componentProperties.erase(removed); // 保存値も消し、実行中のインスタンスは作り直させる
     entity.vRuntimeComponentNames.clear();
     entity.vRuntimeComponents.clear();
     entity.vRuntimeComponentStarted.clear();
@@ -581,6 +693,9 @@ bool DetachComponent(Entity& entity, std::size_t componentIndex) {
     return true;
 }
 
+//==================================================================================
+// --- 登録済みの名前の一覧の取得処理 ---
+//==================================================================================
 std::vector<std::string> RegisteredComponentNames() {
     std::vector<std::string> result;
     result.reserve(Components().size());
@@ -591,9 +706,12 @@ std::vector<std::string> RegisteredComponentNames() {
 }
 
 namespace {
-void ApplySavedProperties(Component& component, const Entity::PropertyMap& saved); // Inspector values, below
+void ApplySavedProperties(Component& component, const Entity::PropertyMap& saved); // インスペクターの値（下で定義）
 
-// Rebuilds the runtime instances when the attachment list changed.
+//**********************************************************************************
+// *** コンポーネントの実行 ***
+//**********************************************************************************
+// --- 付けているコンポーネントが変わったら、実行中のインスタンスを作り直す ---
 void SyncRuntimeComponents(Entity& entity) {
     if (entity.vRuntimeComponentNames == entity.vComponents) return;
     entity.vRuntimeComponentNames = entity.vComponents;
@@ -606,14 +724,14 @@ void SyncRuntimeComponents(Entity& entity) {
     }
 }
 
-// Applies serialized Inspector values, then calls Start() exactly once.
+// --- 保存されたインスペクターの値を反映し、Start() をちょうど 1 回呼ぶ ---
 void StartComponentIfNeeded(Entity& entity, std::size_t nIndex) {
     if (nIndex >= entity.vRuntimeComponentStarted.size()) entity.vRuntimeComponentStarted.resize(nIndex + 1, false);
     if (entity.vRuntimeComponentStarted[nIndex]) return;
     auto& component = *entity.vRuntimeComponents[nIndex];
     const auto saved = entity.componentProperties.find(entity.vRuntimeComponentNames[nIndex]);
     if (saved != entity.componentProperties.end()) {
-        const auto copy = saved->second; // applying rewrites the saved map
+        const auto copy = saved->second; // 反映中に保存値が書き換わるのでコピーを使う
         ApplySavedProperties(component, copy);
     }
     component.Start(entity);
@@ -622,20 +740,23 @@ void StartComponentIfNeeded(Entity& entity, std::size_t nIndex) {
 }
 } // namespace
 
+//==================================================================================
+// --- 全コンポーネントの 1 フレーム分の更新処理 ---
+//==================================================================================
 void UpdateUserComponents(Scene& scene, float deltaSeconds) {
     const float fDelta = std::max(deltaSeconds, 0.0f);
-    Time::Advance(fDelta);
+    Time::Advance(fDelta); // Time の経過時間を進める
     auto& events = EngineEvents::Get();
-    // Input first, so every Update of this frame sees the same state.
+    // 最初に入力を更新する（このフレームのすべての Update が同じ状態を見る）
     auto* pInput = CInputSystem::GetInstance();
     pInput->SetAssetRoot(scene.projectRoot);
     pInput->Update();
     events.onPreUpdate.Broadcast(scene, fDelta);
 
-    // Pass 1: Start (first frame) and Update, in Inspector order.
+    // 1 周目: Start（初回のみ）と Update を、インスペクターの順に呼ぶ
     for (auto& entity : scene.vEntities) {
         if ((entity.renderer == Entity::RendererKind::Model || entity.renderer == Entity::RendererKind::Mesh) && entity.bPlayAnimation)
-            entity.fAnimationTime += fDelta;
+            entity.fAnimationTime += fDelta; // アニメーションを進める
         SyncRuntimeComponents(entity);
         const size_t nCount = std::min(entity.vRuntimeComponentNames.size(), entity.vRuntimeComponents.size());
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
@@ -645,11 +766,11 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
         }
     }
 
-    // Physics: fixed steps of scaled time (FixedUpdate, contacts, events).
+    // 物理: タイムスケールを掛けた時間を固定ステップで進める（FixedUpdate、接触、イベント）
     SimulatePhysics(scene, fDelta * Time::TimeScale());
 
-    // Pass 2: coroutines resume after every Update (Unity order), then
-    // LateUpdate, then the Inspector mirror of the live field values.
+    // 2 周目: すべての Update の後にコルーチンを再開し（Unity と同じ順序）、
+    // 次に LateUpdate、最後に実行中の値をインスペクター用の保存値へ写す
     for (auto& entity : scene.vEntities) {
         const size_t nCount = std::min(entity.vRuntimeComponentNames.size(), entity.vRuntimeComponents.size());
         for (size_t nIndex = 0; nIndex < nCount; ++nIndex) {
@@ -668,6 +789,7 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
 }
 
 namespace {
+// --- インスタンスが無ければ作る（エディターで値を表示・編集するため） ---
 void EnsureComponentInstances(Entity& entity) {
     if (entity.vRuntimeComponentNames == entity.vComponents && entity.vRuntimeComponents.size() == entity.vComponents.size()) return;
     entity.vRuntimeComponentNames = entity.vComponents;
@@ -681,10 +803,13 @@ void EnsureComponentInstances(Entity& entity) {
 }
 } // namespace
 
-// ---- Inspector field values ------------------------------------------------------
+//**********************************************************************************
+// *** インスペクターの値の読み書き ***
+//**********************************************************************************
 namespace {
-constexpr std::size_t EDITOR_ARRAY_MAX_SIZE = 4096; // Inspector size limit per array
+constexpr std::size_t EDITOR_ARRAY_MAX_SIZE = 4096; // インスペクターで設定できる配列の最大サイズ
 
+// --- float を元の値に戻せる桁数で文字列にする処理 ---
 std::string FloatText(float fValue) {
     std::ostringstream out;
     out.imbue(std::locale::classic());
@@ -692,12 +817,14 @@ std::string FloatText(float fValue) {
     return out.str();
 }
 
+// --- 前後の空白の除去処理 ---
 std::string Trimmed(const std::string& sText) {
     const auto nBegin = sText.find_first_not_of(" \t");
     if (nBegin == std::string::npos) return {};
     return sText.substr(nBegin, sText.find_last_not_of(" \t") - nBegin + 1);
 }
 
+// --- 文字列全体を float として読む処理（余計な文字や無限大は失敗） ---
 bool ParseFloat(const std::string& sText, float& fValue) {
     try {
         size_t nUsed = 0;
@@ -709,7 +836,7 @@ bool ParseFloat(const std::string& sText, float& fValue) {
     }
 }
 
-// "1, 2, 3" / "1 2 3" -> components.
+// --- "1, 2, 3" / "1 2 3" をベクトルの各成分に読む処理 ---
 bool ParseVector(const std::string& sText, float* pValues, int nCount) {
     std::string sNormalized = sText;
     std::replace(sNormalized.begin(), sNormalized.end(), ',', ' ');
@@ -723,6 +850,7 @@ bool ParseVector(const std::string& sText, float* pValues, int nCount) {
     return true;
 }
 
+// --- 列挙型の読み書き処理（列挙型のバイト数に合わせる） ---
 long long ReadEnum(const EditorField& field) {
     switch (field.nEnumBytes) {
     case 1: return *static_cast<const signed char*>(field.pValue);
@@ -741,15 +869,17 @@ void WriteEnum(EditorField& field, long long nValue) {
     }
 }
 
-// Arrays expanded into rows ("Points", "Points.Size", "Points[0]", ...).
+// 配列を行に展開した 1 行分（"Points"、"Points.Size"、"Points[0]"、...）
 struct FlatField {
-    EditorFieldInfo info;
-    EditorField field;                       // leaf (pValue valid) for plain rows
-    std::shared_ptr<EditorArrayAccess> pArray;
-    std::size_t nElement = 0;
+    EditorFieldInfo info;                    // 表示用の情報
+    EditorField field;                       // 通常の行の値（pValue が有効）
+    std::shared_ptr<EditorArrayAccess> pArray; // 所属する配列
+    std::size_t nElement = 0;                // 要素の番号
+    // 行の種類: 通常 / 配列の見出し / 配列のサイズ / 配列の要素
     enum class KIND : unsigned char { LEAF, HEADER, SIZE, ELEMENT } kind = KIND::LEAF;
 };
 
+// --- フィールドから表示用の情報を作る処理 ---
 EditorFieldInfo LeafInfo(const EditorField& field, std::string sPath, std::string sLabel) {
     EditorFieldInfo info;
     info.sPath = std::move(sPath);
@@ -763,10 +893,13 @@ EditorFieldInfo LeafInfo(const EditorField& field, std::string sPath, std::strin
     return info;
 }
 
+//==================================================================================
+// --- フィールドの一覧を行に展開する処理 ---
+//==================================================================================
 std::vector<FlatField> Flatten(std::vector<EditorField>& vFields) {
     std::vector<FlatField> vFlat;
     for (auto& field : vFields) {
-        if (field.type != EditorFieldType::Array || !field.pArray) {
+        if (field.type != EditorFieldType::Array || !field.pArray) { // 配列以外はそのまま 1 行
             FlatField flat;
             flat.info = LeafInfo(field, field.sName, field.sName);
             flat.field = field;
@@ -774,6 +907,7 @@ std::vector<FlatField> Flatten(std::vector<EditorField>& vFields) {
             continue;
         }
         const auto& pArray = field.pArray;
+        // 配列: 見出し → サイズ → 要素の順に並べる
         FlatField header;
         header.kind = FlatField::KIND::HEADER;
         header.info.sPath = header.info.sLabel = field.sName;
@@ -808,6 +942,7 @@ std::vector<FlatField> Flatten(std::vector<EditorField>& vFields) {
     return vFlat;
 }
 
+// --- 1 行の値を文字列で取得する処理 ---
 std::string FlatText(const FlatField& flat) {
     switch (flat.kind) {
     case FlatField::KIND::HEADER: return {};
@@ -817,10 +952,11 @@ std::string FlatText(const FlatField& flat) {
     }
 }
 
+// --- 1 行に文字列の値を設定する処理 ---
 bool FlatAssign(FlatField& flat, const std::string& sValue, std::string& error) {
     switch (flat.kind) {
     case FlatField::KIND::HEADER: error = "An array header has no value."; return false;
-    case FlatField::KIND::SIZE: {
+    case FlatField::KIND::SIZE: { // サイズ: 0..上限の整数のみ
         if (flat.info.bReadOnly) {
             error = "The size of a fixed array cannot change.";
             return false;
@@ -843,7 +979,7 @@ bool FlatAssign(FlatField& flat, const std::string& sValue, std::string& error) 
     }
 }
 
-// Saved values: array sizes first (they create the elements), then the rest.
+// --- 保存値の反映処理: 先に配列のサイズ（要素が作られる）、次に残りの値 ---
 void ApplySavedProperties(Component& component, const Entity::PropertyMap& saved) {
     auto vFields = component.EditorFields();
     for (auto& flat : Flatten(vFields)) {
@@ -860,7 +996,7 @@ void ApplySavedProperties(Component& component, const Entity::PropertyMap& saved
     }
 }
 
-// Rewrites the saved map from the live values (drops elements removed by a resize).
+// --- 現在の値で保存値を書き直す処理（サイズ変更で消えた要素の値も消える） ---
 void StoreProperties(std::vector<FlatField>& vFlat, Entity::PropertyMap& saved) {
     saved.clear();
     for (auto& flat : vFlat) {
@@ -871,6 +1007,9 @@ void StoreProperties(std::vector<FlatField>& vFlat, Entity::PropertyMap& saved) 
 }
 } // namespace
 
+//==================================================================================
+// --- 単一の値の文字列への変換処理 ---
+//==================================================================================
 std::string EditorFieldText(const EditorField& field) {
     if (!field.pValue) return {};
     switch (field.type) {
@@ -880,6 +1019,7 @@ std::string EditorFieldText(const EditorField& field) {
     case EditorFieldType::String: return *static_cast<const std::string*>(field.pValue);
     case EditorFieldType::Enum: {
         const long long nValue = ReadEnum(field);
+        // 名前があれば名前、無ければ数値
         return nValue >= 0 && static_cast<size_t>(nValue) < field.vEnumNames.size() ? field.vEnumNames[static_cast<size_t>(nValue)]
                                                                                     : std::to_string(nValue);
     }
@@ -895,6 +1035,9 @@ std::string EditorFieldText(const EditorField& field) {
     }
 }
 
+//==================================================================================
+// --- 文字列からの単一の値の設定処理 ---
+//==================================================================================
 bool AssignEditorField(EditorField& field, const std::string& value, std::string& error) {
     if (field.bReadOnly) {
         error = "The selected field is read-only.";
@@ -909,7 +1052,7 @@ bool AssignEditorField(EditorField& field, const std::string& value, std::string
         if (field.type == EditorFieldType::Float) {
             float parsed = 0;
             if (!ParseFloat(value, parsed)) throw std::invalid_argument("float");
-            if (field.bRange) parsed = std::clamp(parsed, field.fMin, field.fMax);
+            if (field.bRange) parsed = std::clamp(parsed, field.fMin, field.fMax); // スライダーの範囲に収める
             *static_cast<float*>(field.pValue) = parsed;
         } else if (field.type == EditorFieldType::Integer) {
             int parsed = std::stoi(value, &used);
@@ -927,7 +1070,7 @@ bool AssignEditorField(EditorField& field, const std::string& value, std::string
         } else if (field.type == EditorFieldType::String) {
             *static_cast<std::string*>(field.pValue) = value;
         } else if (field.type == EditorFieldType::Enum) {
-            // A value name (case-insensitive) or its number.
+            // 値の名前（大文字小文字は区別しない）または数値
             const std::string sValue = Trimmed(value);
             long long nValue = -1;
             for (size_t nIndex = 0; nIndex < field.vEnumNames.size(); ++nIndex)
@@ -953,13 +1096,16 @@ bool AssignEditorField(EditorField& field, const std::string& value, std::string
     return true;
 }
 
+//==================================================================================
+// --- インスペクターの全行の取得処理 ---
+//==================================================================================
 std::vector<EditorFieldInfo> ComponentFieldInfos(Entity& entity, std::size_t componentIndex) {
     EnsureComponentInstances(entity);
     std::vector<EditorFieldInfo> result;
     if (componentIndex >= entity.vRuntimeComponents.size() || !entity.vRuntimeComponents[componentIndex]) return result;
     auto& component = *entity.vRuntimeComponents[componentIndex];
     auto& saved = entity.componentProperties[entity.vRuntimeComponentNames[componentIndex]];
-    // Outside Play Mode the saved values are the truth; in Play the live values are.
+    // Play モード外では保存値が正、Play 中は実行中の値が正
     if (!entity.vRuntimeComponentStarted[componentIndex]) {
         const auto copy = saved;
         ApplySavedProperties(component, copy);
@@ -972,6 +1118,9 @@ std::vector<EditorFieldInfo> ComponentFieldInfos(Entity& entity, std::size_t com
     return result;
 }
 
+//==================================================================================
+// --- 変数名と値の一覧の取得処理（見出し行を除く） ---
+//==================================================================================
 std::vector<std::pair<std::string, std::string>> ComponentEditorValues(Entity& entity, std::size_t componentIndex) {
     std::vector<std::pair<std::string, std::string>> result;
     for (auto& info : ComponentFieldInfos(entity, componentIndex))
@@ -979,6 +1128,9 @@ std::vector<std::pair<std::string, std::string>> ComponentEditorValues(Entity& e
     return result;
 }
 
+//==================================================================================
+// --- インスペクターからの値の設定処理 ---
+//==================================================================================
 bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex, const std::string& name, const std::string& value,
                              std::string& error) {
     error.clear();
@@ -998,7 +1150,7 @@ bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex, const s
     for (auto& flat : vFlat)
         if (flat.info.sPath == name) {
             if (!FlatAssign(flat, value, error)) return false;
-            auto vAfter = Flatten(vFields); // a size change adds / removes elements
+            auto vAfter = Flatten(vFields); // サイズを変えると要素が増減するので展開し直す
             StoreProperties(vAfter, saved);
             return true;
         }
@@ -1006,6 +1158,14 @@ bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex, const s
     return false;
 }
 
+//**********************************************************************************
+// *** ゲームのカメラ ***
+//**********************************************************************************
+//==================================================================================
+// --- ゲームの視点になるカメラの取得処理 ---
+//==================================================================================
+// Camera コンポーネントを持ち、Active な最初のエンティティの位置・向きを使う。
+// 無ければシーンのカメラ（エディターの視点）を返す。
 Camera ActiveGameCamera(Scene& scene) {
     for (size_t i = 0; i < scene.vEntities.size(); ++i) {
         const auto& entity = scene.vEntities[i];
@@ -1020,6 +1180,7 @@ Camera ActiveGameCamera(Scene& scene) {
         Camera result;
         result.fYaw = world.rotation.y;
         result.fPitch = world.rotation.x;
+        // 向いている方向の前方に注視点を置く
         result.fDistance = 10.0f;
         const float cp = std::cos(result.fPitch);
         DirectX::XMFLOAT3 forward{std::sin(result.fYaw) * cp, std::sin(result.fPitch), std::cos(result.fYaw) * cp};
@@ -1030,6 +1191,7 @@ Camera ActiveGameCamera(Scene& scene) {
             result.bOrthographic = ortho != props->second.end() && (ortho->second == "true" || ortho->second == "1");
         }
         if (props != entity.componentProperties.end()) {
+            // 数値の保存値（読めなければ既定値）
             auto number = [&](const char* name, float fallback) {
                 auto found = props->second.find(name);
                 if (found == props->second.end()) return fallback;
@@ -1048,19 +1210,27 @@ Camera ActiveGameCamera(Scene& scene) {
     return scene.camera;
 }
 
+//**********************************************************************************
+// *** 親子関係とトランスフォーム ***
+//**********************************************************************************
+//==================================================================================
+// --- 全エンティティのワールド空間の描画情報の計算処理 ---
+//==================================================================================
 std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
     using namespace DirectX;
     std::vector<DrawItem> result(scene.vEntities.size());
-    std::vector<unsigned char> state(scene.vEntities.size(), 0);
+    std::vector<unsigned char> state(scene.vEntities.size(), 0); // 0 = 未計算 / 1 = 計算中 / 2 = 計算済み
+    // 親を先に計算する再帰関数
     std::function<void(int)> resolve = [&](int index) {
         if (index < 0 || static_cast<size_t>(index) >= scene.vEntities.size() || state[index] == 2) return;
-        if (state[index] == 1) {
+        if (state[index] == 1) { // 循環している場合は親を無視する
             result[index] = scene.vEntities[index].draw;
             state[index] = 2;
             return;
         }
         state[index] = 1;
         const auto& entity = scene.vEntities[index];
+        // レンダラーの種類ごとに描画情報を作る
         auto world = entity.draw;
         if (entity.renderer == Entity::RendererKind::None)
             world.bVisible = false;
@@ -1076,6 +1246,7 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
                         .BuildDrawItem(entity);
         else
             world = Image{}.BuildDrawItem(entity);
+        // マテリアルの基本色を掛ける
         if (!entity.sMaterialAsset.empty()) {
             Material material;
             std::string ignored;
@@ -1086,6 +1257,7 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
                 world.color.w *= material.baseColor.w;
             }
         }
+        // 親のトランスフォームを適用する（拡大 → 回転 → 移動）
         if (entity.nParent >= 0 && static_cast<size_t>(entity.nParent) < scene.vEntities.size()) {
             resolve(entity.nParent);
             const auto& parent = result[entity.nParent];
@@ -1107,11 +1279,17 @@ std::vector<DrawItem> ResolveWorldDraws(const Scene& scene) {
     return result;
 }
 
+//==================================================================================
+// --- 1 つ分のワールド空間の描画情報の取得処理 ---
+//==================================================================================
 DrawItem WorldDraw(const Scene& scene, int index) {
     const auto all = ResolveWorldDraws(scene);
     return index >= 0 && static_cast<size_t>(index) < all.size() ? all[index] : DrawItem{};
 }
 
+//==================================================================================
+// --- ワールド → 親からの相対への変換処理（ResolveWorldDraws の逆） ---
+//==================================================================================
 DrawItem LocalDrawFromWorld(const Scene& scene, int index, const DrawItem& world) {
     using namespace DirectX;
     if (index < 0 || static_cast<size_t>(index) >= scene.vEntities.size()) return world;
@@ -1135,6 +1313,9 @@ DrawItem LocalDrawFromWorld(const Scene& scene, int index, const DrawItem& world
     return local;
 }
 
+//==================================================================================
+// --- 親の設定処理（ワールドでの見た目は変えない） ---
+//==================================================================================
 bool SetEntityParent(Scene& scene, int child, int parent, std::string& error) {
     error.clear();
     if (child < 0 || static_cast<size_t>(child) >= scene.vEntities.size() || parent < -1 ||
@@ -1142,6 +1323,7 @@ bool SetEntityParent(Scene& scene, int child, int parent, std::string& error) {
         error = "Invalid parent selection.";
         return false;
     }
+    // 新しい親が自分の子孫なら循環するので失敗
     for (int p = parent, steps = 0; p >= 0 && steps <= static_cast<int>(scene.vEntities.size()); ++steps) {
         if (p == child) {
             error = "An object cannot be parented to one of its descendants.";
@@ -1149,6 +1331,7 @@ bool SetEntityParent(Scene& scene, int child, int parent, std::string& error) {
         }
         p = scene.vEntities[p].nParent;
     }
+    // ワールドでの位置を保ったまま親を変える
     const auto world = WorldDraw(scene, child);
     const int old = scene.vEntities[child].nParent;
     scene.vEntities[child].nParent = parent;
@@ -1161,6 +1344,13 @@ bool SetEntityParent(Scene& scene, int child, int parent, std::string& error) {
     return true;
 }
 
+//**********************************************************************************
+// *** プロジェクトの設定 ***
+//**********************************************************************************
+//==================================================================================
+// --- プロジェクトの設定の読み込み処理 ---
+//==================================================================================
+// 書式: DXSETTINGS 1 の後に「キー "値"」が並ぶ
 bool LoadProjectSettings(const std::filesystem::path& path, ProjectSettings& settings, std::string& error) {
     error.clear();
     std::ifstream file(path, std::ios::binary);
@@ -1181,12 +1371,15 @@ bool LoadProjectSettings(const std::filesystem::path& path, ProjectSettings& set
             error = "Unknown GraphicsApi in project settings: " + sValue;
             return false;
         }
-        // Unknown keys are ignored so newer settings files stay readable.
+        // 知らないキーは無視する（新しい版の設定ファイルも読めるように）
     }
     settings = loaded;
     return true;
 }
 
+//==================================================================================
+// --- プロジェクトの設定の保存処理 ---
+//==================================================================================
 bool SaveProjectSettings(const std::filesystem::path& path, const ProjectSettings& settings, std::string& error) {
     error.clear();
     auto temp = path;
@@ -1215,9 +1408,13 @@ bool SaveProjectSettings(const std::filesystem::path& path, const ProjectSetting
 }
 
 namespace {
-// Optional extras of an export: Direct3D 9 shader bytecode and the project
-// settings (selected graphics API). Failure here never breaks the export,
-// because the player falls back to the built-in SM3 shader and to Direct3D 12.
+//**********************************************************************************
+// *** ゲームの書き出し ***
+//**********************************************************************************
+// --- 書き出しの追加ファイルの処理 ---
+// Direct3D 9 用のシェーダーと、プロジェクトの設定（使用するグラフィックス API）。
+// ここで失敗しても書き出しは失敗にしない（プレイヤーは組み込みの SM3 シェーダーと
+// Direct3D 12 を代わりに使うため）。
 void ExportOptionalFiles(const std::filesystem::path& projectDir, const std::filesystem::path& dest) {
     using Microsoft::WRL::ComPtr;
     const auto shader = projectDir / "Default.hlsl";
@@ -1237,6 +1434,7 @@ void ExportOptionalFiles(const std::filesystem::path& projectDir, const std::fil
         Debug::LogWarning(
             "Export: Default.hlsl does not compile for Shader Model 3; Direct3D 9 players use the built-in shader.");
     }
+    // プロジェクトの設定をコピーする
     std::error_code ec;
     const auto settings = projectDir / PROJECT_SETTINGS_FILE_NAME;
     if (std::filesystem::is_regular_file(settings, ec)) {
@@ -1247,14 +1445,21 @@ void ExportOptionalFiles(const std::filesystem::path& projectDir, const std::fil
 }
 } // namespace
 
+//==================================================================================
+// --- ゲームの書き出し処理（プロジェクトは baseDir/project） ---
+//==================================================================================
 bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::path& dest, const Scene& scene, std::string& error) {
     return ExportGame(baseDir, baseDir / L"project", dest, scene, error);
 }
 
+//==================================================================================
+// --- ゲームの書き出し処理 ---
+//==================================================================================
 bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::path& projectDir, const std::filesystem::path& dest,
                 const Scene& scene, std::string& error) {
     error.clear();
     std::error_code ec;
+    // パスを正規化する
     const auto root = std::filesystem::weakly_canonical(baseDir, ec);
     if (ec) {
         error = "Cannot resolve application directory: " + ec.message();
@@ -1270,6 +1475,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         error = "Cannot resolve project directory: " + ec.message();
         return false;
     }
+    // child が parent の中（または同じ）か
     auto inside = [](const std::filesystem::path& parent, const std::filesystem::path& child) {
         auto a = parent.begin(), b = child.begin();
         for (; a != parent.end(); ++a, ++b) {
@@ -1277,10 +1483,12 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         }
         return true;
     };
+    // アプリのフォルダーそのものやプロジェクトの中には書き出さない
     if ((inside(root, target) && inside(target, root)) || inside(project, target)) {
         error = "Choose an export directory outside the application root and project folder.";
         return false;
     }
+    // 必要なファイルとシーンの検証
     const auto game = baseDir / "Game.exe";
     const auto shader = projectDir / "Default.hlsl";
     if (!std::filesystem::is_regular_file(game, ec) || ec) {
@@ -1305,8 +1513,8 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
             return false;
         }
     }
-    // Compile before creating or overwriting any export files. Includes are
-    // resolved now, so no HLSL sources are required by the player.
+    // 書き出し先のファイルを作る / 上書きする前にコンパイルする。インクルードも
+    // ここで解決するため、プレイヤーには HLSL のソースが要らない。
     using Microsoft::WRL::ComPtr;
     ComPtr<ID3DBlob> vs, ps, diagnostics;
     auto compile = [&](const char* entry, const char* profile, ComPtr<ID3DBlob>& blob) {
@@ -1327,6 +1535,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         error = "Cannot create export directory: " + ec.message();
         return false;
     }
+    // 書き出すファイル。既にある場合は通常のファイルであること
     const std::array<const wchar_t*, 4> names = {L"Game.exe", L"scene.dxs", L"Default.vs.cso", L"Default.ps.cso"};
     for (const auto* name : names) {
         const auto output = dest / name;
@@ -1339,8 +1548,8 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
             return false;
         }
     }
-    // Stage all four files separately before replacing any existing output.
-    // A unique directory also avoids clobbering unrelated .tmp files.
+    // 既存のファイルを置き換える前に、4 つのファイルを別のフォルダーに用意する。
+    // 専用のフォルダーにすることで、関係のない .tmp ファイルを壊さない。
     std::filesystem::path stage;
     for (unsigned attempt = 0; attempt < 100; ++attempt) {
         stage = dest / (L".dxstudio-stage-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(attempt));
@@ -1355,6 +1564,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         error = "Cannot reserve a unique export staging directory.";
         return false;
     }
+    // 準備用のフォルダーの後片付け
     auto cleanup = [&]() {
         std::error_code ignored;
         for (size_t i = 0; i < names.size(); ++i) {
@@ -1364,6 +1574,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         std::filesystem::remove(stage / L"scene.dxs.tmp", ignored);
         std::filesystem::remove(stage, ignored);
     };
+    // シェーダーのバイトコードの書き込み
     auto writeBlob = [&](const std::filesystem::path& name, ID3DBlob* blob) {
         std::ofstream out(name, std::ios::binary | std::ios::trunc);
         if (!out) {
@@ -1378,6 +1589,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         }
         return true;
     };
+    // 準備用のフォルダーに 4 つのファイルを用意する
     std::filesystem::copy_file(game, stage / L"Game.exe", ec);
     if (ec) {
         error = "Cannot copy Game.exe: " + ec.message();
@@ -1390,6 +1602,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         return false;
     }
 
+    // 既存のファイルをバックアップする
     std::array<bool, 4> hadOriginal{};
     for (size_t i = 0; i < names.size(); ++i) {
         hadOriginal[i] = std::filesystem::exists(dest / names[i], ec);
@@ -1407,6 +1620,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
             }
         }
     }
+    // 置き換える。途中で失敗したら、置き換え済みのファイルをバックアップから戻す
     for (size_t i = 0; i < names.size(); ++i) {
         if (!MoveFileExW((stage / names[i]).c_str(), (dest / names[i]).c_str(),
                          MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
@@ -1432,6 +1646,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
             return false;
         }
     }
+    // プロジェクトの Assets をコピーする
     const auto projectAssets = projectDir / L"Assets";
     if (std::filesystem::is_directory(projectAssets, ec)) {
         ec.clear();
@@ -1447,7 +1662,7 @@ bool ExportGame(const std::filesystem::path& baseDir, const std::filesystem::pat
         }
     }
     cleanup();
-    ExportOptionalFiles(projectDir, dest);
+    ExportOptionalFiles(projectDir, dest); // 追加ファイル（失敗しても続行）
     Debug::Log("Exported game to " + PathText(dest));
     return true;
 }
