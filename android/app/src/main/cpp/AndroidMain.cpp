@@ -1,3 +1,16 @@
+//==================================================================================
+//
+// Android 版のプレイヤーのソースファイル [AndroidMain.cpp]
+//
+// NativeActivity（android_native_app_glue）で動く、OpenGL ES 3 の簡易プレイヤー。
+// APK の assets の scene.dxs を読み、物体を立方体 / 四角形として描く。
+// 画面をドラッグするとカメラが回る。
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include <android/asset_manager.h>
 #include <android/input.h>
 #include <android/log.h>
@@ -11,35 +24,48 @@
 #include <string>
 #include <vector>
 
+// エラーを logcat に出す（タグ "DxStudio"）
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "DxStudio", __VA_ARGS__)
 
 namespace {
+//**********************************************************************************
+// *** 型の定義 ***
+//**********************************************************************************
+// 3 次元ベクトル
 struct V3 {
     float x{}, y{}, z{};
 };
 
+// シーンの物体（エディターの Entity のうち、描画に必要な物だけ）
 struct Entity {
-    std::string name;
-    int parent = -1;
-    bool quad = false, visible = true;
-    V3 position{}, rotation{}, scale{1, 1, 1};
-    float color[4]{1, 1, 1, 1};
+    std::string name;                          // 名前
+    int parent = -1;                           // 親の番号（-1 = 親なし）
+    bool quad = false, visible = true;         // 四角形で描くか / 表示するか
+    V3 position{}, rotation{}, scale{1, 1, 1}; // トランスフォーム（親からの相対）
+    float color[4]{1, 1, 1, 1};                // 色
 };
 
+// カメラ（エディターの Camera と同じ意味）
 struct Camera {
-    V3 target{};
-    float yaw{}, pitch = .32175055f, distance = 6.32455532f;
-    bool ortho = false;
+    V3 target{};                                             // 注視点
+    float yaw{}, pitch = .32175055f, distance = 6.32455532f; // 角度と距離
+    bool ortho = false;                                      // 平行投影か
 };
 
+// シーン
 struct Scene {
     Camera camera;
     std::vector<Entity> entities;
 };
 
+// 4x4 の行列（列優先。OpenGL にそのまま渡す）
 struct M4 {
     float v[16]{};
 };
+
+//**********************************************************************************
+// *** 行列・ベクトルの計算 ***
+//**********************************************************************************
 
 M4 Identity() {
     M4 m{};
@@ -47,6 +73,7 @@ M4 Identity() {
     return m;
 }
 
+// 行列の積 a * b
 M4 Multiply(const M4& a, const M4& b) {
     M4 r{};
     for (int c = 0; c < 4; ++c) {
@@ -60,6 +87,7 @@ M4 Multiply(const M4& a, const M4& b) {
     return r;
 }
 
+// 平行移動 / 拡大 / 回転（X → Y → Z の順に掛ける）の行列
 M4 Translate(V3 p) {
     auto m = Identity();
     m.v[12] = p.x;
@@ -95,6 +123,7 @@ M4 Rotate(V3 r) {
     return Multiply(z, Multiply(y, x));
 }
 
+// ベクトルの差 / 和 / 外積 / 内積 / 正規化
 V3 Sub(V3 a, V3 b) {
     return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
@@ -116,6 +145,7 @@ V3 Normalize(V3 a) {
     return {a.x / l, a.y / l, a.z / l};
 }
 
+// ビュー行列（eye から center を見る）
 M4 LookAt(V3 eye, V3 center) {
     const V3 f = Normalize(Sub(center, eye)), s = Normalize(Cross(f, {0, 1, 0})), u = Cross(s, f);
     auto m = Identity();
@@ -134,6 +164,7 @@ M4 LookAt(V3 eye, V3 center) {
     return m;
 }
 
+// 透視投影 / 平行投影の行列
 M4 Perspective(float aspect) {
     const float f = 1 / std::tan(3.14159265f / 8);
     M4 m{};
@@ -154,6 +185,9 @@ M4 Ortho(float aspect, float height) {
     return m;
 }
 
+//==================================================================================
+// --- シーン（assets/scene.dxs）の読み込み処理 ---
+//==================================================================================
 bool LoadScene(AAssetManager* manager, Scene& scene) {
     AAsset* asset = AAssetManager_open(manager, "scene.dxs", AASSET_MODE_BUFFER);
     if (!asset) return false;
@@ -198,7 +232,7 @@ bool LoadScene(AAssetManager* manager, Scene& scene) {
             std::string asset;
             if (!(in >> renderer >> std::quoted(asset)) || renderer > (version >= 8 ? 4u : version >= 7 ? 3u : 2u)) return false;
             e.visible = renderer == 1 || renderer == 3 || renderer == 4;
-        } // 4 = MeshRenderer, drawn as its cube / quad stand-in
+        } // 4 = MeshRenderer（立方体 / 四角形で代わりに描く）
         if (version >= 7) {
             std::string material, texture;
             int play = 0, animationIndex = 0;
@@ -227,6 +261,9 @@ bool LoadScene(AAssetManager* manager, Scene& scene) {
     return true;
 }
 
+//==================================================================================
+// --- 親子関係を解決したワールド空間の物体の一覧の作成処理 ---
+//==================================================================================
 std::vector<Entity> Resolve(const Scene& scene) {
     auto out = scene.entities;
     std::vector<unsigned char> done(out.size());
@@ -256,6 +293,9 @@ std::vector<Entity> Resolve(const Scene& scene) {
     return out;
 }
 
+//==================================================================================
+// --- シェーダーのコンパイル処理 ---
+//==================================================================================
 GLuint Shader(GLenum type, const char* code) {
     GLuint s = glCreateShader(type);
     glShaderSource(s, 1, &code, nullptr);
@@ -271,18 +311,23 @@ GLuint Shader(GLenum type, const char* code) {
     return s;
 }
 
+//**********************************************************************************
+// *** アプリの状態 ***
+//**********************************************************************************
 struct App {
-    android_app* native{};
-    EGLDisplay display = EGL_NO_DISPLAY;
-    EGLSurface surface = EGL_NO_SURFACE;
-    EGLContext context = EGL_NO_CONTEXT;
-    int width{}, height{};
-    GLuint program{}, vbo{};
-    GLint mvp = -1, color = -1;
-    Scene scene;
-    bool ready = false;
-    float touchX{}, touchY{};
+    android_app* native{};                // android_native_app_glue のアプリ
+    EGLDisplay display = EGL_NO_DISPLAY;  // EGL のディスプレイ
+    EGLSurface surface = EGL_NO_SURFACE;  // 描画先
+    EGLContext context = EGL_NO_CONTEXT;  // OpenGL ES のコンテキスト
+    int width{}, height{};                // 画面の大きさ
+    GLuint program{}, vbo{};              // シェーダー / 頂点バッファー
+    GLint mvp = -1, color = -1;           // シェーダーの変数の場所
+    Scene scene;                          // 読み込んだシーン
+    bool ready = false;                   // 初期化が終わったか
+    float touchX{}, touchY{};             // 前回のタッチの位置
 };
+
+// 立方体（36 頂点）の後に四角形（6 頂点）が続く頂点データ
 
 const float Cube[] = {-0.5, -0.5, -0.5, -.5, .5,  -.5, .5,  .5,  -.5, -.5, -.5, -.5, .5,  .5,  -.5, .5,  -.5, -.5, .5,  -.5, .5,
                       .5,   .5,   .5,   -.5, .5,  .5,  .5,  -.5, .5,  -.5, .5,  .5,  -.5, -.5, .5,  -.5, -.5, .5,  -.5, .5,  .5,
@@ -293,9 +338,12 @@ const float Cube[] = {-0.5, -0.5, -0.5, -.5, .5,  -.5, .5,  .5,  -.5, -.5, -.5, 
 
 void Shutdown(App& a);
 
+//==================================================================================
+// --- 初期化処理（EGL、シェーダー、頂点バッファー、シーン） ---
+//==================================================================================
 bool Init(App& a) {
-    // Every EGL step is checked: an unchecked failure (no matching config on
-    // some devices / emulators) used an uninitialised config and crashed.
+    // EGL の処理はすべて確認する: 確認しないと、失敗したとき（端末やエミュレーターに
+    // 合う設定が無い場合など）に初期化されていない設定を使って落ちていた。
     a.display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (a.display == EGL_NO_DISPLAY || !eglInitialize(a.display, nullptr, nullptr)) {
         LOGE("eglInitialize failed: 0x%x", eglGetError());
@@ -377,8 +425,8 @@ bool Init(App& a) {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
 
-    // A scene that does not load is logged, not fatal: the app still runs and
-    // draws the background instead of waiting forever on a black screen.
+    // シーンを読めなくてもログに出すだけにする: アプリは動き続け、真っ黒な画面で
+    // 止まったままにならず、背景を描く。
     if (a.scene.entities.empty()) {
         Scene loaded;
         if (LoadScene(a.native->activity->assetManager, loaded)) {
@@ -392,6 +440,9 @@ bool Init(App& a) {
     return true;
 }
 
+//==================================================================================
+// --- 終了処理 ---
+//==================================================================================
 void Shutdown(App& a) {
     if (a.display != EGL_NO_DISPLAY) {
         eglMakeCurrent(a.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -412,6 +463,9 @@ void Shutdown(App& a) {
     a.surface = EGL_NO_SURFACE;
 }
 
+//==================================================================================
+// --- 描画処理 ---
+//==================================================================================
 void Draw(App& a) {
     if (!a.ready) return;
     glViewport(0, 0, a.width, a.height);
@@ -437,6 +491,9 @@ void Draw(App& a) {
     eglSwapBuffers(a.display, a.surface);
 }
 
+//==================================================================================
+// --- アプリのイベントの処理（ウィンドウの作成 / 破棄） ---
+//==================================================================================
 void Command(android_app* app, int32_t cmd) {
     auto& a = *static_cast<App*>(app->userData);
     if (cmd == APP_CMD_INIT_WINDOW && app->window) {
@@ -446,6 +503,9 @@ void Command(android_app* app, int32_t cmd) {
     }
 }
 
+//==================================================================================
+// --- 入力の処理（ドラッグでカメラを回す） ---
+//==================================================================================
 int32_t Input(android_app* app, AInputEvent* event) {
     auto& a = *static_cast<App*>(app->userData);
     if (AInputEvent_getType(event) != AINPUT_EVENT_TYPE_MOTION) return 0;
@@ -469,6 +529,9 @@ int32_t Input(android_app* app, AInputEvent* event) {
 }
 } // namespace
 
+//==================================================================================
+// --- メイン関数（android_native_app_glue から呼ばれる） ---
+//==================================================================================
 void android_main(android_app* app) {
     App state;
     state.native = app;
