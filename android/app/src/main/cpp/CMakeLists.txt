@@ -8,3 +8,7 @@ target_include_directories(native_app_glue PUBLIC "${NATIVE_GLUE}")
 add_library(dxstudio_android SHARED AndroidMain.cpp)
 target_compile_features(dxstudio_android PRIVATE cxx_std_20)
 target_link_libraries(dxstudio_android PRIVATE native_app_glue android log EGL GLESv3)
+# NativeActivity starts the app through ANativeActivity_onCreate, which lives in
+# the static glue library; without -u the linker drops it and the app stops
+# immediately on every launch.
+target_link_options(dxstudio_android PRIVATE "-u" "ANativeActivity_onCreate")

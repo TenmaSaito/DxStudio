@@ -100,13 +100,31 @@ const float Cube[] = {
  -.5,-.5,.5,-.5,-.5,-.5,.5,-.5,-.5,-.5,-.5,.5,.5,-.5,-.5,.5,-.5,.5,
  -.5,-.5,0,-.5,.5,0,.5,.5,0,-.5,-.5,0,.5,.5,0,.5,-.5,0};
 
+void Shutdown(App& a);
 bool Init(App& a){
+    // Every EGL step is checked: an unchecked failure (no matching config on
+    // some devices / emulators) used an uninitialised config and crashed.
+    a.display=eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if(a.display==EGL_NO_DISPLAY||!eglInitialize(a.display,nullptr,nullptr)){LOGE("eglInitialize failed: 0x%x",eglGetError());a.display=EGL_NO_DISPLAY;return false;}
+    EGLConfig config=nullptr;EGLint count=0,format=0;
     const EGLint attrs[]={EGL_RENDERABLE_TYPE,EGL_OPENGL_ES3_BIT,EGL_SURFACE_TYPE,EGL_WINDOW_BIT,EGL_BLUE_SIZE,8,EGL_GREEN_SIZE,8,EGL_RED_SIZE,8,EGL_DEPTH_SIZE,24,EGL_NONE};
-    EGLConfig config;EGLint count,format;a.display=eglGetDisplay(EGL_DEFAULT_DISPLAY);eglInitialize(a.display,nullptr,nullptr);eglChooseConfig(a.display,attrs,&config,1,&count);eglGetConfigAttrib(a.display,config,EGL_NATIVE_VISUAL_ID,&format);ANativeWindow_setBuffersGeometry(a.native->window,0,0,format);
-    a.surface=eglCreateWindowSurface(a.display,config,a.native->window,nullptr);const EGLint ctx[]={EGL_CONTEXT_CLIENT_VERSION,3,EGL_NONE};a.context=eglCreateContext(a.display,config,EGL_NO_CONTEXT,ctx);if(eglMakeCurrent(a.display,a.surface,a.surface,a.context)==EGL_FALSE)return false;eglQuerySurface(a.display,a.surface,EGL_WIDTH,&a.width);eglQuerySurface(a.display,a.surface,EGL_HEIGHT,&a.height);
+    const EGLint attrs16[]={EGL_RENDERABLE_TYPE,EGL_OPENGL_ES3_BIT,EGL_SURFACE_TYPE,EGL_WINDOW_BIT,EGL_BLUE_SIZE,8,EGL_GREEN_SIZE,8,EGL_RED_SIZE,8,EGL_DEPTH_SIZE,16,EGL_NONE};
+    if(!eglChooseConfig(a.display,attrs,&config,1,&count)||count<1){
+        if(!eglChooseConfig(a.display,attrs16,&config,1,&count)||count<1){LOGE("no OpenGL ES 3 config: 0x%x",eglGetError());Shutdown(a);return false;}
+    }
+    eglGetConfigAttrib(a.display,config,EGL_NATIVE_VISUAL_ID,&format);ANativeWindow_setBuffersGeometry(a.native->window,0,0,format);
+    a.surface=eglCreateWindowSurface(a.display,config,a.native->window,nullptr);
+    if(a.surface==EGL_NO_SURFACE){LOGE("eglCreateWindowSurface failed: 0x%x",eglGetError());Shutdown(a);return false;}
+    const EGLint ctx[]={EGL_CONTEXT_CLIENT_VERSION,3,EGL_NONE};a.context=eglCreateContext(a.display,config,EGL_NO_CONTEXT,ctx);
+    if(a.context==EGL_NO_CONTEXT||eglMakeCurrent(a.display,a.surface,a.surface,a.context)==EGL_FALSE){LOGE("OpenGL ES 3 context failed: 0x%x",eglGetError());Shutdown(a);return false;}
+    eglQuerySurface(a.display,a.surface,EGL_WIDTH,&a.width);eglQuerySurface(a.display,a.surface,EGL_HEIGHT,&a.height);
     const char* vs="#version 300 es\nlayout(location=0) in vec3 p;uniform mat4 mvp;void main(){gl_Position=mvp*vec4(p,1.0);}";
     const char* fs="#version 300 es\nprecision mediump float;uniform vec4 tint;out vec4 c;void main(){c=tint;}";
-    GLuint v=Shader(GL_VERTEX_SHADER,vs),f=Shader(GL_FRAGMENT_SHADER,fs);a.program=glCreateProgram();glAttachShader(a.program,v);glAttachShader(a.program,f);glLinkProgram(a.program);glDeleteShader(v);glDeleteShader(f);a.mvp=glGetUniformLocation(a.program,"mvp");a.color=glGetUniformLocation(a.program,"tint");glGenBuffers(1,&a.vbo);glBindBuffer(GL_ARRAY_BUFFER,a.vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(Cube),Cube,GL_STATIC_DRAW);glEnableVertexAttribArray(0);glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,0,nullptr);glEnable(GL_DEPTH_TEST);glEnable(GL_CULL_FACE);a.ready=LoadScene(a.native->activity->assetManager,a.scene);return a.ready;
+    GLuint v=Shader(GL_VERTEX_SHADER,vs),f=Shader(GL_FRAGMENT_SHADER,fs);a.program=glCreateProgram();glAttachShader(a.program,v);glAttachShader(a.program,f);glLinkProgram(a.program);glDeleteShader(v);glDeleteShader(f);a.mvp=glGetUniformLocation(a.program,"mvp");a.color=glGetUniformLocation(a.program,"tint");glGenBuffers(1,&a.vbo);glBindBuffer(GL_ARRAY_BUFFER,a.vbo);glBufferData(GL_ARRAY_BUFFER,sizeof(Cube),Cube,GL_STATIC_DRAW);glEnableVertexAttribArray(0);glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,0,nullptr);glEnable(GL_DEPTH_TEST);glEnable(GL_CULL_FACE);
+    // A scene that does not load is logged, not fatal: the app still runs and
+    // draws the background instead of waiting forever on a black screen.
+    if(a.scene.entities.empty()){Scene loaded;if(LoadScene(a.native->activity->assetManager,loaded))a.scene=std::move(loaded);else LOGE("scene.dxs could not be read (unsupported version or format)");}
+    a.ready=true;return true;
 }
 void Shutdown(App& a){if(a.display!=EGL_NO_DISPLAY){eglMakeCurrent(a.display,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);if(a.context!=EGL_NO_CONTEXT)eglDestroyContext(a.display,a.context);if(a.surface!=EGL_NO_SURFACE)eglDestroySurface(a.display,a.surface);eglTerminate(a.display);}a.ready=false;a.display=EGL_NO_DISPLAY;a.context=EGL_NO_CONTEXT;a.surface=EGL_NO_SURFACE;}
 void Draw(App& a){if(!a.ready)return;glViewport(0,0,a.width,a.height);glClearColor(.16f,.31f,.50f,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);glUseProgram(a.program);glBindBuffer(GL_ARRAY_BUFFER,a.vbo);const auto& c=a.scene.camera;const float cp=std::cos(c.pitch);V3 eye=Add(c.target,{std::sin(c.yaw)*cp*c.distance,std::sin(c.pitch)*c.distance,-std::cos(c.yaw)*cp*c.distance});const float aspect=static_cast<float>(a.width)/std::max(1,a.height);M4 vp=Multiply(c.ortho?Ortho(aspect,c.distance*(10.0f/6.32455532f)):Perspective(aspect),LookAt(eye,c.target));for(const auto&e:Resolve(a.scene)){if(!e.visible)continue;M4 world=Multiply(Translate(e.position),Multiply(Rotate(e.rotation),Scale(e.scale)));M4 mvp=Multiply(vp,world);glUniformMatrix4fv(a.mvp,1,GL_FALSE,mvp.v);glUniform4fv(a.color,1,e.color);glDrawArrays(GL_TRIANGLES,e.quad?36:0,e.quad?6:36);}eglSwapBuffers(a.display,a.surface);}
