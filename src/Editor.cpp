@@ -1,9 +1,23 @@
+//==================================================================================
+//
+// エディターの起動とメインウィンドウのソースファイル [Editor.cpp]
+//
+// エディターの起動（RunEditor）、メッセージループ、メインウィンドウのプロシージャ。
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "Editor.h"
 #include "EditorWindow.h"
 
 namespace dxs {
 namespace editor {
 
+//==================================================================================
+// --- メインウィンドウのプロシージャ ---
+//==================================================================================
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     Editor* e = reinterpret_cast<Editor*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
@@ -14,13 +28,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
 
     if (!e) return DefWindowProcW(hwnd, message, wp, lp);
     switch (message) {
-    case WM_CREATE: {
+    case WM_CREATE: { // ウィンドウの作成: パネル・コントロール・描画の準備
         theme::InitializeFonts(GetDpiForWindow(hwnd));
         theme::ApplyDarkTitleBar(hwnd);
         e->font = theme::GetFonts().hRegular;
         e->titleFont = theme::GetFonts().hBold;
 
-        // Brushes are owned by the theme cache (Unity Dark palette).
+        // ブラシはテーマのキャッシュが持つ（Unity の Dark の色）
         e->background = theme::Brush(theme::COLOR_PANEL);
         e->inputBackground = theme::Brush(theme::COLOR_INPUT);
         e->tooltip =
@@ -215,27 +229,27 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         SetTimer(hwnd, 1, 16, nullptr);
         return 0;
     }
-    case WM_SIZE:
+    case WM_SIZE: // 大きさの変更 → 配置し直す
         if (e->viewport && wp != SIZE_MINIMIZED) {
             e->Layout();
         }
 
         return 0;
-    case WM_DPICHANGED: {
+    case WM_DPICHANGED: { // モニターの DPI が変わった → フォントと配置を作り直す
         const RECT* suggested = reinterpret_cast<const RECT*>(lp);
         theme::InitializeFonts(HIWORD(wp));
         SetWindowPos(hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left,
                      suggested->bottom - suggested->top, SWP_NOACTIVATE | SWP_NOZORDER);
         return 0;
     }
-    case WM_GETMINMAXINFO: {
+    case WM_GETMINMAXINFO: { // ウィンドウの最小の大きさ
         auto info = reinterpret_cast<MINMAXINFO*>(lp);
         info->ptMinTrackSize = {1000, 700};
         return 0;
     }
     case WM_HSCROLL:
         if (lp) {
-            e->OnInspectorSlider(reinterpret_cast<HWND>(lp)); // Inspector range sliders
+            e->OnInspectorSlider(reinterpret_cast<HWND>(lp)); // インスペクターの範囲のスライダー
         }
 
         return 0;
@@ -255,8 +269,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
-    case WM_COMMAND:
-        // Inputs draw their own focus border; repaint it on focus changes.
+    case WM_COMMAND: // ボタン / メニュー / 入力欄の通知
+        // 入力欄はフォーカスの枠を自分で描くので、フォーカスが変わったら描き直す
         if ((HIWORD(wp) == EN_SETFOCUS || HIWORD(wp) == EN_KILLFOCUS) && lp) {
             InvalidateRect(GetParent(reinterpret_cast<HWND>(lp)), nullptr, FALSE);
         }
@@ -265,12 +279,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             e->ApplyOnFocusLoss(reinterpret_cast<HWND>(lp));
         }
 
-        // Transform / Color fields follow the keyboard in real time.
+        // Transform / Color の欄は、入力に合わせてその場で反映する
         if (HIWORD(wp) == EN_CHANGE && LOWORD(wp) >= ID_FIRST_EDIT + 2 && LOWORD(wp) < ID_FIRST_EDIT + FIELD_COUNT) {
             e->ApplyFieldLive(LOWORD(wp) - ID_FIRST_EDIT);
         }
 
-        // Inspector property fields commit on check-box clicks and focus loss.
+        // インスペクターのプロパティは、チェックボックスのクリックとフォーカスが外れたときに反映する
         if (LOWORD(wp) >= ID_COMPONENT_FIELD_FIRST && LOWORD(wp) <= ID_COMPONENT_FIELD_LAST) {
             const bool bComboBox = lp && e->FindFieldRow(LOWORD(wp), nullptr) && e->FindFieldRow(LOWORD(wp), nullptr)->bEnum;
             if (bComboBox) {
@@ -289,7 +303,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         }
 
         return 0;
-    case WM_LBUTTONDOWN: {
+    case WM_LBUTTONDOWN: { // パネルの境界のドラッグ開始
         RECT client{};
         GetClientRect(hwnd, &client);
         const int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
@@ -341,7 +355,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
 
         break;
     case WM_CAPTURECHANGED: e->layoutDrag = Editor::LayoutDrag::None; break;
-    case WM_MOUSEWHEEL: {
+    case WM_MOUSEWHEEL: { // ホイール: シーンビューの上ならビューへ回す
         POINT pt{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         ScreenToClient(e->viewport, &pt);
         RECT r{};
@@ -349,7 +363,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         if (PtInRect(&r, pt)) return SendMessageW(e->viewport, message, wp, lp);
         break;
     }
-    case WM_TIMER:
+    case WM_TIMER: // 描画のタイマー / バックグラウンドの作業の表示の更新
         if (wp == TASK_STATUS_TIMER) {
             Debug::DispatchPending();
             e->UpdateTaskStatus();
@@ -359,10 +373,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
 
         return 0;
     case WM_DXS_TASK_DONE:
-        Debug::DispatchPending(); // messages the worker logged
+        Debug::DispatchPending(); // 作業スレッドが書いたログ
         e->FinishBackgroundTask();
         return 0;
-    case WM_DRAWITEM: {
+    case WM_DRAWITEM: { // 自前で描くコントロールの描画
         auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
         const int id = static_cast<int>(item->CtlID);
         if (item->CtlType == ODT_LISTBOX) {
@@ -407,7 +421,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         theme::DrawButton(*item, active);
         return TRUE;
     }
-    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORSTATIC: // ラベル / リスト / 入力欄の色（ダークテーマ）
     case WM_CTLCOLORLISTBOX:
     case WM_CTLCOLOREDIT: {
         HDC dc = reinterpret_cast<HDC>(wp);
@@ -425,8 +439,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             text = theme::COLOR_TEXT_DIM;
         }
 
-        // Unity draws X / Y / Z and R / G / B / A in the normal label colour;
-        // "script can not be loaded" rows use the warning colour.
+        // Unity と同じく X / Y / Z と R / G / B / A は通常のラベルの色で描く。
+        // 「スクリプトを読み込めません」の行は警告の色
         for (const auto& view : e->vComponentViews) {
             for (const auto& row : view.vRows) {
                 if (row.hLabel == control && !row.hValue) {
@@ -445,13 +459,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         theme::Fill(reinterpret_cast<HDC>(wp), r, theme::COLOR_SEPARATOR);
         return 1;
     }
-    case WM_PAINT: {
+    case WM_PAINT: { // 枠（メニューバー・ツールバー・ステータスバー）の描画
         PAINTSTRUCT ps{};
         HDC dc = BeginPaint(hwnd, &ps);
         RECT r{};
         GetClientRect(hwnd, &r);
 
-        // Menu bar + main toolbar + status bar (Unity: #191919 chrome).
+        // メニューバー + メインのツールバー + ステータスバー（Unity: #191919 の枠）
         RECT chrome{0, 0, r.right, TOP_CHROME_HEIGHT};
         theme::Fill(dc, chrome, theme::COLOR_TOOLBAR);
         theme::Line(dc, 0, theme::MENU_BAR_HEIGHT, r.right, theme::MENU_BAR_HEIGHT,
@@ -469,7 +483,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         EndPaint(hwnd, &ps);
         return 0;
     }
-    case WM_DESTROY:
+    case WM_DESTROY: // 終了処理
         e->bShellReady = false;
         e->callbackRegistration.Clear();
         for (auto& panel : e->panels) {
@@ -485,7 +499,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         }
 
         KillTimer(hwnd, 1);
-        e->CancelBackgroundTask(true); // closing stops a running build
+        e->CancelBackgroundTask(true); // 閉じると実行中のビルドを止める
         e->renderer.Shutdown();
         PostQuitMessage(0);
         return 0;
@@ -497,13 +511,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
 
 using namespace editor;
 
+//==================================================================================
+// --- エディターの起動処理 ---
+//==================================================================================
 int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const std::filesystem::path& initialProjectFile) {
     RegisterProjectComponents();
-    Debug::SetMainThread();   // Console updates stay on the UI thread
+    Debug::SetMainThread();   // Console の更新は UI スレッドで行う
     LoadLanguagePreference(); // 表示言語（設定ファイル → Windows の表示言語）
     INITCOMMONCONTROLSEX commonControls{sizeof(commonControls), ICC_WIN95_CLASSES | ICC_STANDARD_CLASSES};
     InitCommonControlsEx(&commonControls);
     theme::EnableDarkMode();
+    // プロジェクトの決定（引数の .dxproject、無ければ実行ファイルの横の project）
     Editor editor;
     editor.instance = instance;
     editor.base = baseDir;
@@ -519,6 +537,7 @@ int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const st
         editor.projectFile = initialProjectFile;
     }
 
+    // ウィンドウクラスの登録（シーンビュー、メインウィンドウ）と作成
     WNDCLASSEXW viewportClass{sizeof(viewportClass)};
     viewportClass.lpfnWndProc = ViewportProc;
     viewportClass.hInstance = instance;
@@ -538,6 +557,7 @@ int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const st
     SetWindowTextW(window, title.c_str());
     ShowWindow(window, SW_SHOW);
     UpdateWindow(window);
+    // メッセージループ（キーボードのショートカットはここで先に処理する）
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         if (msg.message == WM_KEYDOWN && msg.wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) {
@@ -547,7 +567,7 @@ int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const st
 
         const bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0, shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 
-        // Unity shortcuts: Ctrl+Shift+P pause, Ctrl+Alt+P step, Ctrl+Shift+C console.
+        // Unity と同じショートカット: Ctrl+Shift+P 一時停止、Ctrl+Alt+P 1 フレーム進める、Ctrl+Shift+C Console
         if (msg.message == WM_KEYDOWN && msg.wParam == 'P' && control && shift) {
             editor.ShellCommand(ID_PAUSE);
             continue;
@@ -563,7 +583,7 @@ int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const st
             continue;
         }
 
-        // Alt + first letter opens a menu of the custom menu bar.
+        // Alt + 頭文字で、自前のメニューバーのメニューを開く
         if (msg.message == WM_SYSKEYDOWN && !control && !(msg.lParam & (1 << 30))) {
             const wchar_t keys[MENU_COUNT] = {L'F', L'E', L'A', L'G', L'C', L'B', L'W', L'H'};
             const auto found = std::find(std::begin(keys), std::end(keys), static_cast<wchar_t>(msg.wParam));
@@ -631,7 +651,7 @@ int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const st
             }
         }
 
-        // Ensure dialog-style keyboard navigation cannot swallow Esc during a drag.
+        // ドラッグ中の Esc が、ダイアログ風のキーボード操作に横取りされないようにする
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE &&
             (editor.drag == Editor::Drag::Gizmo || editor.drag == Editor::Drag::Select)) {
             SendMessageW(editor.viewport, WM_KEYDOWN, msg.wParam, msg.lParam);

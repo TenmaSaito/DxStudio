@@ -1,9 +1,21 @@
-// Editor docking layout: main window chrome, panels, splitters and floating panels.
+//==================================================================================
+//
+// エディターの配置（ドッキング）のソースファイル [EditorLayout.cpp]
+//
+// メインウィンドウの枠、パネル、スプリッター、浮いたパネルの配置を扱う。
+//
+//==================================================================================
 
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "EditorWindow.h"
 
 namespace dxs::editor {
 
+//==================================================================================
+// --- ドックの大きさの変更処理（スプリッターのドラッグ） ---
+//==================================================================================
 void Editor::ResizeDock(LayoutDrag drag, POINT point) {
     RECT client{};
     GetClientRect(window, &client);
@@ -20,6 +32,9 @@ void Editor::ResizeDock(LayoutDrag drag, POINT point) {
     Layout();
 }
 
+//==================================================================================
+// --- パネルを浮かせる / ドックに戻す処理 ---
+//==================================================================================
 void Editor::FloatPanel(int index) {
     auto& p = panels[index];
     RECT old{};
@@ -48,10 +63,13 @@ void Editor::FloatPanel(int index) {
     theme::SetButtonIcon(p.buttons[0], p.floating ? theme::Icon::DOCK : theme::Icon::FLOAT);
     Layout();
 
-    // Areas a floating panel passed over must repaint, including owner-drawn children.
+    // 浮いたパネルが通った場所は、自前で描く子も含めて描き直す
     RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
 }
 
+//==================================================================================
+// --- Scene / Game のタブの切り替え処理 ---
+//==================================================================================
 void Editor::SelectViewTab(bool game) {
     bGameView = game;
     for (HWND tab : viewTabs) {
@@ -63,6 +81,9 @@ void Editor::SelectViewTab(bool game) {
                         : L"Scene view: RMB + WASD/QE fly | Alt + RMB orbit | MMB pan | W/E/R tools");
 }
 
+//==================================================================================
+// --- パネルが置かれている位置の取得処理 ---
+//==================================================================================
 int Editor::PanelSlot(int panelIndex) const {
     for (int slot = 0; slot < SLOT_COUNT; ++slot) {
         if (aSlotPanel[slot] == panelIndex) return slot;
@@ -71,6 +92,9 @@ int Editor::PanelSlot(int panelIndex) const {
     return panelIndex;
 }
 
+//==================================================================================
+// --- ドックの位置の四角形の取得処理（スクリーン座標） ---
+//==================================================================================
 RECT Editor::DockSlotRect(int slot) const {
     RECT client{};
     GetClientRect(window, &client);
@@ -91,6 +115,9 @@ RECT Editor::DockSlotRect(int slot) const {
     return rect;
 }
 
+//==================================================================================
+// --- スクリーン座標の下にあるドックの位置の取得処理 ---
+//==================================================================================
 int Editor::DockSlotAt(POINT screen) const {
     for (const int slot : {SLOT_LEFT, SLOT_RIGHT, SLOT_BOTTOM, SLOT_CENTER}) {
         const RECT rect = DockSlotRect(slot);
@@ -100,7 +127,10 @@ int Editor::DockSlotAt(POINT screen) const {
     return -1;
 }
 
-// Unity / UE style drop preview: a translucent accent rectangle over the slot.
+//==================================================================================
+// --- 落とし先のプレビューの表示処理 ---
+//==================================================================================
+// Unity / UE 風: 落とし先の位置に半透明の強調色の四角形を重ねる
 void Editor::ShowDockPreview(int slot) {
     if (slot < 0) {
         if (dockPreview) {
@@ -127,22 +157,25 @@ void Editor::ShowDockPreview(int slot) {
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
-// Docks a floating panel into slot; the panel that occupied the slot moves
-// to the slot the dropped panel came from.
+//==================================================================================
+// --- パネルのドッキング処理 ---
+//==================================================================================
+// 浮いたパネルを slot にドッキングする。slot にあったパネルは、落としたパネルが
+// 元々あった位置へ移る。
 void Editor::DockPanelInSlot(int panelIndex, int slot) {
     ShowDockPreview(-1);
     const int fromSlot = PanelSlot(panelIndex);
     if (slot >= 0 && slot != fromSlot) {
         std::swap(aSlotPanel[slot], aSlotPanel[fromSlot]);
 
-        // Side columns keep their content width when panels trade sides.
+        // パネルが左右を入れ替えても、左右の列の幅はそのまま
         if ((slot == SLOT_LEFT && fromSlot == SLOT_RIGHT) || (slot == SLOT_RIGHT && fromSlot == SLOT_LEFT)) {
             std::swap(nDockLeft, nDockRight);
         }
     }
 
     if (panels[panelIndex].floating) {
-        FloatPanel(panelIndex); // toggles back to docked
+        FloatPanel(panelIndex); // もう一度呼ぶとドックに戻る
     } else {
         Layout();
     }
@@ -152,6 +185,9 @@ void Editor::DockPanelInSlot(int panelIndex, int slot) {
     SetStatus(message.c_str());
 }
 
+//==================================================================================
+// --- シーンビューの描画モードの設定処理 ---
+//==================================================================================
 void Editor::SetDrawMode(int index) {
     drawMode = static_cast<DrawMode>(std::clamp(index, 0, 2));
     SetWindowTextW(drawModeButton, Tr(DRAW_MODE_NAMES[static_cast<int>(drawMode)]));
@@ -161,6 +197,9 @@ void Editor::SetDrawMode(int index) {
     SetStatus(message.c_str());
 }
 
+//==================================================================================
+// --- ゲームビューの縦横比の設定処理 ---
+//==================================================================================
 void Editor::SetGameAspect(int index) {
     nGameAspect = std::clamp(index, 0, ASPECT_COUNT - 1);
     SetWindowTextW(aspectButton, Tr(ASPECT_NAMES[nGameAspect]));
@@ -168,6 +207,9 @@ void Editor::SetGameAspect(int index) {
     LayoutPanel(1);
 }
 
+//==================================================================================
+// --- 下のドックのタブの切り替え処理（Project / Console） ---
+//==================================================================================
 void Editor::SelectBottomTab(int tab) {
     nBottomTab = std::clamp(tab, 0, BOTTOM_TAB_COUNT - 1);
     for (HWND t : bottomTabs) {
@@ -177,6 +219,9 @@ void Editor::SelectBottomTab(int tab) {
     LayoutPanel(3);
 }
 
+//==================================================================================
+// --- 全体の配置処理 ---
+//==================================================================================
 void Editor::Layout() {
     if (!bShellReady || bArranging || IsIconic(window)) return;
     bArranging = true;
@@ -185,7 +230,7 @@ void Editor::Layout() {
     const int w = r.right, h = r.bottom, top = TOP_CHROME_HEIGHT + 3, bottom = theme::STATUS_BAR_HEIGHT, gap = 3;
     const int header = theme::PANEL_HEADER_HEIGHT;
 
-    // Geometry is computed per dock slot; aSlotPanel decides which panel fills it.
+    // 大きさはドックの位置ごとに計算し、どのパネルを置くかは aSlotPanel で決まる
     auto docked = [&](int slot) {
         const auto& panel = SlotPanel(slot);
         return !panel.floating && !panel.hidden;
@@ -231,7 +276,7 @@ void Editor::Layout() {
     ShowWindow(splitters[1], showRight ? SW_SHOWNA : SW_HIDE);
     ShowWindow(splitters[2], showProject ? SW_SHOWNA : SW_HIDE);
 
-    // Menu bar: text-width buttons after the logo.
+    // メニューバー: ロゴの後に、文字の幅のボタンを並べる
     HDC dc = GetDC(window);
     HGDIOBJ oldFont = SelectObject(dc, theme::GetFonts().hRegular);
     int x = 30;
@@ -243,7 +288,7 @@ void Editor::Layout() {
         x += width;
     }
 
-    // Toolbar buttons are as wide as icon + label (+ chevron) at the current DPI.
+    // ツールバーのボタンの幅は、今の DPI でのアイコン + 文字（+ ∨）
     auto measure = [&](HWND button, int extra) {
         wchar_t text[64]{};
         GetWindowTextW(button, text, 64);
@@ -259,7 +304,7 @@ void Editor::Layout() {
     SelectObject(dc, oldFont);
     ReleaseDC(window, dc);
 
-    // Toolbar: file actions left, transport centred, build actions right.
+    // ツールバー: 左にファイル操作、中央に再生操作、右にビルド操作
     const int toolY = theme::MENU_BAR_HEIGHT + 5, toolH = 26;
     MoveWindow(controls[4], 8, toolY, widths[0], toolH, TRUE);
     MoveWindow(controls[5], 12 + widths[0], toolY, widths[1], toolH, TRUE);
@@ -292,14 +337,17 @@ void Editor::Layout() {
     bArranging = false;
 }
 
+//==================================================================================
+// --- パネル内の配置処理 ---
+//==================================================================================
 void Editor::LayoutPanel(int index) {
     if (!bShellReady) return;
     auto& p = panels[index];
     if (IsIconic(p.window)) return;
 
-    // The Inspector moves dozens of controls (every scroll step). Moving them
-    // one by one with redraw left trails of half-painted rows, so redraw is
-    // frozen for the whole relayout and the panel repaints once at the end.
+    // インスペクターはスクロールのたびに何十ものコントロールを動かす。1 つずつ
+    // 描き直しながら動かすと描きかけの行が残るため、配置し直す間は描画を
+    // 止め、最後にパネルを 1 回だけ描き直す。
     struct RedrawFreeze {
         HWND hWindow = nullptr;
 
@@ -310,7 +358,7 @@ void Editor::LayoutPanel(int index) {
         }
     } freeze;
 
-    static int s_nInspectorDepth = 0; // LayoutPanel(2) re-enters itself after clamping the scroll
+    static int s_nInspectorDepth = 0; // LayoutPanel(2) はスクロール量を収めた後に自分を呼び直す
 
     struct DepthCount {
         int& nDepth;
@@ -324,8 +372,8 @@ void Editor::LayoutPanel(int index) {
     } depth{s_nInspectorDepth, index == 2};
 
     if (index == 2) {
-        // Only the outermost call freezes, and never a hidden panel
-        // (WM_SETREDRAW TRUE would make it visible again).
+        // 描画を止めるのは一番外側の呼び出しだけで、非表示のパネルは止めない
+        // （WM_SETREDRAW TRUE で表示されてしまうため）
         if (s_nInspectorDepth++ == 0 && IsWindowVisible(p.window)) {
             SendMessageW(p.window, WM_SETREDRAW, FALSE, 0);
             freeze.hWindow = p.window;
@@ -337,7 +385,7 @@ void Editor::LayoutPanel(int index) {
     const int w = r.right, h = r.bottom;
     const int header = theme::PANEL_HEADER_HEIGHT;
 
-    // Tab strip chrome (right aligned icons).
+    // タブの帯のボタン（右寄せのアイコン）
     const int closeX = std::max(4, w - 24), minimizeX = std::max(4, closeX - 22), floatX = std::max(4, minimizeX - 22);
     MoveWindow(p.buttons[0], floatX, 4, 20, 20, TRUE);
     MoveWindow(p.buttons[1], minimizeX, 4, 20, 20, TRUE);
@@ -351,12 +399,12 @@ void Editor::LayoutPanel(int index) {
                    std::max(1, width - static_cast<int>(inset.left + inset.right)),
                    std::max(1, height - static_cast<int>(inset.top + inset.bottom)), TRUE);
 
-        // Scrolled Inspector rows must not cover the panel's tab strip.
+        // スクロールしたインスペクターの行が、パネルのタブの帯に重ならないようにする
         const bool bUnderHeader = scrollOffset > 0 && y - scrollOffset < theme::PANEL_HEADER_HEIGHT;
         ShowWindow(control, expanded && visible && !bUnderHeader ? SW_SHOWNA : SW_HIDE);
     };
     if (index == 0) {
-        // Unity Hierarchy: [+ v] [2D] [search.....], scene row, tree, footer.
+        // Unity の Hierarchy: [+ ∨] [2D] [検索.....]、シーンの行、ツリー、下の帯
         place(controls[0], 6, header + 4, 44, 24);
         place(controls[1], 54, header + 4, 32, 24);
         place(hierarchySearch, 92, header + 4, w - 100, 24);
@@ -364,7 +412,7 @@ void Editor::LayoutPanel(int index) {
         place(hierarchy, 0, listTop, w, std::max(1, h - listTop - 34));
         place(controls[2], 6, h - 30, w - 12, 24);
     } else if (index == 1) {
-        // Unity: Scene | Game tabs. The tool strip only exists in the Scene view.
+        // Unity と同じ Scene | Game のタブ。ツールの帯はシーンビューにだけある
         for (int t = 0; t < 2; ++t) {
             MoveWindow(viewTabs[t], t * 100, 2, 100, header - 2, TRUE);
             ShowWindow(viewTabs[t], SW_SHOWNA);
@@ -382,7 +430,7 @@ void Editor::LayoutPanel(int index) {
         place(drawModeButton, 104, header + 3, 190, 24, !bGameView);
         place(aspectButton, 6, header + 3, 130, 24, bGameView);
 
-        // Game view: letterbox the viewport to the chosen aspect ratio.
+        // ゲームビュー: 選んだ縦横比になるよう、上下（左右）に余白を付ける
         RECT view{0, viewTop, w, std::max(viewTop + 1, h)};
         const float ratio = bGameView ? ASPECT_RATIOS[nGameAspect] : 0.0f;
         if (ratio > 0.0f) {
@@ -415,9 +463,9 @@ void Editor::LayoutPanel(int index) {
         place(projectPanel, 0, header, w, std::max(1, h - header), nBottomTab == 0);
         place(consolePanel, 0, header, w, std::max(1, h - header), nBottomTab == 1);
     } else {
-        // Unity Inspector metrics (UnityCsReference EditorGUI.cs), scaled by DPI:
-        // line 20, vertical spacing 2, indent 15 (+3 padding), label width
-        // max(width * 0.45 - 40, 120), sub-label spacing 4, header icon 24.
+        // Unity のインスペクターの寸法（UnityCsReference の EditorGUI.cs）を DPI で拡大して使う:
+        // 行 20、行間 2、字下げ 15（+ 余白 3）、ラベルの幅
+        // max(幅 * 0.45 - 40, 120)、小ラベルの間隔 4、見出しのアイコン 24
         const int dpi = static_cast<int>(GetDpiForWindow(p.window));
         auto S = [dpi](int value) {
             return MulDiv(value, dpi, 96);
@@ -427,7 +475,7 @@ void Editor::LayoutPanel(int index) {
         const int fieldX = indent + labelWidth, fieldW = std::max(S(40), w - fieldX - padRight);
         const int titlebar = S(22);
 
-        // GameObject header: [icon] [x] [name.....]  /  Tag [Untagged v]  Layer [Default v]
+        // GameObject の見出し: [アイコン] [x] [名前.....]  /  Tag [Untagged ∨]  Layer [Default ∨]
         const int y0 = header + S(6);
         place(inspectorIcon, S(6), y0, S(24), S(24));
         place(inspectorEnabled, S(36), y0 + S(3), S(18), S(18));
@@ -439,14 +487,14 @@ void Editor::LayoutPanel(int index) {
         place(inspectorTagValue, S(8) + tagLabelW, tagY, popupW, box);
         place(inspectorLayerLabel, S(8) + tagLabelW + popupW + S(6), tagY, layerLabelW, line);
         place(inspectorLayerValue, S(8) + tagLabelW + popupW + S(6) + layerLabelW, tagY, popupW, box);
-        place(inspectorHint, 0, 0, 1, 1, false); // Unity has no hint line; values apply on Enter
+        place(inspectorHint, 0, 0, 1, 1, false); // Unity にはヒントの行が無い（値は Enter で反映）
         nInspectorHeaderBottom = tagY + line + S(6);
         int y = nInspectorHeaderBottom + S(2);
         auto rowLabel = [&](HWND label, int rowY, bool visible) {
             place(label, indent, rowY, labelWidth - S(4), line, visible);
         };
 
-        // A Vector3 / Color row: sub-labels and fields share the field column.
+        // Vector3 / Color の行: 小ラベルと入力欄で値の列を分け合う
         auto multiField = [&](int firstField, int count, int rowY, bool visible) {
             const int subGap = S(4), miniLabel = S(13);
             const int cell = std::max(S(30), (fieldW - subGap * (count - 1)) / count);
@@ -472,7 +520,7 @@ void Editor::LayoutPanel(int index) {
 
         y += S(4);
 
-        // Renderer component (IRender): colour, material and texture.
+        // レンダラーのコンポーネント（IRender）: 色、マテリアル、テクスチャ
         const bool validEntity = nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size();
         const auto rendererKind =
             validEntity && vSelectedIndices.size() == 1 ? scene.vEntities[nSelected].renderer : Entity::RendererKind::None;
@@ -488,7 +536,7 @@ void Editor::LayoutPanel(int index) {
             y += titlebar + gap;
         }
 
-        // Mesh (Unity: Mesh Filter > Mesh) with an object-picker button.
+        // Mesh（Unity の Mesh Filter > Mesh）と、選択のボタン
         const bool showMesh =
             showRenderer && (rendererKind == Entity::RendererKind::Mesh || rendererKind == Entity::RendererKind::Model);
         rowLabel(meshLabel, y, showMesh);
@@ -533,7 +581,7 @@ void Editor::LayoutPanel(int index) {
             y += S(4);
         }
 
-        // Script / Camera components: one titlebar and property rows each.
+        // スクリプト / カメラのコンポーネント: それぞれ見出しとプロパティの行
         place(groupLabels[2], 0, 0, 1, 1, false);
         for (auto& view : vComponentViews) {
             const bool open = !collapsedComponents[view.sName];
@@ -549,7 +597,7 @@ void Editor::LayoutPanel(int index) {
             }
 
             for (auto& row : view.vRows) {
-                // Rows of a folded array are hidden.
+                // 折りたたんだ配列の行は隠す
                 const bool rowOpen = open && (row.sArrayPath.empty() || !collapsedArrays[view.sName + "/" + row.sArrayPath]);
                 const int rowIndent = indent + row.nIndent * S(15);
                 if (row.bHeader) {
@@ -562,7 +610,7 @@ void Editor::LayoutPanel(int index) {
                 }
 
                 if (!row.hValue) {
-                    place(row.hLabel, indent, y, w - indent - padRight, line * 2, rowOpen); // warning text
+                    place(row.hLabel, indent, y, w - indent - padRight, line * 2, rowOpen); // 警告の文字
                     if (rowOpen) {
                         y += line * 2 + gap;
                     }
@@ -574,7 +622,7 @@ void Editor::LayoutPanel(int index) {
                 if (row.bBoolean) {
                     place(row.hValue, fieldX, y + S(1), S(18), S(18), rowOpen);
                 } else if (!row.vParts.empty()) {
-                    // X Y Z mini labels + fields share the field column (like Transform).
+                    // X Y Z の小ラベルと入力欄で値の列を分け合う（Transform と同じ）
                     const int nCount = static_cast<int>(row.vParts.size()), subGap = S(4), miniLabel = S(13);
                     const int cell = std::max(S(30), (fieldW - subGap * (nCount - 1)) / nCount);
                     for (int nPart = 0; nPart < nCount; ++nPart) {
@@ -583,12 +631,12 @@ void Editor::LayoutPanel(int index) {
                         place(row.vParts[static_cast<size_t>(nPart)], x + miniLabel, y, cell - miniLabel, box, rowOpen);
                     }
                 } else if (row.hSlider) {
-                    // Unity [Range]: slider, then a small value box.
+                    // Unity の [Range]: スライダーの後に小さな値の欄
                     const int valueW = std::min(S(52), fieldW / 2);
                     place(row.hSlider, fieldX - S(4), y, std::max(S(20), fieldW - valueW), line, rowOpen);
                     place(row.hValue, fieldX + fieldW - valueW + S(2), y, valueW - S(2), box, rowOpen);
                 } else if (row.bEnum) {
-                    // The window height of a drop-down list is its open list height.
+                    // ドロップダウンのウィンドウの高さは、開いたときのリストの高さ
                     place(row.hValue, fieldX, y - S(1), fieldW, S(200), rowOpen);
                 } else {
                     place(row.hValue, fieldX, y, fieldW, box, rowOpen);
@@ -602,22 +650,22 @@ void Editor::LayoutPanel(int index) {
             y += S(4);
         }
 
-        // The legacy list / value editors stay as the hidden model behind the views.
+        // 以前の一覧 / 値の入力欄は、表示の裏の隠れたデータとして残す
         for (HWND hidden :
              {componentList, componentFields, componentValue, componentValueApply, componentChoice, componentRemove}) {
             place(hidden, 0, 0, 1, 1, false);
         }
 
-        // Separator + centred "Add Component" button (Unity: 230 x 25).
+        // 区切り線 + 中央の「Add Component」ボタン（Unity: 230 x 25）
         nAddComponentSeparator = y + S(6);
         const int addWidth = std::min(S(230), w - S(20));
         place(componentAdd, (w - addWidth) / 2, y + S(16), addWidth, S(25), validEntity && vSelectedIndices.size() == 1);
         y += S(16) + S(25) + S(12);
 
-        // Keep Apply in a fixed footer instead of letting it disappear
-        // below the scrollable component content.
-        // Unity has no Apply button: edits apply on Enter or focus loss
-        // (Edit > Apply Inspector Changes keeps the explicit command).
+        // Apply をスクロールする中身の下に消さず、固定の下の帯に置く
+        // （スクロールで見えなくならないように）
+        // Unity には Apply ボタンが無い: Enter かフォーカスが外れたときに反映する
+        // （明示的なコマンドは Edit > Apply Inspector Changes に残す）
         ShowWindow(controls[3], SW_HIDE);
         const int contentBottom = y + 8, visibleHeight = std::max(1, h - header);
         const int maxScroll = std::max(0, contentBottom - visibleHeight);
