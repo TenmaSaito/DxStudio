@@ -211,6 +211,7 @@ bool ChooseProjectDescriptor(HWND owner, bool save, const std::filesystem::path&
 bool SaveProjectDescriptor(const std::filesystem::path& path, const std::filesystem::path& root, std::string& error) {
     error.clear();
     std::error_code ec;
+
     // プロジェクトのフォルダーは .dxproject からの相対パスで保存する（フォルダーごと移動しても開ける）
     auto relative = std::filesystem::relative(root, path.parent_path(), ec);
     const auto stored = ec ? root : relative;

@@ -205,6 +205,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
         }
 
         if (!running) break;
+
         // 最小化中は更新しない（戻ったときに時間が飛ばないよう、時刻だけ進める）
         if (IsIconic(window)) {
             previous = Clock::now();

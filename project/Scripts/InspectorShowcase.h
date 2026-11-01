@@ -53,17 +53,17 @@ public:
     }
 
 private:
-    float m_fSpeed = 1.5f;                        // 移動の速さ
-    float m_fVolume = 0.8f;                       // スライダーの例（0..1）
-    int m_nLives = 3;                             // 整数のスライダーの例（1..9）
-    MODE m_mode = MODE::WALK;                     // 列挙型の例
-    DirectX::XMFLOAT3 m_offset{0.0f, 1.0f, 0.0f}; // 経由地点からのずれ
-    DirectX::XMFLOAT2 m_size{1.0f, 1.0f};         // XMFLOAT2 の例
-    bool m_bVisible = true;                       // 表示するか
-    std::string m_sLabel = "Player";              // 文字列の例
+    float m_fSpeed = 1.5f;                                                        // 移動の速さ
+    float m_fVolume = 0.8f;                                                       // スライダーの例（0..1）
+    int m_nLives = 3;                                                             // 整数のスライダーの例（1..9）
+    MODE m_mode = MODE::WALK;                                                     // 列挙型の例
+    DirectX::XMFLOAT3 m_offset{0.0f, 1.0f, 0.0f};                                 // 経由地点からのずれ
+    DirectX::XMFLOAT2 m_size{1.0f, 1.0f};                                         // XMFLOAT2 の例
+    bool m_bVisible = true;                                                       // 表示するか
+    std::string m_sLabel = "Player";                                              // 文字列の例
     std::vector<DirectX::XMFLOAT3> m_vWaypoints{{0, 0, 0}, {2, 0, 0}, {2, 0, 2}}; // 経由地点（動的配列）
-    std::array<int, 3> m_aSlots{10, 20, 30};      // 静的配列の例
-    std::vector<MODE> m_vPattern{MODE::IDLE, MODE::RUN}; // 列挙型の配列の例
-    float m_fElapsed = 0.0f;                      // 経過時間（読み取り専用）
-    size_t m_nWaypoint = 0;                       // 次に向かう経由地点
+    std::array<int, 3> m_aSlots{10, 20, 30};                                      // 静的配列の例
+    std::vector<MODE> m_vPattern{MODE::IDLE, MODE::RUN};                          // 列挙型の配列の例
+    float m_fElapsed = 0.0f;                                                      // 経過時間（読み取り専用）
+    size_t m_nWaypoint = 0;                                                       // 次に向かう経由地点
 };

@@ -521,6 +521,7 @@ int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const st
     INITCOMMONCONTROLSEX commonControls{sizeof(commonControls), ICC_WIN95_CLASSES | ICC_STANDARD_CLASSES};
     InitCommonControlsEx(&commonControls);
     theme::EnableDarkMode();
+
     // プロジェクトの決定（引数の .dxproject、無ければ実行ファイルの横の project）
     Editor editor;
     editor.instance = instance;
@@ -557,6 +558,7 @@ int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const st
     SetWindowTextW(window, title.c_str());
     ShowWindow(window, SW_SHOW);
     UpdateWindow(window);
+
     // メッセージループ（キーボードのショートカットはここで先に処理する）
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {

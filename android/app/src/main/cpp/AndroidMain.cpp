@@ -315,16 +315,16 @@ GLuint Shader(GLenum type, const char* code) {
 // *** アプリの状態 ***
 //**********************************************************************************
 struct App {
-    android_app* native{};                // android_native_app_glue のアプリ
-    EGLDisplay display = EGL_NO_DISPLAY;  // EGL のディスプレイ
-    EGLSurface surface = EGL_NO_SURFACE;  // 描画先
-    EGLContext context = EGL_NO_CONTEXT;  // OpenGL ES のコンテキスト
-    int width{}, height{};                // 画面の大きさ
-    GLuint program{}, vbo{};              // シェーダー / 頂点バッファー
-    GLint mvp = -1, color = -1;           // シェーダーの変数の場所
-    Scene scene;                          // 読み込んだシーン
-    bool ready = false;                   // 初期化が終わったか
-    float touchX{}, touchY{};             // 前回のタッチの位置
+    android_app* native{};               // android_native_app_glue のアプリ
+    EGLDisplay display = EGL_NO_DISPLAY; // EGL のディスプレイ
+    EGLSurface surface = EGL_NO_SURFACE; // 描画先
+    EGLContext context = EGL_NO_CONTEXT; // OpenGL ES のコンテキスト
+    int width{}, height{};               // 画面の大きさ
+    GLuint program{}, vbo{};             // シェーダー / 頂点バッファー
+    GLint mvp = -1, color = -1;          // シェーダーの変数の場所
+    Scene scene;                         // 読み込んだシーン
+    bool ready = false;                  // 初期化が終わったか
+    float touchX{}, touchY{};            // 前回のタッチの位置
 };
 
 // 立方体（36 頂点）の後に四角形（6 頂点）が続く頂点データ

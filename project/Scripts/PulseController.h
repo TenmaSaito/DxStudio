@@ -12,6 +12,7 @@
 // *** インクルードファイル ***
 //**********************************************************************************
 #include "Engine.h"
+
 class PulseController final : public dxs::Component {
 public:
     void Start(dxs::Entity& entity) override;

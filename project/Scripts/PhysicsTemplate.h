@@ -81,9 +81,9 @@ public:
     }
 
 private:
-    float m_fMoveForce = 12.0f; // N（Mass 1 なら 12 m/s^2）
-    float m_fJumpSpeed = 5.0f;  // m/s
-    bool m_bGrounded = false;   // 読み取り専用で Inspector に表示
+    float m_fMoveForce = 12.0f;                    // N（Mass 1 なら 12 m/s^2）
+    float m_fJumpSpeed = 5.0f;                     // m/s
+    bool m_bGrounded = false;                      // 読み取り専用で Inspector に表示
     bool m_bJumpRequested = false;                 // 次の物理ステップでジャンプするか
     DirectX::XMFLOAT4 m_originalColor{1, 1, 1, 1}; // トリガーから出たときに戻す色
 };

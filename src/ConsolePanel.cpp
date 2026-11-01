@@ -59,9 +59,9 @@ public:
     HWND m_hClear = nullptr, m_hCollapse = nullptr; // Clear / Collapse のボタン
     HWND m_hFilters[3]{};                           // 種類（情報 / 警告 / エラー）ごとの絞り込みのボタン
     HINSTANCE m_hInstance = nullptr;
-    bool m_bCollapse = false;                       // 同じログをまとめるか
-    bool m_bShow[3] = {true, true, true};           // 種類ごとに表示するか
-    std::uint64_t m_nClearedBefore = 0; // この通し番号までのログは消去済み
+    bool m_bCollapse = false;               // 同じログをまとめるか
+    bool m_bShow[3] = {true, true, true};   // 種類ごとに表示するか
+    std::uint64_t m_nClearedBefore = 0;     // この通し番号までのログは消去済み
     std::vector<ConsoleRow> m_vRows;        // 表示中の行
     int m_aCounts[3]{};                     // 種類ごとの件数
     ScopedDelegateHandle m_logSubscription; // ログの通知の登録（パネルの破棄で解除）

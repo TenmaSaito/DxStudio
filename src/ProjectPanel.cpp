@@ -42,9 +42,9 @@ using Microsoft::WRL::ComPtr;
 constexpr int TreeId = 7101, ListId = 7102, SearchId = 7103, RefreshId = 7104, ImportId = 7105;
 constexpr int NewComponentId = 7106, ChooseEditorId = 7107, AutomaticEditorId = 7108, OpenId = 7109;
 constexpr int CreateMaterialId = 7110, ConvertToXId = 7111; // X → マテリアル / FBX → X
-constexpr wchar_t WindowClass[] = L"DxStudioProjectPanel"; // ウィンドウクラス名
-constexpr int TOOLBAR_HEIGHT = 30;    // 操作 / 検索の帯の高さ
-constexpr int SEARCH_INSET_LEFT = 20; // 虫めがねのアイコンの場所
+constexpr wchar_t WindowClass[] = L"DxStudioProjectPanel";  // ウィンドウクラス名
+constexpr int TOOLBAR_HEIGHT = 30;                          // 操作 / 検索の帯の高さ
+constexpr int SEARCH_INSET_LEFT = 20;                       // 虫めがねのアイコンの場所
 
 //**********************************************************************************
 // *** 補助関数 ***
