@@ -445,6 +445,7 @@ void Editor::RebuildComponentViews() {
                     const int nDpi = static_cast<int>(GetDpiForWindow(panel));
                     SendMessageW(row.hValue, CB_SETITEMHEIGHT, static_cast<WPARAM>(-1), MulDiv(15, nDpi, 96));
                     SendMessageW(row.hValue, CB_SETITEMHEIGHT, 0, MulDiv(20, nDpi, 96));
+                    SetWindowSubclass(row.hValue, WheelToPanelSubclassProc, 1, 1);
                     for (const auto& sName : info.vEnumNames)
                         SendMessageW(row.hValue, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(Wide(sName).c_str()));
                     const auto found = std::find(info.vEnumNames.begin(), info.vEnumNames.end(), info.sValue);
@@ -465,6 +466,7 @@ void Editor::RebuildComponentViews() {
                         // Unity [Range]: slider + value box.
                         row.hSlider = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | TBS_BOTH | WS_TABSTOP, 0);
                         theme::ApplyDarkControl(row.hSlider);
+                        SetWindowSubclass(row.hSlider, WheelToPanelSubclassProc, 1, 0);
                         SendMessageW(row.hSlider, TBM_SETRANGE, FALSE, MAKELPARAM(0, SliderSteps(row)));
                         SetSliderFromValue(row, info.sValue);
                         EnableWindow(row.hSlider, !readOnly);
@@ -648,6 +650,16 @@ void Editor::OnInspectorSlider(HWND hSlider) {
             RequestRender();
             return;
         }
+}
+
+// Sliders and drop-downs would change their value under the mouse wheel while
+// the Inspector is being scrolled; unless focused they pass it to the panel.
+// dwRefData: 1 for a combo box (its open list keeps the wheel).
+LRESULT CALLBACK WheelToPanelSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR uId, DWORD_PTR bComboBox) {
+    if (message == WM_MOUSEWHEEL && GetFocus() != hwnd && !(bComboBox && SendMessageW(hwnd, CB_GETDROPPEDSTATE, 0, 0)))
+        return SendMessageW(GetParent(hwnd), WM_MOUSEWHEEL, wp, lp);
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(hwnd, WheelToPanelSubclassProc, uId);
+    return DefSubclassProc(hwnd, message, wp, lp);
 }
 
 // Floats are stored with full precision ("0.800000012"); show them short ("0.8").

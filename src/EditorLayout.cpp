@@ -250,6 +250,31 @@ void Editor::LayoutPanel(int index) {
     if (!bShellReady) return;
     auto& p = panels[index];
     if (IsIconic(p.window)) return;
+    // The Inspector moves dozens of controls (every scroll step). Moving them
+    // one by one with redraw left trails of half-painted rows, so redraw is
+    // frozen for the whole relayout and the panel repaints once at the end.
+    struct RedrawFreeze {
+        HWND hWindow = nullptr;
+        ~RedrawFreeze() {
+            if (!hWindow) return;
+            SendMessageW(hWindow, WM_SETREDRAW, TRUE, 0);
+            RedrawWindow(hWindow, nullptr, nullptr, RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+        }
+    } freeze;
+    static int s_nInspectorDepth = 0; // LayoutPanel(2) re-enters itself after clamping the scroll
+    struct DepthCount {
+        int& nDepth;
+        bool bCounted;
+        ~DepthCount() { if (bCounted) --nDepth; }
+    } depth{s_nInspectorDepth, index == 2};
+    if (index == 2) {
+        // Only the outermost call freezes, and never a hidden panel
+        // (WM_SETREDRAW TRUE would make it visible again).
+        if (s_nInspectorDepth++ == 0 && IsWindowVisible(p.window)) {
+            SendMessageW(p.window, WM_SETREDRAW, FALSE, 0);
+            freeze.hWindow = p.window;
+        }
+    }
     RECT r{};
     GetClientRect(p.window, &r);
     const int w = r.right, h = r.bottom;
@@ -267,7 +292,9 @@ void Editor::LayoutPanel(int index) {
         MoveWindow(control, x + inset.left, y - scrollOffset + inset.top,
                    std::max(1, width - static_cast<int>(inset.left + inset.right)),
                    std::max(1, height - static_cast<int>(inset.top + inset.bottom)), TRUE);
-        ShowWindow(control, expanded && visible ? SW_SHOWNA : SW_HIDE);
+        // Scrolled Inspector rows must not cover the panel's tab strip.
+        const bool bUnderHeader = scrollOffset > 0 && y - scrollOffset < theme::PANEL_HEADER_HEIGHT;
+        ShowWindow(control, expanded && visible && !bUnderHeader ? SW_SHOWNA : SW_HIDE);
     };
     if (index == 0) {
         // Unity Hierarchy: [+ v] [2D] [search.....], scene row, tree, footer.

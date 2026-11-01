@@ -102,6 +102,7 @@ std::string DisplayValue(const InspectorFieldRow& row, const std::string& sValue
 // uIdSubclass: Transform/Color field index (2..14), or FIELD_SCRUB_COMPONENT + control id.
 constexpr UINT_PTR FIELD_SCRUB_COMPONENT = 0x10000;
 LRESULT CALLBACK NumericFieldSubclassProc(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
+LRESULT CALLBACK WheelToPanelSubclassProc(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
 // One attached component shown as a titlebar plus property rows.
 struct InspectorComponentView {
     size_t nComponentIndex = 0;
