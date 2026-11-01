@@ -248,6 +248,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         }
         break;
     case WM_COMMAND:
+    case WM_HSCROLL:
     case WM_DRAWITEM:
     case WM_CTLCOLORSTATIC:
     case WM_CTLCOLOREDIT:

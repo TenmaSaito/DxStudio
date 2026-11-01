@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include <array>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -18,6 +19,29 @@ public:
 };
 std::unique_ptr<dxs::Component> CreateMoveTest() { return std::make_unique<MoveTest>(); }
 
+// Every Inspector field kind (enum, vectors, slider, dynamic / static arrays).
+enum class Mode : unsigned char { Idle, Walk, Run };
+class FieldKinds final : public dxs::Component {
+public:
+    Mode mode = Mode::Walk;
+    DirectX::XMFLOAT2 size2{1, 2};
+    DirectX::XMFLOAT3 offset{1, 2, 3};
+    float fVolume = 0.5f;
+    int nLevel = 3;
+    std::vector<float> vWeights{0.25f};
+    std::vector<bool> vFlags;
+    std::array<DirectX::XMFLOAT3, 2> aPoints{};
+    std::vector<Mode> vModes;
+    float fStartedVolume = -1.0f;
+    size_t nStartedWeights = 0;
+    void Start(dxs::Entity&) override { fStartedVolume = fVolume; nStartedWeights = vWeights.size(); }
+    void Update(dxs::Entity&, float) override {}
+    std::vector<dxs::EditorField> EditorFields() override {
+        return {dxs::EditEnum("Mode", mode, {"Idle", "Walk", "Run"}), dxs::EditField("Size", size2), dxs::EditField("Offset", offset),
+                dxs::EditRange("Volume", fVolume, 0.0f, 1.0f), dxs::EditRange("Level", nLevel, 1, 5), dxs::EditField("Weights", vWeights),
+                dxs::EditField("Flags", vFlags), dxs::EditField("Points", aPoints), dxs::EditEnum("Modes", vModes, {"Idle", "Walk", "Run"})};
+    }
+};
 int main() {
     namespace fs = std::filesystem;
     const fs::path dir = fs::current_path() / (L"dxstudio-scene-test-" + std::to_wstring(GetCurrentProcessId()));
@@ -195,6 +219,59 @@ int main() {
                meshLoaded.vEntities[1].sModelAsset == "Assets/Primitives/Sphere.x");
         fs::remove(dir / "mesh.dxs");
         fs::remove_all(dir / "Assets");
+    }
+    // Inspector field kinds: rows, values, clamping, resize, save / load, Start.
+    {
+        assert(dxs::RegisterComponentClass("FieldKinds", [] { return std::unique_ptr<dxs::Component>(std::make_unique<FieldKinds>()); }));
+        dxs::Scene fieldScene;
+        dxs::Entity holder;
+        holder.sName = "Fields";
+        holder.vComponents = {"FieldKinds"};
+        fieldScene.vEntities.push_back(holder);
+        auto& e = fieldScene.vEntities[0];
+        auto infos = dxs::ComponentFieldInfos(e, 0);
+        auto findInfo = [&](const std::string& path) -> const dxs::EditorFieldInfo* {
+            for (const auto& info : infos) if (info.sPath == path) return &info;
+            return nullptr;
+        };
+        assert(findInfo("Mode") && findInfo("Mode")->type == dxs::EditorFieldType::Enum && findInfo("Mode")->sValue == "Walk" &&
+               findInfo("Mode")->vEnumNames.size() == 3);
+        assert(findInfo("Size") && findInfo("Size")->type == dxs::EditorFieldType::Vector2 && findInfo("Size")->sValue == "1,2");
+        assert(findInfo("Offset") && findInfo("Offset")->sValue == "1,2,3");
+        assert(findInfo("Volume") && findInfo("Volume")->bRange && findInfo("Volume")->fMax == 1.0f);
+        assert(findInfo("Weights") && findInfo("Weights")->bArrayHeader);
+        assert(findInfo("Weights.Size") && findInfo("Weights.Size")->sValue == "1" && !findInfo("Weights.Size")->bReadOnly);
+        assert(findInfo("Weights[0]") && findInfo("Weights[0]")->sLabel == "Element 0" && findInfo("Weights[0]")->nIndent == 1);
+        assert(findInfo("Points.Size") && findInfo("Points.Size")->bReadOnly && findInfo("Points[1]")); // fixed std::array
+        std::string err;
+        assert(dxs::SetComponentEditorValue(e, 0, "Mode", "run", err));             // names are case-insensitive
+        assert(dxs::SetComponentEditorValue(e, 0, "Offset", "4, 5, 6", err));
+        assert(!dxs::SetComponentEditorValue(e, 0, "Offset", "4,5", err));          // needs three numbers
+        assert(dxs::SetComponentEditorValue(e, 0, "Volume", "7", err));             // clamped to the range
+        assert(dxs::SetComponentEditorValue(e, 0, "Level", "0", err));
+        assert(dxs::SetComponentEditorValue(e, 0, "Weights.Size", "3", err));
+        assert(dxs::SetComponentEditorValue(e, 0, "Weights[2]", "9.5", err));
+        assert(dxs::SetComponentEditorValue(e, 0, "Flags.Size", "2", err) && dxs::SetComponentEditorValue(e, 0, "Flags[1]", "true", err));
+        assert(dxs::SetComponentEditorValue(e, 0, "Points[1]", "7,8,9", err));
+        assert(!dxs::SetComponentEditorValue(e, 0, "Points.Size", "5", err));       // fixed size
+        assert(!dxs::SetComponentEditorValue(e, 0, "Weights.Size", "-1", err));
+        assert(dxs::SetComponentEditorValue(e, 0, "Modes.Size", "1", err) && dxs::SetComponentEditorValue(e, 0, "Modes[0]", "Idle", err));
+        auto& props = e.componentProperties["FieldKinds"];
+        assert(props["Mode"] == "Run" && props["Volume"] == "1" && props["Level"] == "1" && props["Weights.Size"] == "3");
+        assert(props["Weights[2]"] == "9.5" && props["Flags[1]"] == "true" && props["Points[1]"] == "7,8,9" && props["Modes[0]"] == "Idle");
+        assert(dxs::SetComponentEditorValue(e, 0, "Weights.Size", "1", err) && !props.count("Weights[2]")); // stale elements dropped
+        assert(dxs::SetComponentEditorValue(e, 0, "Weights.Size", "3", err) && dxs::SetComponentEditorValue(e, 0, "Weights[2]", "9.5", err));
+        // Save / load keeps every path; Start sees the saved values.
+        assert(dxs::SaveScene(dir / "fields.dxs", fieldScene, err));
+        dxs::Scene loadedFields;
+        assert(dxs::LoadScene(dir / "fields.dxs", loadedFields, err));
+        dxs::UpdateUserComponents(loadedFields, 0.0f);
+        auto* pFields = dxs::GetComponent<FieldKinds>(loadedFields.vEntities[0]);
+        assert(pFields && pFields->mode == Mode::Run && pFields->offset.z == 6.0f && pFields->nLevel == 1);
+        assert(pFields->vWeights.size() == 3 && pFields->vWeights[2] == 9.5f && pFields->vFlags.size() == 2 && pFields->vFlags[1]);
+        assert(pFields->aPoints[1].y == 8.0f && pFields->vModes.size() == 1 && pFields->vModes[0] == Mode::Idle);
+        assert(pFields->fStartedVolume == 1.0f && pFields->nStartedWeights == 3);
+        fs::remove(dir / "fields.dxs");
     }
     fs::remove(dir / "scene.dxs");
     fs::remove(dir / "old.dxs");

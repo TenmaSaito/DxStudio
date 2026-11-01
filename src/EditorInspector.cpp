@@ -339,7 +339,13 @@ void Editor::RebuildComponentViews() {
     std::string signature;
     if (single) {
         signature = std::to_string(nSelected) + "|" + (bPlaying ? "P" : "E");
-        for (const auto& name : scene.vEntities[nSelected].vComponents) signature += "|" + name;
+        auto& selected = scene.vEntities[nSelected];
+        for (size_t nIndex = 0; nIndex < selected.vComponents.size(); ++nIndex) {
+            signature += "|" + selected.vComponents[nIndex];
+            // Rows depend on array sizes too.
+            if (IsComponentRegistered(selected.vComponents[nIndex]))
+                for (const auto& info : ComponentFieldInfos(selected, nIndex)) signature += "," + info.sPath;
+        }
     }
     if (signature == sComponentViewSignature) {
         UpdateComponentViewValues();
@@ -350,8 +356,11 @@ void Editor::RebuildComponentViews() {
         for (HWND control : {view.hHeader, view.hScriptLabel, view.hScriptValue})
             if (control) DestroyWindow(control);
         for (auto& row : view.vRows) {
-            if (row.hLabel) DestroyWindow(row.hLabel);
-            if (row.hValue) DestroyWindow(row.hValue);
+            for (HWND control : row.vParts)
+                if (control != row.hValue) DestroyWindow(control);
+            for (HWND control : row.vPartLabels) DestroyWindow(control);
+            for (HWND control : {row.hLabel, row.hValue, row.hSlider})
+                if (control) DestroyWindow(control);
         }
     }
     vComponentViews.clear();
@@ -386,33 +395,87 @@ void Editor::RebuildComponentViews() {
             warning.hLabel = make(L"STATIC", L"The associated script can not be loaded. Register the class and rebuild.", SS_LEFT | SS_NOPREFIX, 0);
             view.vRows.push_back(warning);
         } else {
-            const auto values = ComponentEditorValues(entity, nIndex);
-            std::vector<EditorField> fields;
-            if (nIndex < entity.vRuntimeComponents.size() && entity.vRuntimeComponents[nIndex]) fields = entity.vRuntimeComponents[nIndex]->EditorFields();
-            for (const auto& [field, value] : values) {
-                if (nFieldId > ID_COMPONENT_FIELD_LAST) break;
-                InspectorFieldRow row;
-                row.sField = field;
-                const auto info = std::find_if(fields.begin(), fields.end(), [&](const EditorField& candidate) { return candidate.sName == field; });
-                row.bBoolean = info != fields.end() && info->type == EditorFieldType::Boolean;
-                row.bInteger = info != fields.end() && info->type == EditorFieldType::Integer;
-                row.bNumeric = row.bInteger || (info != fields.end() && info->type == EditorFieldType::Float);
-                const bool readOnly = info != fields.end() && info->bReadOnly;
-                row.hLabel = make(L"STATIC", Wide(field), SS_LEFT | SS_CENTERIMAGE | SS_ENDELLIPSIS | SS_NOPREFIX, 0);
-                if (row.bBoolean) {
-                    row.bChecked = value == "true";
-                    row.hValue = make(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, nFieldId);
-                    theme::SetButtonSpec(row.hValue, {theme::ButtonRole::CHECKBOX, theme::Icon::NONE});
-                } else {
-                    row.hValue = make(L"EDIT", Wide(value), ES_AUTOHSCROLL | WS_TABSTOP | (readOnly ? ES_READONLY : 0), nFieldId);
-                    SendMessageW(row.hValue, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(2, 2));
-                    if (row.bNumeric && !readOnly)
-                        SetWindowSubclass(row.hValue, NumericFieldSubclassProc, FIELD_SCRUB_COMPONENT + static_cast<UINT_PTR>(nFieldId),
-                                          reinterpret_cast<DWORD_PTR>(this));
+            for (const auto& info : ComponentFieldInfos(entity, nIndex)) {
+                const int nPartCount = info.type == EditorFieldType::Vector3 ? 3 : info.type == EditorFieldType::Vector2 ? 2 : 1;
+                if (nFieldId + nPartCount - 1 > ID_COMPONENT_FIELD_LAST) {
+                    view.bTruncated = true; // too many rows for the control id range
+                    break;
                 }
+                InspectorFieldRow row;
+                row.sField = info.sPath;
+                row.type = info.type;
+                row.nIndent = info.nIndent;
+                row.sArrayPath = info.sArrayPath;
+                row.bArraySize = info.bArraySize;
+                row.vEnumNames = info.vEnumNames;
+                row.fMin = info.fMin;
+                row.fMax = info.fMax;
+                const bool readOnly = info.bReadOnly;
+                if (info.bArrayHeader) {
+                    // Unity array foldout: "▼ Points".
+                    row.bHeader = true;
+                    row.hLabel = make(L"BUTTON", Wide(info.sLabel), BS_OWNERDRAW, nFieldId++);
+                    theme::SetButtonSpec(row.hLabel, {theme::ButtonRole::FOLDOUT, theme::Icon::NONE});
+                    theme::SetButtonExpanded(row.hLabel, !collapsedArrays[view.sName + "/" + info.sPath]);
+                    view.vRows.push_back(row);
+                    continue;
+                }
+                row.bBoolean = info.type == EditorFieldType::Boolean;
+                row.bInteger = info.type == EditorFieldType::Integer;
+                row.bNumeric = row.bInteger || info.type == EditorFieldType::Float;
+                row.bEnum = info.type == EditorFieldType::Enum;
+                row.hLabel = make(L"STATIC", Wide(info.sLabel), SS_LEFT | SS_CENTERIMAGE | SS_ENDELLIPSIS | SS_NOPREFIX, 0);
+                auto numericEdit = [&](const std::wstring& text, int nId) {
+                    HWND edit = make(L"EDIT", text, ES_AUTOHSCROLL | WS_TABSTOP | (readOnly ? ES_READONLY : 0), nId);
+                    SendMessageW(edit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(2, 2));
+                    if (!readOnly)
+                        SetWindowSubclass(edit, NumericFieldSubclassProc, FIELD_SCRUB_COMPONENT + static_cast<UINT_PTR>(nId),
+                                          reinterpret_cast<DWORD_PTR>(this));
+                    return edit;
+                };
+                if (row.bBoolean) {
+                    row.bChecked = info.sValue == "true";
+                    row.hValue = make(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, nFieldId++);
+                    theme::SetButtonSpec(row.hValue, {theme::ButtonRole::CHECKBOX, theme::Icon::NONE});
+                } else if (row.bEnum) {
+                    // Drop-down of the enum value names.
+                    // Owner-drawn so it matches the dark input fields (DrawEnumItem).
+                    row.hValue = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP, nFieldId++);
+                    theme::ApplyDarkInput(row.hValue);
+                    const int nDpi = static_cast<int>(GetDpiForWindow(panel));
+                    SendMessageW(row.hValue, CB_SETITEMHEIGHT, static_cast<WPARAM>(-1), MulDiv(15, nDpi, 96));
+                    SendMessageW(row.hValue, CB_SETITEMHEIGHT, 0, MulDiv(20, nDpi, 96));
+                    for (const auto& sName : info.vEnumNames)
+                        SendMessageW(row.hValue, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(Wide(sName).c_str()));
+                    const auto found = std::find(info.vEnumNames.begin(), info.vEnumNames.end(), info.sValue);
+                    SendMessageW(row.hValue, CB_SETCURSEL, found == info.vEnumNames.end() ? -1 : found - info.vEnumNames.begin(), 0);
+                } else if (nPartCount > 1) {
+                    // Vector2 / Vector3: X Y Z on one row (like Transform).
+                    const auto vValues = SplitVectorText(info.sValue, nPartCount);
+                    const wchar_t* aAxis[] = {L"X", L"Y", L"Z"};
+                    for (int nPart = 0; nPart < nPartCount; ++nPart) {
+                        row.vPartLabels.push_back(make(L"STATIC", aAxis[nPart], SS_CENTER | SS_CENTERIMAGE | SS_NOPREFIX, 0));
+                        row.vParts.push_back(numericEdit(Wide(vValues[static_cast<size_t>(nPart)]), nFieldId++));
+                    }
+                    row.hValue = row.vParts[0];
+                    row.bNumeric = true;
+                } else if (row.bNumeric) {
+                    row.hValue = numericEdit(Wide(DisplayValue(row, info.sValue)), nFieldId++);
+                    if (info.bRange) {
+                        // Unity [Range]: slider + value box.
+                        row.hSlider = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | TBS_BOTH | WS_TABSTOP, 0);
+                        theme::ApplyDarkControl(row.hSlider);
+                        SendMessageW(row.hSlider, TBM_SETRANGE, FALSE, MAKELPARAM(0, SliderSteps(row)));
+                        SetSliderFromValue(row, info.sValue);
+                        EnableWindow(row.hSlider, !readOnly);
+                    }
+                } else {
+                    row.hValue = make(L"EDIT", Wide(info.sValue), ES_AUTOHSCROLL | WS_TABSTOP | (readOnly ? ES_READONLY : 0), nFieldId++);
+                    SendMessageW(row.hValue, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(2, 2));
+                }
+                for (HWND control : row.vParts) EnableWindow(control, !readOnly);
                 EnableWindow(row.hValue, !readOnly);
-                ++nFieldId;
-                view.vRows.push_back(row);
+                view.vRows.push_back(std::move(row));
             }
         }
         vComponentViews.push_back(std::move(view));
@@ -425,49 +488,88 @@ void Editor::UpdateComponentViewValues() {
     auto& entity = scene.vEntities[nSelected];
     for (auto& view : vComponentViews) {
         if (view.nComponentIndex >= entity.vComponents.size() || !IsComponentRegistered(view.sName)) continue;
-        const auto values = ComponentEditorValues(entity, view.nComponentIndex);
-        for (auto& row : view.vRows) {
-            if (!row.hValue) continue;
-            const auto found = std::find_if(values.begin(), values.end(), [&](const auto& pair) { return pair.first == row.sField; });
-            if (found == values.end()) continue;
+        const auto vInfos = ComponentFieldInfos(entity, view.nComponentIndex);
+        // A script resized an array (Play Mode): rebuild the rows once idle.
+        size_t nRows = 0;
+        for (const auto& row : view.vRows) nRows += row.sField.empty() ? 0 : 1;
+        bool bSameRows = nRows == vInfos.size() || (view.bTruncated && nRows < vInfos.size());
+        for (size_t nIndex = 0; bSameRows && nIndex < vInfos.size(); ++nIndex)
+            bSameRows = nIndex < view.vRows.size() && view.vRows[nIndex].sField == vInfos[nIndex].sPath;
+        if (!bSameRows) {
+            RequestInspectorRebuild();
+            return;
+        }
+        for (size_t nIndex = 0; nIndex < vInfos.size() && nIndex < view.vRows.size(); ++nIndex) {
+            auto& row = view.vRows[nIndex];
+            const auto& sValue = vInfos[nIndex].sValue;
+            if (row.bHeader || !row.hValue) continue;
             if (row.bBoolean) {
-                const bool checked = found->second == "true";
+                const bool checked = sValue == "true";
                 if (checked != row.bChecked) {
                     row.bChecked = checked;
                     InvalidateRect(row.hValue, nullptr, FALSE);
                 }
+            } else if (row.bEnum) {
+                if (SendMessageW(row.hValue, CB_GETDROPPEDSTATE, 0, 0)) continue;
+                const auto found = std::find(row.vEnumNames.begin(), row.vEnumNames.end(), sValue);
+                const int nSelection = found == row.vEnumNames.end() ? -1 : static_cast<int>(found - row.vEnumNames.begin());
+                if (SendMessageW(row.hValue, CB_GETCURSEL, 0, 0) != nSelection) SendMessageW(row.hValue, CB_SETCURSEL, nSelection, 0);
+            } else if (!row.vParts.empty()) {
+                const auto vValues = SplitVectorText(sValue, static_cast<int>(row.vParts.size()));
+                for (size_t nPart = 0; nPart < row.vParts.size(); ++nPart) {
+                    if (GetFocus() == row.vParts[nPart]) continue;
+                    const std::wstring text = Wide(vValues[nPart]);
+                    if (Text(row.vParts[nPart]) != text) SetWindowTextW(row.vParts[nPart], text.c_str());
+                }
             } else if (GetFocus() != row.hValue) {
-                const std::wstring text = Wide(found->second);
+                const std::wstring text = Wide(DisplayValue(row, sValue));
                 if (Text(row.hValue) != text) SetWindowTextW(row.hValue, text.c_str());
             }
+            if (row.hSlider && GetCapture() != row.hSlider) SetSliderFromValue(row, sValue);
         }
     }
 }
 
 InspectorFieldRow* Editor::FindFieldRow(int controlId, InspectorComponentView** ppView) {
+    auto matches = [controlId](HWND control) { return control && GetDlgCtrlID(control) == controlId; };
     for (auto& view : vComponentViews)
-        for (auto& row : view.vRows)
-            if (row.hValue && GetDlgCtrlID(row.hValue) == controlId) {
+        for (auto& row : view.vRows) {
+            bool bFound = matches(row.hValue) || (row.bHeader && matches(row.hLabel));
+            for (HWND part : row.vParts) bFound = bFound || matches(part);
+            if (bFound) {
                 if (ppView) *ppView = &view;
                 return &row;
             }
+        }
     return nullptr;
 }
 
 bool Editor::IsComponentFieldEdit(HWND control) const {
+    if (!control) return false;
     for (const auto& view : vComponentViews) {
         if (control == view.hScriptValue) return true;
-        for (const auto& row : view.vRows)
-            if (row.hValue == control && !row.bBoolean) return true;
+        for (const auto& row : view.vRows) {
+            if (row.hValue == control && !row.bBoolean && !row.bEnum) return true;
+            if (std::find(row.vParts.begin(), row.vParts.end(), control) != row.vParts.end()) return true;
+        }
     }
     return false;
 }
 
-// Applies an edited property (Enter / focus loss) or a toggled check box.
+// Applies an edited property (Enter / focus loss / drop-down / slider) or a
+// toggled check box; an array header toggles its foldout.
 void Editor::CommitComponentField(int controlId, bool bToggle) {
     InspectorComponentView* pView = nullptr;
     InspectorFieldRow* pRow = FindFieldRow(controlId, &pView);
     if (!pRow || !pView || nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
+    if (pRow->bHeader) {
+        if (!bToggle) return;
+        bool& bCollapsed = collapsedArrays[pView->sName + "/" + pRow->sField];
+        bCollapsed = !bCollapsed;
+        theme::SetButtonExpanded(pRow->hLabel, !bCollapsed);
+        LayoutPanel(2);
+        return;
+    }
     auto& entity = scene.vEntities[nSelected];
     std::string sValue;
     if (pRow->bBoolean) {
@@ -475,18 +577,139 @@ void Editor::CommitComponentField(int controlId, bool bToggle) {
         pRow->bChecked = !pRow->bChecked;
         sValue = pRow->bChecked ? "true" : "false";
         InvalidateRect(pRow->hValue, nullptr, FALSE);
+    } else if (pRow->bEnum) {
+        const int nSelection = static_cast<int>(SendMessageW(pRow->hValue, CB_GETCURSEL, 0, 0));
+        if (nSelection < 0 || static_cast<size_t>(nSelection) >= pRow->vEnumNames.size()) return;
+        sValue = pRow->vEnumNames[static_cast<size_t>(nSelection)];
+    } else if (!pRow->vParts.empty()) {
+        for (size_t nPart = 0; nPart < pRow->vParts.size(); ++nPart)
+            sValue += (nPart ? "," : "") + Utf8(Text(pRow->vParts[nPart]));
     } else {
         sValue = Utf8(Text(pRow->hValue));
     }
     std::string error;
-    if (!SetComponentEditorValue(entity, pView->nComponentIndex, pRow->sField, sValue, error)) {
-        Debug::LogWarning(pView->sName + "." + pRow->sField + ": " + error);
+    const std::string sField = pRow->sField;
+    const bool bStructural = pRow->bArraySize;
+    if (!SetComponentEditorValue(entity, pView->nComponentIndex, sField, sValue, error)) {
+        Debug::LogWarning(pView->sName + "." + sField + ": " + error);
         SetStatus(Wide(error).c_str());
     } else {
         SetStatus(L"Component value applied. Values stay live during Play Mode.");
     }
+    // A new array size adds / removes rows: rebuild after this notification returns.
+    if (bStructural) {
+        RequestInspectorRebuild();
+        return;
+    }
     UpdateComponentViewValues();
     RefreshComponentFields();
+}
+
+void Editor::RequestInspectorRebuild() {
+    if (bInspectorRebuildPosted) return;
+    bInspectorRebuildPosted = true;
+    PostMessageW(window, WM_DXS_REBUILD_INSPECTOR, 0, 0);
+}
+
+void Editor::RebuildInspectorNow() {
+    bInspectorRebuildPosted = false;
+    sComponentViewSignature.clear();
+    RebuildComponentViews();
+    RefreshComponentFields();
+}
+
+int Editor::SliderSteps(const InspectorFieldRow& row) const {
+    if (row.bInteger) return std::clamp(static_cast<int>(std::lround(row.fMax - row.fMin)), 1, 10000);
+    return 1000;
+}
+
+void Editor::SetSliderFromValue(const InspectorFieldRow& row, const std::string& sValue) {
+    if (!row.hSlider) return;
+    float fValue = 0.0f;
+    try { fValue = std::stof(sValue); } catch (...) { return; }
+    const float fSpan = row.fMax - row.fMin;
+    const float fRatio = fSpan > 0.0f ? std::clamp((fValue - row.fMin) / fSpan, 0.0f, 1.0f) : 0.0f;
+    const int nPosition = static_cast<int>(std::lround(fRatio * static_cast<float>(SliderSteps(row))));
+    if (SendMessageW(row.hSlider, TBM_GETPOS, 0, 0) != nPosition) SendMessageW(row.hSlider, TBM_SETPOS, TRUE, nPosition);
+}
+
+// Slider moved (WM_HSCROLL): write the value box and apply it live.
+void Editor::OnInspectorSlider(HWND hSlider) {
+    for (auto& view : vComponentViews)
+        for (auto& row : view.vRows) {
+            if (row.hSlider != hSlider || !row.hValue) continue;
+            const float fRatio = static_cast<float>(SendMessageW(hSlider, TBM_GETPOS, 0, 0)) / static_cast<float>(SliderSteps(row));
+            const float fValue = row.fMin + fRatio * (row.fMax - row.fMin);
+            wchar_t aBuffer[64];
+            if (row.bInteger) swprintf_s(aBuffer, L"%d", static_cast<int>(std::lround(fValue)));
+            else swprintf_s(aBuffer, L"%.4g", static_cast<double>(fValue));
+            SetWindowTextW(row.hValue, aBuffer);
+            CommitComponentField(GetDlgCtrlID(row.hValue), false);
+            RequestRender();
+            return;
+        }
+}
+
+// Floats are stored with full precision ("0.800000012"); show them short ("0.8").
+std::string DisplayValue(const InspectorFieldRow& row, const std::string& sValue) {
+    if (row.type != EditorFieldType::Float) return sValue;
+    try {
+        const float fValue = std::stof(sValue);
+        char aBuffer[32];
+        std::snprintf(aBuffer, sizeof(aBuffer), "%.6g", static_cast<double>(fValue));
+        return aBuffer;
+    } catch (...) {
+        return sValue;
+    }
+}
+
+// Enum drop-down (CBS_OWNERDRAWFIXED): dark field with a chevron, dark list.
+void Editor::DrawEnumItem(const DRAWITEMSTRUCT& item) {
+    const bool bField = (item.itemState & ODS_COMBOBOXEDIT) != 0;
+    const bool bHighlighted = (item.itemState & ODS_SELECTED) != 0 && !bField;
+    RECT rect = item.rcItem;
+    FillRect(item.hDC, &rect, theme::Brush(bHighlighted ? theme::COLOR_SELECTION : theme::COLOR_INPUT));
+    std::wstring sText;
+    if (item.itemID != static_cast<UINT>(-1)) {
+        const int nLength = static_cast<int>(SendMessageW(item.hwndItem, CB_GETLBTEXTLEN, item.itemID, 0));
+        if (nLength > 0) {
+            sText.resize(static_cast<size_t>(nLength) + 1);
+            SendMessageW(item.hwndItem, CB_GETLBTEXT, item.itemID, reinterpret_cast<LPARAM>(sText.data()));
+            sText.resize(static_cast<size_t>(nLength));
+        }
+    }
+    RECT textRect{rect.left + 4, rect.top, rect.right - 4, rect.bottom}; // the control draws its own arrow button
+    const bool bDisabled = (item.itemState & ODS_DISABLED) != 0;
+    theme::DrawLabel(item.hDC, sText, textRect, bDisabled ? theme::COLOR_TEXT_DISABLED : bHighlighted ? theme::COLOR_TEXT_BRIGHT : theme::COLOR_TEXT,
+                     theme::GetFonts().hRegular, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+}
+
+// "1,2,3" -> {"1","2","3"} (missing parts are empty).
+std::vector<std::string> SplitVectorText(const std::string& sValue, int nCount) {
+    std::vector<std::string> vParts;
+    std::string sPart;
+    for (const char c : sValue) {
+        if (c == ',') {
+            vParts.push_back(sPart);
+            sPart.clear();
+        } else {
+            sPart += c;
+        }
+    }
+    vParts.push_back(sPart);
+    vParts.resize(static_cast<size_t>(std::max(nCount, 1)));
+    for (auto& part : vParts) {
+        // Shorter display: 0.100000001 -> 0.1
+        try {
+            size_t nUsed = 0;
+            const float fValue = std::stof(part, &nUsed);
+            char aBuffer[32];
+            std::snprintf(aBuffer, sizeof(aBuffer), "%.6g", static_cast<double>(fValue));
+            part = aBuffer;
+        } catch (...) {
+        }
+    }
+    return vParts;
 }
 
 // Routes the titlebar's ⋮ / right-click to the legacy component menu by
@@ -542,7 +765,7 @@ void Editor::ShowTitlebarMenu(HWND header) {
 void Editor::ShowAddComponentMenu() {
     RECT rect{};
     GetWindowRect(componentAdd, &rect);
-    HMENU menu = CreatePopupMenu(), rendering = CreatePopupMenu(), physicsMenu = CreatePopupMenu(), scripts = CreatePopupMenu();
+    HMENU menu = CreatePopupMenu(), rendering = CreatePopupMenu(), physicsMenu = CreatePopupMenu(), inputMenu = CreatePopupMenu(), scripts = CreatePopupMenu();
     const int count = static_cast<int>(SendMessageW(componentChoice, CB_GETCOUNT, 0, 0));
     std::vector<std::string> attached;
     if (nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size()) attached = scene.vEntities[nSelected].vComponents;
@@ -553,12 +776,14 @@ void Editor::ShowAddComponentMenu() {
         text.resize(length);
         const bool renderer = text == L"MeshRenderer" || text == L"PolygonRenderer" || text == L"ModelRenderer" || text == L"Image";
         const bool isAttached = std::find(attached.begin(), attached.end(), Utf8(text)) != attached.end();
-        const bool physicsComponent = text == L"Rigidbody" || text == L"BoxCollider" || text == L"SphereCollider";
-        AppendMenuW(renderer ? rendering : physicsComponent ? physicsMenu : scripts, MF_STRING | (isAttached ? MF_GRAYED : 0), 1 + nIndex,
+        const bool physicsComponent = text == L"Rigidbody" || text == L"BoxCollider" || text == L"SphereCollider" || text == L"MeshCollider";
+        const bool inputComponent = text == L"PlayerInput";
+        AppendMenuW(renderer ? rendering : physicsComponent ? physicsMenu : inputComponent ? inputMenu : scripts, MF_STRING | (isAttached ? MF_GRAYED : 0), 1 + nIndex,
                     text.c_str());
     }
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(rendering), L"Rendering");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(physicsMenu), L"Physics");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(inputMenu), L"Input");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(scripts), L"Scripts");
     const int choice = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_CENTERALIGN | TPM_TOPALIGN, (rect.left + rect.right) / 2, rect.bottom, 0, window, nullptr);
     DestroyMenu(menu);
@@ -753,6 +978,7 @@ float Editor::FieldScrubStep(UINT_PTR fieldId, bool bWheel) const {
     else if (fieldId >= FIELD_SCRUB_COMPONENT) {
         const InspectorFieldRow* pRow = const_cast<Editor*>(this)->FindFieldRow(static_cast<int>(fieldId - FIELD_SCRUB_COMPONENT), nullptr);
         fStep = pRow && pRow->bInteger ? 0.1f : 0.01f;      // ints: 1 per 10 pixels
+        if (pRow && pRow->hSlider && !pRow->bInteger) fStep = std::max((pRow->fMax - pRow->fMin) / 200.0f, 1e-4f); // range: 200 px
     }
     if (bWheel) fStep *= 10.0f;                             // one notch = 10 pixels
     if (GetKeyState(VK_SHIFT) & 0x8000) fStep *= 10.0f;

@@ -37,7 +37,7 @@ constexpr int ID_ASPECT_FIRST = 185;    // Free, 16:9, 16:10, 4:3, 1:1
 constexpr int ID_CLEAR_CONSOLE = 175, ID_SHOW_CONSOLE = 176, ID_ABOUT = 177, ID_OPEN_README = 178;
 constexpr int ID_COMPONENT_HEADER_FIRST = 700;  // Inspector component titlebars
 constexpr int ID_COMPONENT_FIELD_FIRST = 800;   // Inspector property fields
-constexpr int ID_COMPONENT_FIELD_LAST = 999;
+constexpr int ID_COMPONENT_FIELD_LAST = 1099; // vectors use one id per axis; arrays one per element
 constexpr int COMPONENT_VIEW_LIMIT = 50;
 constexpr int ID_ADD_COMPONENT_MENU_FIRST = 600; // Component menu: one id per registered class
 constexpr int ID_ADD_COMPONENT_MENU_LAST = 699;

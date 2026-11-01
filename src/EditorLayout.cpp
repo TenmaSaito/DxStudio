@@ -405,15 +405,43 @@ void Editor::LayoutPanel(int index) {
                 if (open) y += line + gap;
             }
             for (auto& row : view.vRows) {
-                if (!row.hValue) {
-                    place(row.hLabel, indent, y, w - indent - padRight, line * 2, open); // warning text
-                    if (open) y += line * 2 + gap;
+                // Rows of a folded array are hidden.
+                const bool rowOpen = open && (row.sArrayPath.empty() || !collapsedArrays[view.sName + "/" + row.sArrayPath]);
+                const int rowIndent = indent + row.nIndent * S(15);
+                if (row.bHeader) {
+                    place(row.hLabel, rowIndent - S(2), y, w - rowIndent - padRight, line, rowOpen);
+                    if (rowOpen) y += line + gap;
                     continue;
                 }
-                rowLabel(row.hLabel, y, open);
-                if (row.bBoolean) place(row.hValue, fieldX, y + S(1), S(18), S(18), open);
-                else place(row.hValue, fieldX, y, fieldW, box, open);
-                if (open) y += line + gap;
+                if (!row.hValue) {
+                    place(row.hLabel, indent, y, w - indent - padRight, line * 2, rowOpen); // warning text
+                    if (rowOpen) y += line * 2 + gap;
+                    continue;
+                }
+                place(row.hLabel, rowIndent, y, std::max(S(20), fieldX - rowIndent - S(4)), line, rowOpen);
+                if (row.bBoolean) {
+                    place(row.hValue, fieldX, y + S(1), S(18), S(18), rowOpen);
+                } else if (!row.vParts.empty()) {
+                    // X Y Z mini labels + fields share the field column (like Transform).
+                    const int nCount = static_cast<int>(row.vParts.size()), subGap = S(4), miniLabel = S(13);
+                    const int cell = std::max(S(30), (fieldW - subGap * (nCount - 1)) / nCount);
+                    for (int nPart = 0; nPart < nCount; ++nPart) {
+                        const int x = fieldX + nPart * (cell + subGap);
+                        place(row.vPartLabels[static_cast<size_t>(nPart)], x, y, miniLabel, line, rowOpen);
+                        place(row.vParts[static_cast<size_t>(nPart)], x + miniLabel, y, cell - miniLabel, box, rowOpen);
+                    }
+                } else if (row.hSlider) {
+                    // Unity [Range]: slider, then a small value box.
+                    const int valueW = std::min(S(52), fieldW / 2);
+                    place(row.hSlider, fieldX - S(4), y, std::max(S(20), fieldW - valueW), line, rowOpen);
+                    place(row.hValue, fieldX + fieldW - valueW + S(2), y, valueW - S(2), box, rowOpen);
+                } else if (row.bEnum) {
+                    // The window height of a drop-down list is its open list height.
+                    place(row.hValue, fieldX, y - S(1), fieldW, S(200), rowOpen);
+                } else {
+                    place(row.hValue, fieldX, y, fieldW, box, rowOpen);
+                }
+                if (rowOpen) y += line + gap;
             }
             y += S(4);
         }

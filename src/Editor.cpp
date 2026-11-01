@@ -180,6 +180,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         info->ptMinTrackSize = {1000, 700};
         return 0;
     }
+    case WM_HSCROLL:
+        if (lp) e->OnInspectorSlider(reinterpret_cast<HWND>(lp)); // Inspector range sliders
+        return 0;
+    case WM_DXS_REBUILD_INSPECTOR:
+        e->RebuildInspectorNow();
+        return 0;
     case WM_COMMAND:
         // Inputs draw their own focus border; repaint it on focus changes.
         if ((HIWORD(wp) == EN_SETFOCUS || HIWORD(wp) == EN_KILLFOCUS) && lp)
@@ -190,7 +196,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             e->ApplyFieldLive(LOWORD(wp) - ID_FIRST_EDIT);
         // Inspector property fields commit on check-box clicks and focus loss.
         if (LOWORD(wp) >= ID_COMPONENT_FIELD_FIRST && LOWORD(wp) <= ID_COMPONENT_FIELD_LAST) {
-            if (HIWORD(wp) == BN_CLICKED || HIWORD(wp) == EN_KILLFOCUS) e->CommitComponentField(LOWORD(wp), HIWORD(wp) == BN_CLICKED);
+            const bool bComboBox = lp && e->FindFieldRow(LOWORD(wp), nullptr) && e->FindFieldRow(LOWORD(wp), nullptr)->bEnum;
+            if (bComboBox) {
+                if (HIWORD(wp) == CBN_SELCHANGE) e->CommitComponentField(LOWORD(wp), false);
+            } else if (HIWORD(wp) == BN_CLICKED || HIWORD(wp) == EN_KILLFOCUS) {
+                e->CommitComponentField(LOWORD(wp), HIWORD(wp) == BN_CLICKED);
+            }
             return 0;
         }
         if (!e->ShellCommand(LOWORD(wp))) e->Command(LOWORD(wp), HIWORD(wp));
@@ -258,6 +269,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                 e->DrawComponentRow(*item);
             else if (item->hwndItem == e->componentFields)
                 e->DrawFieldRow(*item);
+            return TRUE;
+        }
+        if (item->CtlType == ODT_COMBOBOX) {
+            e->DrawEnumItem(*item);
             return TRUE;
         }
         if (item->CtlType == ODT_STATIC) {

@@ -503,6 +503,16 @@ void DrawButton(const DRAWITEMSTRUCT& item, bool bActive) {
         return;
     }
 
+    if (spec.role == ButtonRole::FOLDOUT) {
+        Fill(hDc, rect, background);
+        const int nMid = (rect.top + rect.bottom) / 2;
+        RECT chevron{rect.left, nMid - 5, rect.left + 10, nMid + 5};
+        DrawIcon(hDc, spec.bExpanded ? Icon::CHEVRON_DOWN : Icon::CHEVRON_RIGHT, chevron, bHot ? COLOR_TEXT_BRIGHT : COLOR_TEXT_DIM);
+        RECT textRect{rect.left + 14, rect.top, rect.right, rect.bottom};
+        DrawLabel(hDc, sText, textRect, textColor, fonts.hRegular, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        return;
+    }
+
     if (spec.role == ButtonRole::CHECKBOX) {
         const int nMid = (rect.top + rect.bottom) / 2;
         RECT box{rect.left + 2, nMid - 7, rect.left + 16, nMid + 7};

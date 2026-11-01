@@ -121,8 +121,11 @@ void Editor::PaintInputBoxes(HDC dc, HWND panel) {
         paintBox(control);
     for (const auto& view : vComponentViews) {
         paintBox(view.hScriptValue);
-        for (const auto& row : view.vRows)
-            if (!row.bBoolean) paintBox(row.hValue);
+        for (const auto& row : view.vRows) {
+            if (row.bBoolean || row.bEnum || row.bHeader) continue;
+            if (row.vParts.empty()) paintBox(row.hValue);
+            for (HWND part : row.vParts) paintBox(part);
+        }
     }
 }
 

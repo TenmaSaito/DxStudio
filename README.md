@@ -60,14 +60,33 @@ Unity 2022 の Dark スキン配色（パネル `#383838`、タブ帯 `#282828`�
 
 ### 当たり判定と物理（src/Physics.h）
 
-- **Add Component > Physics** に Rigidbody、BoxCollider、SphereCollider を追加しました（Unity と同じ構成）。
+- **Add Component > Physics** に Rigidbody、BoxCollider、SphereCollider、MeshCollider を追加しました（Unity と同じ構成）。
+  - MeshCollider: MeshRenderer / ModelRenderer のメッシュ（X / FBX / 基本図形）をそのまま当たり判定に使います。Convex オフは三角形そのまま（床・地形など静止物向け）、Convex オンは凸包（動く Rigidbody 用。面の向きが 64 を超える滑らかな形は近似）。
+  - コライダーの組み合わせ: 1 つのオブジェクトに Box / Sphere / Mesh を複数付けられ（Center でずらす）、Rigidbody を持たない子オブジェクトの Collider は親の Rigidbody と一緒に動く複合コライダーになります。部品同士はぶつからず、衝突イベントは Rigidbody を持つオブジェクトに届きます。
   - Collider だけ: 動かない床・壁。Rigidbody も付けると重力で落ち、ぶつかって止まる・跳ねる・滑ります。
   - Rigidbody: Mass / Drag / Use Gravity / Is Kinematic / Bounciness / Friction。BoxCollider: Is Trigger / Center / Size。SphereCollider: Is Trigger / Center / Radius。
   - Box は回転に追従します（OBB）。Scene ビューでは Collider が緑の線で表示されます。
 - スクリプトのコールバック: FixedUpdate、OnCollisionEnter / Stay / Exit(Entity&, const Collision&)、OnTriggerEnter / Stay / Exit(Entity&, Entity& other)。dxs::GetComponent<dxs::Rigidbody>(entity) で AddForce（ForceMode: FORCE / ACCELERATION / IMPULSE / VELOCITY_CHANGE）、Velocity / SetVelocity を使えます。重力は dxs::physics::SetGravity。
 - 物理は 1/50 秒の固定ステップで Update の後に実行され、Play Mode と書き出したゲームの両方で動きます。衝突イベントにはどちらかに Rigidbody が必要です。
-- 現在の制限: 物体は衝突で回転しません（Unity の Freeze Rotation 相当）。形状は Box と Sphere です。
-- 使い方の例は project/Scripts/PhysicsTemplate.h/.cpp（矢印キーで転がし Space でジャンプ、トリガーで色変更）。
+- 現在の制限: 物体は衝突で回転しません（Unity の Freeze Rotation 相当）。凹メッシュ同士は衝突しません（Unity と同じ）。
+- 使い方の例は project/Scripts/PhysicsTemplate.h/.cpp（PlayerInput の Move で転がし Jump でジャンプ、トリガーで色変更）。
+
+### 入力システム（src/Input/、cpp_TKG の InputSystem を移植）
+
+- 構成は元のまま: CInputSystem（シングルトン）→ CInputActionMap → CInputAction → CInputBinding → INPUT_CONTROL_PATH、デバイスは CInputKeyboard / CInputMouse / CJoypad（XInput）、キー名表 CInputKeyTable、値の加工 IInputProcessor。キー番号は DirectInput のスキャンコード（DIK）のままで、Assets/Input/keyboardKeys.csv をそのまま使います。
+- 追加・改良:
+  - デバイスは IInputSource インターフェース経由で読み取り（既定は Win32、DirectInput 不要。テストでは偽の入力を差し込めます）。ウィンドウがフォーカスを失うと全入力が離された扱いになります。
+  - CInputAction のフェーズ（STARTED / PERFORMED / CANCELED）を毎フレーム更新し、SetOnPerformed に加え SetOnStarted / SetOnCanceled と onStarted / onPerformed / onCanceled（マルチキャストデリゲート）を呼びます。WasPerformedThisFrame() なども追加。
+  - CInputBinding::AddProcessor で Invert / Scale / DeadZone / Clamp を適用。CInputKeyTable::FindCode / FindName を実装（大文字小文字を区別しない、最初の名前が正式名）。
+  - CJoypad に LT / RT 軸と IsConnected を追加。CInputMouse::GetMove() を追加。
+  - アクション定義ファイル（.dxinput、CInputSystem::LoadActionsFile）: map / ction / single / xis1d / ector2d / stick1d / stick2d / processor。既定は Assets/Input/DefaultInputActions.dxinput（Player: Move / Look / Jump / Fire / Sprint / Zoom）。
+- **Add Component > Input > PlayerInput**: アクションファイルとマップを Inspector で指定。スクリプトからは GetComponent<dxs::PlayerInput>(entity)->ReadValue2D("Move") / WasPressedThisFrame("Jump") で読むか、dxs::IInputReceiver を継承して OnInputAction でイベントとして受け取ります。入力は毎フレーム Update の前に更新されます。
+
+### Inspector のフィールド
+
+- EditorFields() から返せる種類: EditField（float / int / bool / string / XMFLOAT2 / XMFLOAT3 / std::vector<T> / std::array<T, N>）、EditEnum（列挙型のドロップダウン、列挙型の配列も可）、EditRange（スライダー付き、Unity の [Range]）。
+- Vector2 / Vector3 は X Y Z を 1 行に表示（各欄ドラッグで調整可）。配列は ▼ で折りたため、Size で要素数を変更（std::array は固定）。
+- 値はシーンに Waypoints.Size、Waypoints[0] のようなパスで保存され、Play 開始時（Start の前）に復元されます。例: project/Scripts/InspectorShowcase.h。
 
 ### デリゲートとコールバックインターフェース（`src/Core/Delegate.h`, `src/Core/EngineCallbacks.h`）
 

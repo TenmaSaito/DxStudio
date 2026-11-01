@@ -105,6 +105,7 @@ enum class ButtonRole : unsigned char {
     ICON,        // small flat icon-only button (panel chrome)
     DROPDOWN,    // toolbar dropdown with a trailing chevron
     CHECKBOX,    // square check box
+    FOLDOUT,     // Inspector array foldout: chevron + label, no background
 };
 
 struct ButtonSpec {

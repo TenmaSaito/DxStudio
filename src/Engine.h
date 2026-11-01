@@ -8,8 +8,12 @@
 #include "Core/Time.h"
 #include "Graphics/GraphicsApi.h"
 #include "Primitives.h"
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <concepts>
+#include <functional>
+#include <type_traits>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -78,21 +82,155 @@ template<class T> concept RenderComponent = std::derived_from<T, IRender>;
 template<class T> inline constexpr bool IsRenderComponent = RenderComponent<T>;
 static_assert(IsRenderComponent<PolygonRenderer> && IsRenderComponent<ModelRenderer> && IsRenderComponent<MeshRenderer> && IsRenderComponent<Image>);
 
-enum class EditorFieldType : unsigned char { Float, Integer, Boolean, String };
+// ---- Inspector fields --------------------------------------------------------
+//   EditField("Speed", m_fSpeed)                    float / int / bool / std::string
+//   EditField("Offset", m_offset)                   DirectX::XMFLOAT2 / XMFLOAT3 (X Y Z on one row)
+//   EditField("Points", m_vPoints)                  std::vector<T>   (Size is editable)
+//   EditField("Slots", m_aSlots)                    std::array<T, N> (fixed Size)
+//   EditEnum("Mode", m_mode, {"Idle", "Walk"})      any enum, shown as a drop-down
+//   EditRange("Volume", m_fVolume, 0.0f, 1.0f)      float / int with a slider (Unity [Range])
+// Array elements may be any of the single-value types above (or enums via EditEnum).
+enum class EditorFieldType : unsigned char { Float, Integer, Boolean, String, Enum, Vector2, Vector3, Array };
+
+struct EditorArrayAccess;
 struct EditorField {
     std::string sName;
     EditorFieldType type{};
     void* pValue{};
     bool bReadOnly = false;
+    // Enum: display names of the values 0..n-1; pValue points to an enum of nEnumBytes bytes.
+    std::vector<std::string> vEnumNames;
+    unsigned char nEnumBytes = 0;
+    // Slider range for Float / Integer (values are clamped to it).
+    bool bRange = false;
+    float fMin = 0.0f, fMax = 1.0f;
+    // Array: element description and access.
+    std::shared_ptr<EditorArrayAccess> pArray;
 };
 
-template<class T> constexpr EditorField EditField(std::string sName, T& value, bool bReadOnly = false) {
-    if constexpr (std::same_as<T, float>) return {std::move(sName), EditorFieldType::Float, &value, bReadOnly};
-    else if constexpr (std::same_as<T, int>) return {std::move(sName), EditorFieldType::Integer, &value, bReadOnly};
-    else if constexpr (std::same_as<T, bool>) return {std::move(sName), EditorFieldType::Boolean, &value, bReadOnly};
-    else if constexpr (std::same_as<T, std::string>) return {std::move(sName), EditorFieldType::String, &value, bReadOnly};
-    else static_assert(!sizeof(T), "DxStudio editor fields support float, int, bool and std::string");
+// Text form of a single value ("1.5", "true", "Walk", "1,2,3") and its parser.
+std::string EditorFieldText(const EditorField& field);
+bool AssignEditorField(EditorField& field, const std::string& sValue, std::string& error);
+
+struct EditorArrayAccess {
+    EditorField element;      // type / enum names / range of every element (pValue unused)
+    bool bFixedSize = false;  // std::array: Size is read-only
+    std::function<std::size_t()> size;
+    std::function<void(std::size_t)> resize; // dynamic arrays only
+    std::function<std::string(std::size_t)> get;
+    std::function<bool(std::size_t, const std::string&, std::string&)> set;
+};
+
+namespace detail {
+template<class T> inline constexpr bool IS_EDITOR_LEAF =
+    std::same_as<T, float> || std::same_as<T, int> || std::same_as<T, bool> || std::same_as<T, std::string> ||
+    std::same_as<T, DirectX::XMFLOAT2> || std::same_as<T, DirectX::XMFLOAT3>;
+template<class T> struct StdVector : std::false_type {};
+template<class U, class A> struct StdVector<std::vector<U, A>> : std::true_type { using Element = U; };
+template<class T> struct StdArray : std::false_type {};
+template<class U, std::size_t N> struct StdArray<std::array<U, N>> : std::true_type { using Element = U; };
+
+template<class T> EditorField LeafField(std::string sName, T* pValue, bool bReadOnly) {
+    EditorField field{std::move(sName), EditorFieldType::Float, pValue, bReadOnly};
+    if constexpr (std::same_as<T, int>) field.type = EditorFieldType::Integer;
+    else if constexpr (std::same_as<T, bool>) field.type = EditorFieldType::Boolean;
+    else if constexpr (std::same_as<T, std::string>) field.type = EditorFieldType::String;
+    else if constexpr (std::same_as<T, DirectX::XMFLOAT2>) field.type = EditorFieldType::Vector2;
+    else if constexpr (std::same_as<T, DirectX::XMFLOAT3>) field.type = EditorFieldType::Vector3;
+    return field;
 }
+
+// Array field over any container with operator[] (elements copied through a
+// temporary, so std::vector<bool> works too).
+template<class Container> EditorField ArrayField(std::string sName, Container& container, EditorField element, bool bFixed, bool bReadOnly) {
+    using U = typename Container::value_type; // not decltype(container[0]): std::vector<bool> returns a proxy
+    EditorField field{std::move(sName), EditorFieldType::Array, &container, bReadOnly};
+    auto pAccess = std::make_shared<EditorArrayAccess>();
+    pAccess->element = std::move(element);
+    pAccess->element.pValue = nullptr;
+    pAccess->bFixedSize = bFixed;
+    pAccess->size = [&container] { return static_cast<std::size_t>(container.size()); };
+    if constexpr (requires { container.resize(std::size_t{}); })
+        pAccess->resize = [&container](std::size_t nSize) { container.resize(nSize); };
+    const EditorField elementInfo = pAccess->element;
+    pAccess->get = [&container, elementInfo](std::size_t nIndex) {
+        U temp = container[nIndex];
+        EditorField leaf = elementInfo;
+        leaf.pValue = &temp;
+        return EditorFieldText(leaf);
+    };
+    pAccess->set = [&container, elementInfo](std::size_t nIndex, const std::string& sValue, std::string& error) {
+        U temp = container[nIndex];
+        EditorField leaf = elementInfo;
+        leaf.pValue = &temp;
+        if (!AssignEditorField(leaf, sValue, error)) return false;
+        container[nIndex] = temp;
+        return true;
+    };
+    field.pArray = std::move(pAccess);
+    return field;
+}
+
+template<class E> EditorField EnumField(std::string sName, E* pValue, std::vector<std::string> vNames, bool bReadOnly) {
+    EditorField field{std::move(sName), EditorFieldType::Enum, pValue, bReadOnly};
+    field.vEnumNames = std::move(vNames);
+    field.nEnumBytes = static_cast<unsigned char>(sizeof(E));
+    return field;
+}
+} // namespace detail
+
+template<class T> EditorField EditField(std::string sName, T& value, bool bReadOnly = false) {
+    if constexpr (detail::IS_EDITOR_LEAF<T>) {
+        return detail::LeafField(std::move(sName), &value, bReadOnly);
+    } else if constexpr (detail::StdVector<T>::value || detail::StdArray<T>::value) {
+        using U = typename T::value_type;
+        static_assert(detail::IS_EDITOR_LEAF<U>, "Array elements must be float, int, bool, std::string, XMFLOAT2 or XMFLOAT3 (enums: EditEnum)");
+        return detail::ArrayField(std::move(sName), value, detail::LeafField<U>("", nullptr, bReadOnly), detail::StdArray<T>::value, bReadOnly);
+    } else {
+        static_assert(!sizeof(T), "Unsupported editor field type (see the list above EditorFieldType)");
+    }
+}
+
+// Enum as a drop-down; vNames[i] is the name of value i.
+template<class E> requires std::is_enum_v<E>
+EditorField EditEnum(std::string sName, E& value, std::vector<std::string> vNames, bool bReadOnly = false) {
+    return detail::EnumField(std::move(sName), &value, std::move(vNames), bReadOnly);
+}
+template<class E, class A> requires std::is_enum_v<E>
+EditorField EditEnum(std::string sName, std::vector<E, A>& vValues, std::vector<std::string> vNames, bool bReadOnly = false) {
+    return detail::ArrayField(std::move(sName), vValues, detail::EnumField<E>("", nullptr, std::move(vNames), bReadOnly), false, bReadOnly);
+}
+template<class E, std::size_t N> requires std::is_enum_v<E>
+EditorField EditEnum(std::string sName, std::array<E, N>& aValues, std::vector<std::string> vNames, bool bReadOnly = false) {
+    return detail::ArrayField(std::move(sName), aValues, detail::EnumField<E>("", nullptr, std::move(vNames), bReadOnly), true, bReadOnly);
+}
+
+// Slider + value box (Unity [Range(min, max)]).
+template<class T> requires std::same_as<T, float> || std::same_as<T, int>
+EditorField EditRange(std::string sName, T& value, float fMin, float fMax, bool bReadOnly = false) {
+    EditorField field = detail::LeafField(std::move(sName), &value, bReadOnly);
+    field.bRange = true;
+    field.fMin = std::min(fMin, fMax);
+    field.fMax = std::max(fMin, fMax);
+    return field;
+}
+
+// One Inspector row after arrays are expanded (Unity property paths):
+//   "Points" (header), "Points.Size", "Points[0]", "Points[1]", ...
+struct EditorFieldInfo {
+    std::string sPath;   // key used by SetComponentEditorValue and the scene file
+    std::string sLabel;  // "Speed", "Size", "Element 0"
+    EditorFieldType type{};
+    bool bReadOnly = false;
+    std::vector<std::string> vEnumNames;
+    bool bRange = false;
+    float fMin = 0.0f, fMax = 1.0f;
+    int nIndent = 0;           // 1 for array size / elements
+    bool bArrayHeader = false; // foldout row, no value
+    bool bArraySize = false;
+    std::string sArrayPath;    // owning array (size / element rows)
+    std::string sValue;
+};
 
 // Contact passed to OnCollisionEnter / Stay / Exit (see Physics.h).
 struct Collision {
@@ -239,6 +377,8 @@ bool DetachComponent(Entity& entity, std::size_t componentIndex);
 std::vector<std::string> RegisteredComponentNames();
 void UpdateUserComponents(Scene& scene, float fDeltaSeconds);
 std::vector<std::pair<std::string, std::string>> ComponentEditorValues(Entity& entity, std::size_t componentIndex);
+// Every Inspector row of a component (arrays expanded), with its current value.
+std::vector<EditorFieldInfo> ComponentFieldInfos(Entity& entity, std::size_t componentIndex);
 bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex,
                              const std::string& field, const std::string& value, std::string& error);
 Camera ActiveGameCamera(Scene& scene);
@@ -266,3 +406,4 @@ void RegisterProjectComponents();
 } // namespace dxs
 
 #include "Physics.h" // Rigidbody / colliders are part of the engine API
+#include "Input/playerInput.h" // CInputSystem + PlayerInput

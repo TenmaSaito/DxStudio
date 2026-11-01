@@ -1,6 +1,6 @@
 @echo off
 rem Shared source and library lists for build-direct.cmd, build-debug.cmd and test.cmd.
-set "DXS_ENGINE_SOURCES=src\Engine.cpp src\Primitives.cpp src\Physics.cpp src\Core\Log.cpp src\Core\Coroutine.cpp src\Core\EngineCallbacks.cpp third_party\ufbx\ufbx.c"
+set "DXS_ENGINE_SOURCES=src\Engine.cpp src\Primitives.cpp src\Physics.cpp src\Input\input.cpp src\Input\joypad.cpp src\Input\inputKeytable.cpp src\Input\inputBinding.cpp src\Input\inputAction.cpp src\Input\inputActionMap.cpp src\Input\inputSystem.cpp src\Input\playerInput.cpp src\Core\Log.cpp src\Core\Coroutine.cpp src\Core\EngineCallbacks.cpp third_party\ufbx\ufbx.c"
 set "DXS_RENDER_SOURCES=src\Renderer.cpp src\Graphics\ShaderLoader.cpp src\Graphics\DeviceD3D12.cpp src\Graphics\DeviceD3D11.cpp src\Graphics\DeviceD3D9.cpp"
 set "DXS_EDITOR_SOURCES=src\EditorMain.cpp src\Editor.cpp src\EditorPanels.cpp src\EditorChrome.cpp src\EditorLayout.cpp src\EditorActions.cpp src\EditorInspector.cpp src\EditorTheme.cpp src\EditorUtility.cpp src\ConsolePanel.cpp src\ProjectPanel.cpp"
 set "DXS_RENDER_LIBS=d3d12.lib d3d11.lib d3d9.lib dxgi.lib d3dcompiler.lib"

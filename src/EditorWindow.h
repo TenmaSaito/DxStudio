@@ -80,7 +80,23 @@ struct InspectorFieldRow {
     bool bChecked = false;
     bool bNumeric = false; // float / int: mouse drag and wheel adjust the value
     bool bInteger = false;
+    // Added field kinds (see EditorFieldType).
+    EditorFieldType type = EditorFieldType::String;
+    std::vector<HWND> vParts;       // Vector2 / Vector3: X Y (Z) edits; hValue == vParts[0]
+    std::vector<HWND> vPartLabels;  // "X" "Y" "Z"
+    HWND hSlider = nullptr;         // EditRange: trackbar left of the value box
+    float fMin = 0.0f, fMax = 1.0f;
+    bool bEnum = false;             // hValue is a drop-down
+    std::vector<std::string> vEnumNames;
+    bool bHeader = false;           // array foldout (hLabel is the button, no hValue)
+    bool bArraySize = false;
+    int nIndent = 0;                // array size / element rows
+    std::string sArrayPath;         // owning array (hidden while it is folded)
 };
+// Posted when an array size changed, so rows are rebuilt after the control's notification.
+constexpr UINT WM_DXS_REBUILD_INSPECTOR = WM_APP + 41;
+std::vector<std::string> SplitVectorText(const std::string& sValue, int nCount);
+std::string DisplayValue(const InspectorFieldRow& row, const std::string& sValue);
 // Unreal-style numeric field: drag inside the box (or wheel) to change the
 // value; a click without dragging enters text editing with the value selected.
 // uIdSubclass: Transform/Color field index (2..14), or FIELD_SCRUB_COMPONENT + control id.
@@ -94,6 +110,7 @@ struct InspectorComponentView {
     HWND hScriptLabel = nullptr;
     HWND hScriptValue = nullptr;
     std::vector<InspectorFieldRow> vRows;
+    bool bTruncated = false; // more rows than control ids
 };
 
 struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
@@ -109,6 +126,14 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     InspectorFieldRow* FindFieldRow(int controlId, InspectorComponentView** ppView);
     bool IsComponentFieldEdit(HWND control) const;
     void CommitComponentField(int controlId, bool bToggle);
+    std::unordered_map<std::string, bool> collapsedArrays; // "<component>/<array path>" folded
+    bool bInspectorRebuildPosted = false;
+    void RequestInspectorRebuild();
+    void RebuildInspectorNow();
+    int SliderSteps(const InspectorFieldRow& row) const;
+    void SetSliderFromValue(const InspectorFieldRow& row, const std::string& sValue);
+    void OnInspectorSlider(HWND hSlider);
+    void DrawEnumItem(const DRAWITEMSTRUCT& item);
     bool SelectComponentForWindow(HWND control);
     bool IsOverTitlebarMenu(HWND header) const;
     void ShowTitlebarMenu(HWND header);

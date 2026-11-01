@@ -9,16 +9,27 @@
 //       Add Component > Physics > BoxCollider を付ける（Rigidbody なし = 動かない床）
 //    2. GameObject > 3D Object > Sphere を床の上に置き、
 //       Add Component > Physics > SphereCollider と Rigidbody を付ける
-//    3. その Sphere に Add Component > Scripts > PhysicsTemplate を付けて Play
-//       ← → ↑ ↓ で転がし、Space でジャンプ（接地中のみ）します。
+//    3. その Sphere に Add Component > Input > PlayerInput と
+//       Add Component > Scripts > PhysicsTemplate を付けて Play
+//       WASD / 矢印キー / 左スティックで転がし、Space / A ボタンでジャンプ（接地中のみ）。
 //       Is Trigger にした Collider に入ると色が変わります。
+//    入力は Assets/Input/DefaultInputActions.dxinput の Player マップ（Move / Jump）です。
 //
 //  組み込みコンポーネント（Add Component > Physics）
 //  ---------------------------------------------------------------------------
 //  Rigidbody       Mass / Drag / Use Gravity / Is Kinematic / Bounciness / Friction
 //  BoxCollider     Is Trigger / Center / Size     （Size 1 = 組み込み Cube と同じ大きさ）
 //  SphereCollider  Is Trigger / Center / Radius   （Radius 0.5 = 組み込み Sphere）
+//  MeshCollider    Is Trigger / Center / Convex   （MeshRenderer のメッシュをそのまま使用）
+//                  Convex オフ = 三角形そのまま（静止物向け）/ オン = 凸包（動く Rigidbody 用）
 //  Scene ビューでは Collider が緑の線で表示されます。
+//
+//  コライダーの組み合わせ
+//  ---------------------------------------------------------------------------
+//  ・1 つのオブジェクトに Box / Sphere / Mesh を複数付けられます（Center でずらす）。
+//  ・Rigidbody を持たない子オブジェクトの Collider は、親の Rigidbody の一部として
+//    一緒に動きます（Unity の複合コライダー）。同じ物体の部品同士はぶつかりません。
+//    衝突イベントは Rigidbody を持つオブジェクトに届きます。
 //
 //  Unity C# との対応
 //  ---------------------------------------------------------------------------
@@ -42,10 +53,13 @@
 //  ・Is Kinematic の Rigidbody は重力で落ちず、スクリプトで動かします。
 //    動的な物体を押し出し、衝突イベントも受け取ります。
 
-class PhysicsTemplate final : public dxs::Component {
+// IInputReceiver: PlayerInput calls OnInputAction for Jump (event style);
+// Move is polled in FixedUpdate (polling style). Both styles work.
+class PhysicsTemplate final : public dxs::Component, public dxs::IInputReceiver {
 public:
     void Start(dxs::Entity& entity) override;
     void Update(dxs::Entity& entity, float fDeltaSeconds) override;
+    void OnInputAction(dxs::Entity& entity, const dxs::CInputAction& action) override;
     void FixedUpdate(dxs::Entity& entity, float fFixedDeltaSeconds) override;
     void OnCollisionEnter(dxs::Entity& entity, const dxs::Collision& collision) override;
     void OnCollisionStay(dxs::Entity& entity, const dxs::Collision& collision) override;

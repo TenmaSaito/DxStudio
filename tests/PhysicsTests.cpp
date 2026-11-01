@@ -153,7 +153,57 @@ int main() {
         for (size_t n = 0; n < 24; ++n) fMaxX = std::max(fMaxX, vLines[n].x);
         Check(std::abs(fMaxX - 2.0f) < 1e-4f, "box outline uses the saved Size X");
     }
+    // 7. MeshCollider: a static concave mesh floor, and a convex mesh body.
+    {
+        dxs::Scene scene;
+        scene.projectRoot = "project"; // built-in primitives in project/Assets/Primitives
+        auto ground = MakeEntity("MeshFloor", {0, 0, 0}, {"MeshCollider"});
+        ground.renderer = Entity::RendererKind::Mesh;
+        ground.sModelAsset = dxs::PrimitiveAssetPath(dxs::PrimitiveShape::CUBE);
+        ground.draw.scale = {20, 1, 20};
+        scene.vEntities.push_back(ground);
+        scene.vEntities.push_back(MakeEntity("Ball", {-3, 3, 0}, {"SphereCollider", "Rigidbody"}));
+        scene.vEntities.push_back(MakeEntity("Box", {0, 3, 0}, {"BoxCollider", "Rigidbody"}));
+        auto convex = MakeEntity("ConvexSphere", {3, 3, 0}, {"MeshCollider", "Rigidbody"});
+        convex.renderer = Entity::RendererKind::Mesh;
+        convex.sModelAsset = dxs::PrimitiveAssetPath(dxs::PrimitiveShape::SPHERE);
+        convex.componentProperties["MeshCollider"]["Convex"] = "true";
+        scene.vEntities.push_back(convex);
+        auto pyramid = MakeEntity("ConvexPyramid", {6, 3, 0}, {"MeshCollider", "Rigidbody"});
+        pyramid.renderer = Entity::RendererKind::Mesh;
+        pyramid.sModelAsset = dxs::PrimitiveAssetPath(dxs::PrimitiveShape::PYRAMID);
+        pyramid.componentProperties["MeshCollider"]["Convex"] = "true";
+        scene.vEntities.push_back(pyramid);
+        Run(scene, 3.0f);
+        Check(std::abs(scene.vEntities[1].draw.position.y - 1.0f) < 0.03f, "sphere rests on a concave MeshCollider");
+        Check(std::abs(scene.vEntities[2].draw.position.y - 1.0f) < 0.03f, "box rests on a concave MeshCollider");
+        Check(std::abs(scene.vEntities[3].draw.position.y - 1.0f) < 0.06f, "convex sphere mesh rests on a mesh floor");
+        Check(std::abs(scene.vEntities[4].draw.position.y - 1.0f) < 0.03f, "convex pyramid mesh rests on its base");
+        Check(!dxs::ColliderOutlineSegments(scene).empty(), "mesh collider outline");
+    }
+    // 8. Combining colliders: two shapes on one object, and a compound body
+    //    whose child collider (no Rigidbody) belongs to the parent.
+    {
+        dxs::Scene scene;
+        scene.vEntities.push_back(Floor());
+        auto multi = MakeEntity("Multi", {-4, 4, 0}, {"BoxCollider", "SphereCollider", "Rigidbody"});
+        multi.componentProperties["SphereCollider"]["Center Y"] = "-1"; // a "foot" below the box
+        scene.vEntities.push_back(multi);
+        scene.vEntities.push_back(MakeEntity("Parent", {3, 4, 0}, {"BoxCollider", "Rigidbody", "HitCounter"}));
+        auto child = MakeEntity("Child", {0.8f, 0, 0}, {"SphereCollider", "HitCounter"}); // overlaps the parent box
+        child.nParent = 2;
+        scene.vEntities.push_back(child);
+        Run(scene, 3.0f);
+        Check(std::abs(scene.vEntities[1].draw.position.y - 2.0f) < 0.03f, "box + sphere foot on one object rests on the foot");
+        Check(std::abs(scene.vEntities[2].draw.position.y - 1.0f) < 0.03f, "compound body rests on the floor");
+        Check(std::abs(scene.vEntities[2].draw.position.x - 3.0f) < 0.01f, "overlapping parts of one body do not push each other");
+        Check(scene.vEntities[3].draw.position.x == 0.8f && scene.vEntities[3].draw.position.y == 0.0f, "child keeps its local transform");
+        const auto vWorld = dxs::ResolveWorldDraws(scene);
+        Check(std::abs(vWorld[3].position.y - 1.0f) < 0.03f, "child collider moved with its parent body");
+        auto* pParentHits = dxs::GetComponent<HitCounter>(scene.vEntities[2]);
+        Check(pParentHits && pParentHits->m_nEnter == 1, "compound body gets one OnCollisionEnter for the floor");
+    }
     if (g_nFailures) return 1;
-    std::cout << "Physics (gravity, resting contact, OBB, bounce, kinematic, triggers, momentum, outlines) tests passed.\n";
+    std::cout << "Physics (gravity, resting contact, OBB, bounce, kinematic, triggers, momentum, outlines, mesh / convex / compound colliders) tests passed.\n";
     return 0;
 }

@@ -65,6 +65,8 @@ std::unordered_map<std::string, Factory>& Components() {
         components.emplace("Rigidbody", [] { return std::make_unique<Rigidbody>(); });
         components.emplace("BoxCollider", [] { return std::make_unique<BoxCollider>(); });
         components.emplace("SphereCollider", [] { return std::make_unique<SphereCollider>(); });
+        components.emplace("MeshCollider", [] { return std::make_unique<MeshCollider>(); });
+        components.emplace("PlayerInput", [] { return std::make_unique<PlayerInput>(); });
         return true;
     }();
     (void)builtins;
@@ -589,6 +591,8 @@ std::vector<std::string> RegisteredComponentNames() {
 }
 
 namespace {
+void ApplySavedProperties(Component& component, const Entity::PropertyMap& saved); // Inspector values, below
+
 // Rebuilds the runtime instances when the attachment list changed.
 void SyncRuntimeComponents(Entity& entity) {
     if (entity.vRuntimeComponentNames == entity.vComponents) return;
@@ -609,12 +613,8 @@ void StartComponentIfNeeded(Entity& entity, std::size_t nIndex) {
     auto& component = *entity.vRuntimeComponents[nIndex];
     const auto saved = entity.componentProperties.find(entity.vRuntimeComponentNames[nIndex]);
     if (saved != entity.componentProperties.end()) {
-        for (auto& field : component.EditorFields()) {
-            const auto value = saved->second.find(field.sName);
-            if (value == saved->second.end()) continue;
-            std::string ignored;
-            SetComponentEditorValue(entity, nIndex, field.sName, value->second, ignored);
-        }
+        const auto copy = saved->second; // applying rewrites the saved map
+        ApplySavedProperties(component, copy);
     }
     component.Start(entity);
     entity.vRuntimeComponentStarted[nIndex] = true;
@@ -626,6 +626,10 @@ void UpdateUserComponents(Scene& scene, float deltaSeconds) {
     const float fDelta = std::max(deltaSeconds, 0.0f);
     Time::Advance(fDelta);
     auto& events = EngineEvents::Get();
+    // Input first, so every Update of this frame sees the same state.
+    auto* pInput = CInputSystem::GetInstance();
+    pInput->SetAssetRoot(scene.projectRoot);
+    pInput->Update();
     events.onPreUpdate.Broadcast(scene, fDelta);
 
     // Pass 1: Start (first frame) and Update, in Inspector order.
@@ -675,33 +679,243 @@ void EnsureComponentInstances(Entity& entity) {
         entity.vRuntimeComponentStarted.push_back(false);
     }
 }
-std::string FieldText(const EditorField& field) {
-    switch (field.type) {
-    case EditorFieldType::Float: {
-        std::ostringstream out;
-        out << std::setprecision(std::numeric_limits<float>::max_digits10) << *static_cast<float*>(field.pValue);
-        return out.str();
-    }
-    case EditorFieldType::Integer: return std::to_string(*static_cast<int*>(field.pValue));
-    case EditorFieldType::Boolean: return *static_cast<bool*>(field.pValue) ? "true" : "false";
-    case EditorFieldType::String: return *static_cast<std::string*>(field.pValue);
-    }
-    return {};
+} // namespace
+
+// ---- Inspector field values ------------------------------------------------------
+namespace {
+constexpr std::size_t EDITOR_ARRAY_MAX_SIZE = 4096; // Inspector size limit per array
+
+std::string FloatText(float fValue) {
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out << std::setprecision(std::numeric_limits<float>::max_digits10) << fValue;
+    return out.str();
 }
-bool AssignField(EditorField& field, const std::string& value, std::string& error) {
+
+std::string Trimmed(const std::string& sText) {
+    const auto nBegin = sText.find_first_not_of(" \t");
+    if (nBegin == std::string::npos) return {};
+    return sText.substr(nBegin, sText.find_last_not_of(" \t") - nBegin + 1);
+}
+
+bool ParseFloat(const std::string& sText, float& fValue) {
+    try {
+        size_t nUsed = 0;
+        const std::string sTrimmed = Trimmed(sText);
+        fValue = std::stof(sTrimmed, &nUsed);
+        return nUsed == sTrimmed.size() && std::isfinite(fValue);
+    } catch (...) {
+        return false;
+    }
+}
+
+// "1, 2, 3" / "1 2 3" -> components.
+bool ParseVector(const std::string& sText, float* pValues, int nCount) {
+    std::string sNormalized = sText;
+    std::replace(sNormalized.begin(), sNormalized.end(), ',', ' ');
+    std::istringstream in(sNormalized);
+    in.imbue(std::locale::classic());
+    std::vector<std::string> vParts;
+    for (std::string sPart; in >> sPart;) vParts.push_back(sPart);
+    if (static_cast<int>(vParts.size()) != nCount) return false;
+    for (int nIndex = 0; nIndex < nCount; ++nIndex)
+        if (!ParseFloat(vParts[static_cast<size_t>(nIndex)], pValues[nIndex])) return false;
+    return true;
+}
+
+long long ReadEnum(const EditorField& field) {
+    switch (field.nEnumBytes) {
+    case 1: return *static_cast<const signed char*>(field.pValue);
+    case 2: return *static_cast<const short*>(field.pValue);
+    case 8: return *static_cast<const long long*>(field.pValue);
+    default: return *static_cast<const int*>(field.pValue);
+    }
+}
+
+void WriteEnum(EditorField& field, long long nValue) {
+    switch (field.nEnumBytes) {
+    case 1: *static_cast<signed char*>(field.pValue) = static_cast<signed char>(nValue); break;
+    case 2: *static_cast<short*>(field.pValue) = static_cast<short>(nValue); break;
+    case 8: *static_cast<long long*>(field.pValue) = nValue; break;
+    default: *static_cast<int*>(field.pValue) = static_cast<int>(nValue); break;
+    }
+}
+
+// Arrays expanded into rows ("Points", "Points.Size", "Points[0]", ...).
+struct FlatField {
+    EditorFieldInfo info;
+    EditorField field;                       // leaf (pValue valid) for plain rows
+    std::shared_ptr<EditorArrayAccess> pArray;
+    std::size_t nElement = 0;
+    enum class KIND : unsigned char { LEAF, HEADER, SIZE, ELEMENT } kind = KIND::LEAF;
+};
+
+EditorFieldInfo LeafInfo(const EditorField& field, std::string sPath, std::string sLabel) {
+    EditorFieldInfo info;
+    info.sPath = std::move(sPath);
+    info.sLabel = std::move(sLabel);
+    info.type = field.type;
+    info.bReadOnly = field.bReadOnly;
+    info.vEnumNames = field.vEnumNames;
+    info.bRange = field.bRange;
+    info.fMin = field.fMin;
+    info.fMax = field.fMax;
+    return info;
+}
+
+std::vector<FlatField> Flatten(std::vector<EditorField>& vFields) {
+    std::vector<FlatField> vFlat;
+    for (auto& field : vFields) {
+        if (field.type != EditorFieldType::Array || !field.pArray) {
+            FlatField flat;
+            flat.info = LeafInfo(field, field.sName, field.sName);
+            flat.field = field;
+            vFlat.push_back(std::move(flat));
+            continue;
+        }
+        const auto& pArray = field.pArray;
+        FlatField header;
+        header.kind = FlatField::KIND::HEADER;
+        header.info.sPath = header.info.sLabel = field.sName;
+        header.info.type = EditorFieldType::Array;
+        header.info.bArrayHeader = true;
+        header.pArray = pArray;
+        vFlat.push_back(header);
+        FlatField size;
+        size.kind = FlatField::KIND::SIZE;
+        size.info.sPath = field.sName + ".Size";
+        size.info.sLabel = "Size";
+        size.info.type = EditorFieldType::Integer;
+        size.info.bReadOnly = field.bReadOnly || pArray->bFixedSize || !pArray->resize;
+        size.info.nIndent = 1;
+        size.info.bArraySize = true;
+        size.info.sArrayPath = field.sName;
+        size.pArray = pArray;
+        vFlat.push_back(size);
+        const std::size_t nCount = pArray->size ? pArray->size() : 0;
+        for (std::size_t nElement = 0; nElement < nCount; ++nElement) {
+            FlatField element;
+            element.kind = FlatField::KIND::ELEMENT;
+            element.info = LeafInfo(pArray->element, field.sName + "[" + std::to_string(nElement) + "]", "Element " + std::to_string(nElement));
+            element.info.bReadOnly = field.bReadOnly || pArray->element.bReadOnly;
+            element.info.nIndent = 1;
+            element.info.sArrayPath = field.sName;
+            element.pArray = pArray;
+            element.nElement = nElement;
+            vFlat.push_back(std::move(element));
+        }
+    }
+    return vFlat;
+}
+
+std::string FlatText(const FlatField& flat) {
+    switch (flat.kind) {
+    case FlatField::KIND::HEADER: return {};
+    case FlatField::KIND::SIZE: return std::to_string(flat.pArray->size ? flat.pArray->size() : 0);
+    case FlatField::KIND::ELEMENT: return flat.pArray->get ? flat.pArray->get(flat.nElement) : std::string{};
+    default: return EditorFieldText(flat.field);
+    }
+}
+
+bool FlatAssign(FlatField& flat, const std::string& sValue, std::string& error) {
+    switch (flat.kind) {
+    case FlatField::KIND::HEADER: error = "An array header has no value."; return false;
+    case FlatField::KIND::SIZE: {
+        if (flat.info.bReadOnly) {
+            error = "The size of a fixed array cannot change.";
+            return false;
+        }
+        float fSize = 0;
+        if (!ParseFloat(sValue, fSize) || fSize < 0 || fSize != std::floor(fSize) || fSize > EDITOR_ARRAY_MAX_SIZE) {
+            error = "Size must be a whole number from 0 to " + std::to_string(EDITOR_ARRAY_MAX_SIZE) + ".";
+            return false;
+        }
+        flat.pArray->resize(static_cast<std::size_t>(fSize));
+        return true;
+    }
+    case FlatField::KIND::ELEMENT:
+        if (flat.info.bReadOnly) {
+            error = "The selected field is read-only.";
+            return false;
+        }
+        return flat.pArray->set && flat.pArray->set(flat.nElement, sValue, error);
+    default: return AssignEditorField(flat.field, sValue, error);
+    }
+}
+
+// Saved values: array sizes first (they create the elements), then the rest.
+void ApplySavedProperties(Component& component, const Entity::PropertyMap& saved) {
+    auto vFields = component.EditorFields();
+    for (auto& flat : Flatten(vFields)) {
+        if (flat.kind != FlatField::KIND::SIZE || flat.info.bReadOnly) continue;
+        const auto found = saved.find(flat.info.sPath);
+        std::string ignored;
+        if (found != saved.end()) FlatAssign(flat, found->second, ignored);
+    }
+    for (auto& flat : Flatten(vFields)) {
+        if (flat.kind == FlatField::KIND::SIZE || flat.kind == FlatField::KIND::HEADER) continue;
+        const auto found = saved.find(flat.info.sPath);
+        std::string ignored;
+        if (found != saved.end()) FlatAssign(flat, found->second, ignored);
+    }
+}
+
+// Rewrites the saved map from the live values (drops elements removed by a resize).
+void StoreProperties(std::vector<FlatField>& vFlat, Entity::PropertyMap& saved) {
+    saved.clear();
+    for (auto& flat : vFlat) {
+        if (flat.kind == FlatField::KIND::HEADER) continue;
+        flat.info.sValue = FlatText(flat);
+        saved[flat.info.sPath] = flat.info.sValue;
+    }
+}
+} // namespace
+
+std::string EditorFieldText(const EditorField& field) {
+    if (!field.pValue) return {};
+    switch (field.type) {
+    case EditorFieldType::Float: return FloatText(*static_cast<const float*>(field.pValue));
+    case EditorFieldType::Integer: return std::to_string(*static_cast<const int*>(field.pValue));
+    case EditorFieldType::Boolean: return *static_cast<const bool*>(field.pValue) ? "true" : "false";
+    case EditorFieldType::String: return *static_cast<const std::string*>(field.pValue);
+    case EditorFieldType::Enum: {
+        const long long nValue = ReadEnum(field);
+        return nValue >= 0 && static_cast<size_t>(nValue) < field.vEnumNames.size() ? field.vEnumNames[static_cast<size_t>(nValue)]
+                                                                                    : std::to_string(nValue);
+    }
+    case EditorFieldType::Vector2: {
+        const auto& value = *static_cast<const DirectX::XMFLOAT2*>(field.pValue);
+        return FloatText(value.x) + "," + FloatText(value.y);
+    }
+    case EditorFieldType::Vector3: {
+        const auto& value = *static_cast<const DirectX::XMFLOAT3*>(field.pValue);
+        return FloatText(value.x) + "," + FloatText(value.y) + "," + FloatText(value.z);
+    }
+    default: return {};
+    }
+}
+
+bool AssignEditorField(EditorField& field, const std::string& value, std::string& error) {
     if (field.bReadOnly) {
         error = "The selected field is read-only.";
+        return false;
+    }
+    if (!field.pValue) {
+        error = "The field has no storage.";
         return false;
     }
     try {
         size_t used = 0;
         if (field.type == EditorFieldType::Float) {
-            const float parsed = std::stof(value, &used);
-            if (used != value.size() || !std::isfinite(parsed)) throw std::invalid_argument("float");
+            float parsed = 0;
+            if (!ParseFloat(value, parsed)) throw std::invalid_argument("float");
+            if (field.bRange) parsed = std::clamp(parsed, field.fMin, field.fMax);
             *static_cast<float*>(field.pValue) = parsed;
         } else if (field.type == EditorFieldType::Integer) {
-            const int parsed = std::stoi(value, &used);
+            int parsed = std::stoi(value, &used);
             if (used != value.size()) throw std::invalid_argument("int");
+            if (field.bRange)
+                parsed = std::clamp(parsed, static_cast<int>(std::ceil(field.fMin)), static_cast<int>(std::floor(field.fMax)));
             *static_cast<int*>(field.pValue) = parsed;
         } else if (field.type == EditorFieldType::Boolean) {
             if (value == "true" || value == "1")
@@ -710,32 +924,58 @@ bool AssignField(EditorField& field, const std::string& value, std::string& erro
                 *static_cast<bool*>(field.pValue) = false;
             else
                 throw std::invalid_argument("bool");
-        } else
+        } else if (field.type == EditorFieldType::String) {
             *static_cast<std::string*>(field.pValue) = value;
+        } else if (field.type == EditorFieldType::Enum) {
+            // A value name (case-insensitive) or its number.
+            const std::string sValue = Trimmed(value);
+            long long nValue = -1;
+            for (size_t nIndex = 0; nIndex < field.vEnumNames.size(); ++nIndex)
+                if (_stricmp(field.vEnumNames[nIndex].c_str(), sValue.c_str()) == 0) nValue = static_cast<long long>(nIndex);
+            if (nValue < 0) {
+                nValue = std::stoll(sValue, &used);
+                if (used != sValue.size()) throw std::invalid_argument("enum");
+            }
+            WriteEnum(field, nValue);
+        } else if (field.type == EditorFieldType::Vector2 || field.type == EditorFieldType::Vector3) {
+            float aValues[3]{};
+            const int nCount = field.type == EditorFieldType::Vector2 ? 2 : 3;
+            if (!ParseVector(value, aValues, nCount)) throw std::invalid_argument("vector");
+            if (nCount == 2) *static_cast<DirectX::XMFLOAT2*>(field.pValue) = {aValues[0], aValues[1]};
+            else *static_cast<DirectX::XMFLOAT3*>(field.pValue) = {aValues[0], aValues[1], aValues[2]};
+        } else {
+            throw std::invalid_argument("type");
+        }
     } catch (...) {
         error = "The value does not match the component field type.";
         return false;
     }
     return true;
 }
-} // namespace
+
+std::vector<EditorFieldInfo> ComponentFieldInfos(Entity& entity, std::size_t componentIndex) {
+    EnsureComponentInstances(entity);
+    std::vector<EditorFieldInfo> result;
+    if (componentIndex >= entity.vRuntimeComponents.size() || !entity.vRuntimeComponents[componentIndex]) return result;
+    auto& component = *entity.vRuntimeComponents[componentIndex];
+    auto& saved = entity.componentProperties[entity.vRuntimeComponentNames[componentIndex]];
+    // Outside Play Mode the saved values are the truth; in Play the live values are.
+    if (!entity.vRuntimeComponentStarted[componentIndex]) {
+        const auto copy = saved;
+        ApplySavedProperties(component, copy);
+    }
+    auto vFields = component.EditorFields();
+    auto vFlat = Flatten(vFields);
+    StoreProperties(vFlat, saved);
+    result.reserve(vFlat.size());
+    for (auto& flat : vFlat) result.push_back(std::move(flat.info));
+    return result;
+}
 
 std::vector<std::pair<std::string, std::string>> ComponentEditorValues(Entity& entity, std::size_t componentIndex) {
-    EnsureComponentInstances(entity);
     std::vector<std::pair<std::string, std::string>> result;
-    if (componentIndex >= entity.vRuntimeComponents.size() || !entity.vRuntimeComponents[componentIndex]) return result;
-    const auto component = entity.vRuntimeComponentNames[componentIndex];
-    auto fields = entity.vRuntimeComponents[componentIndex]->EditorFields();
-    auto& saved = entity.componentProperties[component];
-    for (auto& field : fields) {
-        if (auto found = saved.find(field.sName); found != saved.end() && !entity.vRuntimeComponentStarted[componentIndex]) {
-            std::string ignored;
-            AssignField(field, found->second, ignored);
-        }
-        auto value = FieldText(field);
-        saved[field.sName] = value;
-        result.emplace_back(field.sName, std::move(value));
-    }
+    for (auto& info : ComponentFieldInfos(entity, componentIndex))
+        if (!info.bArrayHeader) result.emplace_back(std::move(info.sPath), std::move(info.sValue));
     return result;
 }
 
@@ -747,11 +987,19 @@ bool SetComponentEditorValue(Entity& entity, std::size_t componentIndex, const s
         error = "The component class is not registered.";
         return false;
     }
-    auto fields = entity.vRuntimeComponents[componentIndex]->EditorFields();
-    for (auto& field : fields)
-        if (field.sName == name) {
-            if (!AssignField(field, value, error)) return false;
-            entity.componentProperties[entity.vRuntimeComponentNames[componentIndex]][name] = FieldText(field);
+    auto& component = *entity.vRuntimeComponents[componentIndex];
+    auto& saved = entity.componentProperties[entity.vRuntimeComponentNames[componentIndex]];
+    if (!entity.vRuntimeComponentStarted[componentIndex]) {
+        const auto copy = saved;
+        ApplySavedProperties(component, copy);
+    }
+    auto vFields = component.EditorFields();
+    auto vFlat = Flatten(vFields);
+    for (auto& flat : vFlat)
+        if (flat.info.sPath == name) {
+            if (!FlatAssign(flat, value, error)) return false;
+            auto vAfter = Flatten(vFields); // a size change adds / removes elements
+            StoreProperties(vAfter, saved);
             return true;
         }
     error = "The component field no longer exists.";

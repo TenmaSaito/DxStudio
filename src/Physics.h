@@ -9,6 +9,11 @@
 //   (Unity's "Freeze Rotation"). A kinematic body is moved only by scripts
 //   but still pushes dynamic bodies and receives collision events.
 // * Is Trigger colliders do not block; they report OnTriggerEnter/Stay/Exit.
+// * Combining colliders: one object may have a Box, a Sphere and a Mesh
+//   collider together, and colliders on child objects without their own
+//   Rigidbody belong to the nearest parent Rigidbody (compound collider).
+//   Parts of one body never collide with each other; events go to the
+//   object that has the Rigidbody.
 // * Events need a Rigidbody on at least one of the two objects (as in Unity).
 //
 // Physics runs in fixed steps of PHYSICS_FIXED_DELTA seconds after Update
@@ -93,6 +98,23 @@ public:
     std::vector<EditorField> EditorFields() override {
         auto vFields = BaseFields();
         vFields.push_back(EditField("Radius", m_fRadius));
+        return vFields;
+    }
+};
+
+// Collides with the mesh drawn by the object's MeshRenderer / ModelRenderer
+// (a PolygonRenderer object uses its cube / quad). Like Unity:
+// * Convex off: exact triangles; for static or kinematic objects. Two
+//   concave meshes never collide with each other.
+// * Convex on: the mesh's convex hull, usable on a moving Rigidbody (a
+//   concave mesh on a dynamic body is treated as convex automatically).
+//   Smooth shapes with more than 64 face directions are approximated.
+class MeshCollider final : public Collider {
+public:
+    bool m_bConvex = false;
+    std::vector<EditorField> EditorFields() override {
+        auto vFields = BaseFields();
+        vFields.push_back(EditField("Convex", m_bConvex));
         return vFields;
     }
 };

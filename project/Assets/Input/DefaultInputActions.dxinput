@@ -1,0 +1,29 @@
+# DxStudio input actions (CInputSystem::LoadActionsText)
+#   map <name>                         starts an action map
+#   action <name> <BUTTON|VALUE_1D|VALUE_2D> [pressPoint]
+#   single <control>                   one control
+#   axis1d <negative> <positive>       two controls -> -1..1
+#   vector2d <up> <down> <left> <right>
+#   stick1d <control>                  Pad.LeftX / Pad.LeftTrigger / Pad.LeftStickUp ...
+#   stick2d <Pad.LeftStick|Pad.RightStick>
+#   processor invert | scale <f> | deadzone <min> [max] | clamp <min> <max>   (last binding)
+# Keyboard names come from Assets/Input/keyboardKeys.csv.
+map Player
+action Move VALUE_2D
+vector2d W S A D
+vector2d UP DOWN LEFT RIGHT
+stick2d Pad.LeftStick
+action Look VALUE_2D
+stick2d Pad.RightStick
+action Jump BUTTON
+single SPACE
+single Pad.A
+action Fire BUTTON
+single Mouse.Left
+single Pad.RB
+action Sprint BUTTON
+single LSHIFT
+single Pad.LB
+action Zoom VALUE_1D
+axis1d Q E
+stick1d Pad.RightTrigger
