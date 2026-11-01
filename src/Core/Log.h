@@ -28,8 +28,14 @@ public:
     static void LogError(std::string_view message);
     static void Write(LogLevel level, std::string_view message);
 
-    // Fired on the calling thread for every new log entry.
+    // Fired for every new log entry: on the calling thread, or - once
+    // SetMainThread() was called - always on that thread (entries written by
+    // worker threads wait until DispatchPending() runs there).
     static MulticastDelegate<const LogEntry&>& OnLog();
+    // UI programs (the editor) call this once on their UI thread.
+    static void SetMainThread();
+    // Broadcasts entries queued by other threads; call regularly on the main thread.
+    static void DispatchPending();
     static std::vector<LogEntry> History();
     static void ClearHistory();
 

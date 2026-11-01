@@ -27,6 +27,8 @@
 #include <windowsx.h>
 #include <stdexcept>
 #include <string>
+#include <functional>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -95,8 +97,30 @@ struct InspectorFieldRow {
 };
 // Posted when an array size changed, so rows are rebuilt after the control's notification.
 constexpr UINT WM_DXS_REBUILD_INSPECTOR = WM_APP + 41;
+// Posted by a background task's worker thread when its work has finished.
+constexpr UINT WM_DXS_TASK_DONE = WM_APP + 42;
+constexpr UINT_PTR TASK_STATUS_TIMER = 2; // refreshes "Building... 42%  12 s" and the gauge
+
+// Long work (Android build, export) runs on a worker thread so the editor
+// keeps drawing and responding; the result is handled back on the UI thread.
+struct BackgroundTask {
+    std::wstring sLabel;
+    ULONGLONG nStartTick = 0;
+    HANDLE hJob = nullptr;          // job object of a build process tree (cancellable)
+    bool bCanceled = false;
+    // Polled on the UI thread: 0..1, or < 0 when the progress is unknown
+    // (the gauge then shows a moving bar).
+    std::function<float()> progress;
+    float fProgress = -1.0f;
+    std::thread worker;
+    std::function<void()> onDone;   // runs on the UI thread
+};
 std::vector<std::string> SplitVectorText(const std::string& sValue, int nCount);
 std::string DisplayValue(const InspectorFieldRow& row, const std::string& sValue);
+std::string SummarizeBuildLog(const std::filesystem::path& log);
+// Gradle build progress from its live log: "> Task" lines seen / expected.
+float BuildLogProgress(const std::filesystem::path& log, int nExpectedTasks);
+int CountBuildLogTasks(const std::filesystem::path& log); // 0 unless the log is a successful build
 // Unreal-style numeric field: drag inside the box (or wheel) to change the
 // value; a click without dragging enters text editing with the value selected.
 // uIdSubclass: Transform/Color field index (2..14), or FIELD_SCRUB_COMPONENT + control id.
@@ -372,6 +396,16 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     bool SwitchProject(const std::filesystem::path& descriptor);
     bool NewProject();
     bool RunBuildScript(const wchar_t* scriptName, const wchar_t* label);
+    std::unique_ptr<BackgroundTask> pTask;
+    [[nodiscard]] bool IsTaskRunning() const { return static_cast<bool>(pTask); }
+    // Starts work on a worker thread; onDone runs on the UI thread afterwards.
+    bool StartBackgroundTask(std::wstring sLabel, std::function<void()> work, std::function<void()> onDone, HANDLE hJob = nullptr);
+    void FinishBackgroundTask();
+    // Kills a running build (whole process tree); an export cannot be stopped midway.
+    void CancelBackgroundTask(bool bWaitForWorker);
+    void UpdateTaskStatus();
+    HWND progressGauge{}; // status-bar gauge, shown while a background task runs
+    void DrawProgressGauge(const DRAWITEMSTRUCT& item);
     void Populate();
     void Inspect();
     void RefreshComponentFields();

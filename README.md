@@ -176,7 +176,9 @@ Unity風ショートカットとして、`Ctrl+D` は選択オブジェクトを
 
 これは Unity 風の配置を持つ初期プロトタイプです。色付きの平面・立方体、X/FBXモデル、基本Transform、親子階層、複数プロジェクト、Play Mode、マテリアル/テクスチャ参照管理に対応しています。既定背景は空色のプロシージャル・スカイです（キューブマップ画像ではありません）。現段階ではテクスチャ画像のDirectX 12サンプリング、物理、音声、汎用入力API、透明合成は未実装です。GPU同期は毎フレーム待機する簡易実装です。
 
-Windows向けは DirectX 12 の x64 実行ファイル、Android向けは OpenGL ES 3 のデバッグAPKを生成できます。ツールバーの `Play` はエディタ内動作確認、`Android` は arm64-v8a / x86_64 APK生成です。PDB付きWindowsデバッグ実行ファイルが必要な場合は `build-debug.cmd` を利用できます。Android SDK/NDK、Gradle、互換JDKが必要です。実装範囲は [docs/PLATFORMS.md](docs/PLATFORMS.md) に記載しています。
+Windows向けは DirectX 12 の x64 実行ファイル、Android向けは OpenGL ES 3 のデバッグAPKを生成できます。ツールバーの `Play` はエディタ内動作確認、`Android` は arm64-v8a / x86_64 APK生成です。PDB付きWindowsデバッグ実行ファイルが必要な場合は `build-debug.cmd` を利用できます。Android SDK/NDK、Gradle、互換JDKが必要です。
+
+Android ビルドと書き出しはバックグラウンド（別スレッド + 別プロセス）で実行されるため、ビルド中もエディターの操作・描画・Play は止まりません。ステータスバーに経過時間と進捗（% とゲージ、Gradle のタスク数から算出。書き出しは動くゲージ）を表示し、Build > Cancel build で Gradle / Java を含めて中止できます。失敗時はログの要点（Gradle の "What went wrong" など）をダイアログに表示します。深いフォルダーでも NDK のパス長制限（260 文字）に掛からないよう、uild-android.cmd は一時的なドライブ文字（subst）経由でビルドします。実装範囲は [docs/PLATFORMS.md](docs/PLATFORMS.md) に記載しています。
 
 書き出したゲームにも DirectX 12 と `D3DCompiler_47.dll` が利用できる Windows 環境が必要です。C++ ランタイムは静的リンクしています。ゲームの実行に Visual Studio や C++ / HLSL ソースは不要です。4 ファイルを同じフォルダーに置いてください。既存フォルダーの無関係なファイルや古い HLSL は自動削除されないため、ソースを含めず配布したい場合は空のフォルダーに書き出してください。
 

@@ -355,6 +355,7 @@ void Editor::CreateMainMenu() {
     AppendMenuW(build, MF_STRING, ID_EXPORT, L"Export Windows game...");
     AppendMenuW(build, MF_STRING, ID_BUILD_DEBUG, L"Play in Editor\tCtrl+P");
     AppendMenuW(build, MF_STRING, ID_BUILD_ANDROID, L"Build Android Debug APK");
+    AppendMenuW(build, MF_STRING, ID_CANCEL_BUILD, L"Cancel build");
     AppendMenuW(build, MF_STRING, ID_PLATFORM_INFO, L"Build platforms...");
     for (int i = 0; i < 4; ++i) {
         HMENU submenu = CreatePopupMenu();

@@ -461,47 +461,246 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
         Error(window, "The build script is missing.");
         return false;
     }
+    if (IsTaskRunning()) {
+        Error(window, "A build is already running (Build > Cancel build stops it).");
+        return false;
+    }
     std::wstring command = L"cmd.exe /d /s /c \"\"" + script.wstring() + L"\" \"" + projectRoot.wstring() + L"\"\"";
+    // Expected Gradle task count: from the previous successful build (read
+    // before the script overwrites the log), else a typical full build.
+    const int nPreviousTasks = CountBuildLogTasks(base / std::filesystem::path(scriptName).stem() / L"build.log");
+    const int nExpectedTasks = nPreviousTasks > 0 ? nPreviousTasks : 40;
+    // The script, Gradle and its Java processes go into one job object, so
+    // Cancel (or closing the editor) stops the whole tree.
+    HANDLE hJob = CreateJobObjectW(nullptr, nullptr);
+    if (hJob) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(hJob, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+    }
     STARTUPINFOW startup{sizeof(startup)};
     PROCESS_INFORMATION process{};
-    const auto running = std::wstring(L"Building ") + label + L"...";
-    SetStatus(running.c_str());
-    if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, base.c_str(), &startup,
-                        &process)) {
+    if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, base.c_str(),
+                        &startup, &process)) {
+        if (hJob) CloseHandle(hJob);
         Error(window, "Could not start the build process.");
         return false;
     }
-    WaitForSingleObject(process.hProcess, INFINITE);
-    DWORD exitCode = 1;
-    GetExitCodeProcess(process.hProcess, &exitCode);
+    if (hJob) AssignProcessToJobObject(hJob, process.hProcess);
+    ResumeThread(process.hThread);
     CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
-    if (exitCode != 0) {
-        // Show the end of the script's log (e.g. build-android\build.log) instead of only pointing at it.
-        std::string message = "The build failed.";
-        const auto log = base / std::filesystem::path(scriptName).stem() / L"build.log";
-        std::ifstream file(log, std::ios::binary);
-        std::vector<std::string> vLines;
-        for (std::string line; std::getline(file, line);) {
-            if (!line.empty() && line.back() == '\r') line.pop_back();
-            if (line.empty()) continue;
-            vLines.push_back(std::move(line));
-            if (vLines.size() > 12) vLines.erase(vLines.begin());
+
+    const HANDLE hProcess = process.hProcess;
+    auto pExitCode = std::make_shared<DWORD>(1);
+    const auto log = base / std::filesystem::path(scriptName).stem() / L"build.log";
+    const std::wstring sLabel = label;
+    StartBackgroundTask(
+        std::wstring(L"Building ") + label,
+        [hProcess, pExitCode] {
+            WaitForSingleObject(hProcess, INFINITE);
+            GetExitCodeProcess(hProcess, pExitCode.get());
+        },
+        [this, hProcess, pExitCode, log, sLabel] {
+            CloseHandle(hProcess);
+            if (pTask && pTask->bCanceled) {
+                // The killed script could not unmap its temporary drive letter (see build-android.cmd).
+                const auto driveFile = log.parent_path() / L"temp-drive.txt";
+                std::wifstream in(driveFile);
+                std::wstring sDrive;
+                if (in >> sDrive && sDrive.size() == 2 && sDrive[1] == L':') DefineDosDeviceW(DDD_REMOVE_DEFINITION, sDrive.c_str(), nullptr);
+                in.close();
+                std::error_code ec;
+                std::filesystem::remove(driveFile, ec);
+                SetStatus((sLabel + L" build canceled.").c_str());
+                Debug::LogWarning(Utf8(sLabel) + " build canceled.");
+                return;
+            }
+            if (*pExitCode != 0) {
+                const std::string message = "The build failed.\n\n" + SummarizeBuildLog(log) + "\nFull log: " + Utf8(log.wstring());
+                Debug::LogError(message);
+                SetStatus(L"Build failed.");
+                Error(window, message);
+                return;
+            }
+            const auto completed = sLabel + L" build completed.";
+            SetStatus(completed.c_str());
+            Debug::Log(Utf8(completed));
+            MessageBoxW(window, completed.c_str(), L"Build", MB_OK | MB_ICONINFORMATION);
+        },
+        hJob);
+    if (pTask) pTask->progress = [log, nExpectedTasks] { return BuildLogProgress(log, nExpectedTasks); };
+    return true;
+}
+
+// The useful part of a failed build log: Gradle's "What went wrong" block and
+// ERROR lines; otherwise the last lines.
+std::string SummarizeBuildLog(const std::filesystem::path& log) {
+    std::ifstream file(log, std::ios::binary);
+    std::vector<std::string> vLines;
+    for (std::string line; std::getline(file, line);) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.size() > 220) line = line.substr(0, 217) + "...";
+        vLines.push_back(std::move(line));
+    }
+    std::vector<std::string> vSummary;
+    for (size_t nIndex = 0; nIndex < vLines.size(); ++nIndex) {
+        if (vLines[nIndex].find("What went wrong") == std::string::npos) continue;
+        for (size_t nNext = nIndex + 1; nNext < vLines.size() && nNext <= nIndex + 8; ++nNext) {
+            if (vLines[nNext].rfind("* Try", 0) == 0) break;
+            if (!vLines[nNext].empty()) vSummary.push_back(vLines[nNext]);
         }
-        if (!vLines.empty()) {
-            message += "\n\n";
-            for (const auto& line : vLines) message += line + "\n";
-            message += "\nFull log: " + Utf8(log.wstring());
-            Debug::LogError(message);
-        }
-        Error(window, message);
-        SetStatus(L"Build failed.");
+        break; // the first failure is the cause
+    }
+    for (const auto& line : vLines)
+        if (line.rfind("ERROR:", 0) == 0 && std::find(vSummary.begin(), vSummary.end(), line) == vSummary.end()) vSummary.push_back(line);
+    if (vSummary.empty()) {
+        for (const auto& line : vLines)
+            if (!line.empty()) vSummary.push_back(line);
+        if (vSummary.size() > 12) vSummary.erase(vSummary.begin(), vSummary.end() - 12);
+    }
+    std::string sText;
+    for (const auto& line : vSummary) sText += line + "\n";
+    return sText;
+}
+
+bool Editor::StartBackgroundTask(std::wstring sLabel, std::function<void()> work, std::function<void()> onDone, HANDLE hJob) {
+    if (IsTaskRunning()) {
+        if (hJob) CloseHandle(hJob);
         return false;
     }
-    const auto completed = std::wstring(label) + L" build completed.";
-    SetStatus(completed.c_str());
-    MessageBoxW(window, completed.c_str(), L"Build", MB_OK | MB_ICONINFORMATION);
+    pTask = std::make_unique<BackgroundTask>();
+    pTask->sLabel = std::move(sLabel);
+    pTask->nStartTick = GetTickCount64();
+    pTask->hJob = hJob;
+    pTask->onDone = std::move(onDone);
+    const HWND hWindow = window;
+    pTask->worker = std::thread([work = std::move(work), hWindow] {
+        work();
+        PostMessageW(hWindow, WM_DXS_TASK_DONE, 0, 0);
+    });
+    SetTimer(window, TASK_STATUS_TIMER, 100, nullptr); // smooth gauge
+    Layout();                                          // make room for the gauge
+    UpdateTaskStatus();
+    Debug::Log(Utf8(pTask->sLabel) + " started in the background.");
     return true;
+}
+
+void Editor::FinishBackgroundTask() {
+    if (!pTask) return;
+    if (pTask->worker.joinable()) pTask->worker.join();
+    KillTimer(window, TASK_STATUS_TIMER);
+    if (pTask->onDone) pTask->onDone(); // may read pTask (e.g. bCanceled)
+    if (pTask && pTask->hJob) CloseHandle(pTask->hJob);
+    pTask.reset();
+    Layout(); // hide the gauge
+}
+
+void Editor::CancelBackgroundTask(bool bWaitForWorker) {
+    if (!pTask) return;
+    if (pTask->hJob) {
+        pTask->bCanceled = true;
+        TerminateJobObject(pTask->hJob, 1);
+    }
+    if (!bWaitForWorker) {
+        SetStatus(pTask->hJob ? L"Canceling the build..." : L"An export cannot be canceled; it finishes shortly.");
+        return;
+    }
+    // Shutting down: wait for the worker, drop the completion callback.
+    if (pTask->worker.joinable()) pTask->worker.join();
+    if (pTask->hJob) CloseHandle(pTask->hJob);
+    pTask.reset();
+}
+
+void Editor::UpdateTaskStatus() {
+    if (!pTask) return;
+    if (pTask->progress) pTask->fProgress = pTask->progress();
+    const auto nSeconds = (GetTickCount64() - pTask->nStartTick) / 1000;
+    std::wstring text = pTask->sLabel + L"...  ";
+    if (pTask->fProgress >= 0.0f) text += std::to_wstring(static_cast<int>(pTask->fProgress * 100.0f)) + L"%   ";
+    text += std::to_wstring(nSeconds) + L" s" + (pTask->hJob ? L"   (Build > Cancel build to stop)" : L"");
+    if (Text(status) != text) SetStatus(text.c_str());
+    InvalidateRect(progressGauge, nullptr, FALSE);
+}
+
+// Status-bar gauge: filled share + "42%", or a sliding bar when unknown.
+void Editor::DrawProgressGauge(const DRAWITEMSTRUCT& item) {
+    RECT rect = item.rcItem;
+    const HDC hDc = item.hDC;
+    FillRect(hDc, &rect, theme::Brush(theme::COLOR_TOOLBAR));
+    RECT track = rect;
+    theme::RoundFill(hDc, track, 3, theme::COLOR_INPUT, theme::COLOR_INPUT_BORDER);
+    InflateRect(&track, -2, -2);
+    const float fProgress = pTask ? pTask->fProgress : 0.0f;
+    const int nWidth = static_cast<int>(track.right - track.left);
+    RECT fill = track;
+    if (fProgress >= 0.0f) {
+        fill.right = track.left + static_cast<int>(static_cast<float>(nWidth) * std::clamp(fProgress, 0.0f, 1.0f));
+    } else {
+        // Unknown length (export): a 30% block moving back and forth.
+        const int nBlock = std::max(8, nWidth * 3 / 10);
+        const double dPhase = static_cast<double>(GetTickCount64() % 1600) / 1600.0;
+        const double dPosition = dPhase < 0.5 ? dPhase * 2.0 : 2.0 - dPhase * 2.0;
+        fill.left = track.left + static_cast<int>(dPosition * (nWidth - nBlock));
+        fill.right = fill.left + nBlock;
+    }
+    if (fill.right > fill.left) theme::RoundFill(hDc, fill, 2, theme::COLOR_FOCUS, theme::COLOR_FOCUS);
+    if (fProgress >= 0.0f) {
+        const std::wstring sPercent = std::to_wstring(static_cast<int>(fProgress * 100.0f)) + L"%";
+        theme::DrawLabel(hDc, sPercent, rect, theme::COLOR_TEXT_BRIGHT, theme::GetFonts().hSmall ? theme::GetFonts().hSmall : theme::GetFonts().hRegular,
+                         DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+}
+
+namespace {
+// Reads a log that the build is still writing (shared access).
+std::vector<std::string> ReadSharedLines(const std::filesystem::path& log) {
+    std::vector<std::string> vLines;
+    HANDLE hFile = CreateFileW(log.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                               FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return vLines;
+    std::string sText;
+    char aBuffer[16384];
+    DWORD dwRead = 0;
+    while (ReadFile(hFile, aBuffer, sizeof(aBuffer), &dwRead, nullptr) && dwRead > 0 && sText.size() < 8u * 1024u * 1024u)
+        sText.append(aBuffer, dwRead);
+    CloseHandle(hFile);
+    size_t nStart = 0;
+    while (nStart <= sText.size()) {
+        const size_t nEnd = sText.find('\n', nStart);
+        std::string line = sText.substr(nStart, nEnd == std::string::npos ? std::string::npos : nEnd - nStart);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        vLines.push_back(std::move(line));
+        if (nEnd == std::string::npos) break;
+        nStart = nEnd + 1;
+    }
+    return vLines;
+}
+} // namespace
+
+int CountBuildLogTasks(const std::filesystem::path& log) {
+    int nTasks = 0;
+    bool bSucceeded = false;
+    for (const auto& line : ReadSharedLines(log)) {
+        if (line.rfind("Offline build failed", 0) == 0) nTasks = 0; // the online retry starts over
+        if (line.rfind("> Task ", 0) == 0) ++nTasks;
+        if (line.find("BUILD SUCCESSFUL") != std::string::npos) bSucceeded = true;
+    }
+    return bSucceeded ? nTasks : 0;
+}
+
+float BuildLogProgress(const std::filesystem::path& log, int nExpectedTasks) {
+    // Script checks (SDK, NDK, Java, Gradle) ~5%, Gradle tasks up to 98%;
+    // 100% only when the task has finished.
+    int nTasks = 0;
+    bool bGradleStarted = false;
+    for (const auto& line : ReadSharedLines(log)) {
+        if (line.rfind("Gradle:", 0) == 0) bGradleStarted = true;
+        if (line.rfind("Offline build failed", 0) == 0) nTasks = 0;
+        if (line.rfind("> Task ", 0) == 0) ++nTasks;
+    }
+    if (!bGradleStarted) return 0.02f;
+    const float fTasks = static_cast<float>(nTasks) / static_cast<float>(std::max(nExpectedTasks, nTasks + 1));
+    return std::min(0.05f + 0.93f * fTasks, 0.98f);
 }
 
 bool Editor::InitRenderer() {
@@ -635,6 +834,11 @@ void Editor::Command(int id, int notification) {
             }
         } else if (!error.empty())
             Error(window, error);
+        return;
+    }
+    if (id == ID_CANCEL_BUILD) {
+        if (IsTaskRunning()) CancelBackgroundTask(false);
+        else SetStatus(L"No build is running.");
         return;
     }
     if (id == ID_BUILD_ANDROID) {
@@ -939,12 +1143,28 @@ void Editor::Command(int id, int notification) {
             MessageBoxW(window, L"The selected folder already contains one or more exported game files. Replace them?",
                         L"Export", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
             return;
-        if (!ExportGame(base, projectRoot, destination, scene, error))
-            Error(window, error);
-        else {
-            SetStatus(L"Export complete. Run Game.exe in the selected folder.");
-            MessageBoxW(window, (L"Exported to:\n" + destination.wstring()).c_str(), L"Export complete", MB_OK);
+        if (IsTaskRunning()) {
+            Error(window, "Wait for the running build to finish (or use Build > Cancel build).");
+            return;
         }
+        // Export on a worker thread from a copy of the scene, so editing and
+        // Play stay responsive while shaders compile and files are copied.
+        auto pError = std::make_shared<std::string>();
+        auto pOk = std::make_shared<bool>(false);
+        Scene snapshot = scene;
+        const auto baseDir = base, projectDir = projectRoot;
+        StartBackgroundTask(
+            L"Exporting game",
+            [=]() mutable { *pOk = ExportGame(baseDir, projectDir, destination, snapshot, *pError); },
+            [this, pError, pOk, destination] {
+                if (!*pOk) {
+                    SetStatus(L"Export failed.");
+                    Error(window, *pError);
+                    return;
+                }
+                SetStatus(L"Export complete. Run Game.exe in the selected folder.");
+                MessageBoxW(window, (L"Exported to:\n" + destination.wstring()).c_str(), L"Export complete", MB_OK);
+            });
     } else if (id == ID_RELOAD_SHADER) {
         InitRenderer();
     }

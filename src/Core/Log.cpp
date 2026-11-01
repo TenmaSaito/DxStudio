@@ -5,9 +5,12 @@
 #endif
 #include <Windows.h>
 
+#include <atomic>
 #include <chrono>
 #include <deque>
 #include <mutex>
+#include <thread>
+#include <vector>
 
 namespace dxs {
 namespace {
@@ -16,6 +19,9 @@ struct LogState {
     std::deque<LogEntry> dEntries;
     std::uint64_t nNextSequence = 1;
     std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
+    std::vector<LogEntry> vPending; // written off the main thread, not broadcast yet
+    std::atomic<bool> bHasMainThread{false};
+    std::thread::id mainThread;
 };
 
 LogState& State() {
@@ -55,7 +61,33 @@ void Debug::Write(LogLevel level, std::string_view message) {
     }
     const std::string sDebugLine = std::string(LevelPrefix(level)) + entry.sMessage + "\n";
     OutputDebugStringA(sDebugLine.c_str());
+    auto& state = State();
+    if (state.bHasMainThread && std::this_thread::get_id() != state.mainThread) {
+        // Listeners (the Console window) belong to the main thread.
+        std::lock_guard lock(state.mutex);
+        state.vPending.push_back(std::move(entry));
+        return;
+    }
+    DispatchPending(); // keep the order: earlier worker entries first
     OnLog().Broadcast(entry);
+}
+
+void Debug::SetMainThread() {
+    auto& state = State();
+    std::lock_guard lock(state.mutex);
+    state.mainThread = std::this_thread::get_id();
+    state.bHasMainThread = true;
+}
+
+void Debug::DispatchPending() {
+    auto& state = State();
+    std::vector<LogEntry> vEntries;
+    {
+        std::lock_guard lock(state.mutex);
+        if (state.vPending.empty()) return;
+        vEntries.swap(state.vPending);
+    }
+    for (const auto& entry : vEntries) OnLog().Broadcast(entry);
 }
 
 std::vector<LogEntry> Debug::History() {

@@ -240,7 +240,12 @@ void Editor::Layout() {
     placeRight(controls[6], widths[5]);
     placeRight(controls[7], widths[6]);
     ShowWindow(controls[8], SW_HIDE);
-    MoveWindow(status, 30, h - bottom + 3, std::max(1, w - 340), bottom - 5, TRUE);
+    const int gaugeW = IsTaskRunning() ? 220 : 0;
+    MoveWindow(status, 30, h - bottom + 3, std::max(1, w - 340 - gaugeW), bottom - 5, TRUE);
+    if (progressGauge) {
+        MoveWindow(progressGauge, w - 306 - gaugeW, h - bottom + 5, std::max(1, gaugeW - 12), std::max(1, bottom - 9), TRUE);
+        ShowWindow(progressGauge, gaugeW ? SW_SHOWNA : SW_HIDE);
+    }
     MoveWindow(statusRight, w - 300, h - bottom + 3, 290, bottom - 5, TRUE);
     InvalidateRect(window, nullptr, TRUE);
     bArranging = false;

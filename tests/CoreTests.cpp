@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+#include <thread>
 
 namespace {
 int g_nFailures = 0;
@@ -206,6 +207,25 @@ void TestCoroutineTemplate() {
     Check(step != values.end() && step->second == "5", "CoroutineTemplate reaches step 5 within 5 seconds");
     Check(scene.vEntities[0].draw.position.x > 1.9f && scene.vEntities[0].draw.bVisible, "CoroutineTemplate moved and stopped blinking");
 }
+// Log entries written by worker threads (background export) reach the
+// listeners only on the main thread, in order.
+void TestLogThreads() {
+    dxs::Debug::SetMainThread();
+    std::vector<std::string> vSeen;
+    dxs::ScopedDelegateHandle listener(dxs::Debug::OnLog(), dxs::Debug::OnLog().AddLambda([&](const dxs::LogEntry& entry) {
+        vSeen.push_back(entry.sMessage);
+    }));
+    std::thread worker([] { dxs::Debug::Log("from worker"); });
+    worker.join();
+    const auto vHistory = dxs::Debug::History();
+    Check(!vHistory.empty() && vHistory.back().sMessage == "from worker", "worker entry is in the history at once");
+    Check(vSeen.empty(), "worker entry is not broadcast on the worker thread");
+    dxs::Debug::Log("from main");
+    Check(vSeen.size() == 2 && vSeen[0] == "from worker" && vSeen[1] == "from main", "queued entries are broadcast first, on the main thread");
+    std::thread([] { dxs::Debug::LogWarning("later"); }).join();
+    dxs::Debug::DispatchPending();
+    Check(vSeen.size() == 3 && vSeen[2] == "later", "DispatchPending delivers queued entries");
+}
 } // namespace
 
 namespace dxs {
@@ -218,7 +238,8 @@ int main() {
     TestCoroutines();
     TestComponentCoroutines();
     TestCoroutineTemplate();
+    TestLogThreads(); // last: makes this thread the log's main thread
     if (g_nFailures) return 1;
-    std::cout << "Delegate, callback interface and coroutine tests passed.\n";
+    std::cout << "Delegate, callback interface, coroutine and log threading tests passed.\n";
     return 0;
 }

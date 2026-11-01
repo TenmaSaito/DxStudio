@@ -76,7 +76,31 @@ if not defined DXS_GRADLE (
 echo Gradle: %DXS_GRADLE%
 
 copy /y "%DXS_PROJECT%\scene.dxs" android\app\src\main\assets\scene.dxs >nul
-pushd android
+
+rem The NDK's clang fails on paths over 260 characters ("filename or extension
+rem is too long"), and CMake adds ~120 characters below android\app\.cxx. Build
+rem through a temporary drive letter so paths stay short wherever DxStudio lives.
+set "DXS_HERE=%~dp0"
+set "DXS_HERE=%DXS_HERE:~0,-1%"
+set "DXS_ANDROID=%DXS_HERE%\android"
+rem A canceled build is killed before it can unmap its drive: remove that one first.
+set "DXS_DRIVE_FILE=%DXS_HERE%\build-android\temp-drive.txt"
+if exist "%DXS_DRIVE_FILE%" (
+    for /f "usebackq delims=" %%d in ("%DXS_DRIVE_FILE%") do subst %%d /d >nul 2>&1
+    del "%DXS_DRIVE_FILE%" >nul 2>&1
+)
+set "DXS_DRIVE="
+for %%L in (Z Y X W V U T S R Q P O N M L K J) do if not defined DXS_DRIVE if not exist %%L:\ set "DXS_DRIVE=%%L:"
+if defined DXS_DRIVE (
+    subst !DXS_DRIVE! "%DXS_HERE%" >nul 2>&1
+    if exist !DXS_DRIVE!\android\build.gradle (
+        set "DXS_ANDROID=!DXS_DRIVE!\android"
+        >"%DXS_DRIVE_FILE%" echo !DXS_DRIVE!
+    ) else (set "DXS_DRIVE=")
+)
+if defined DXS_DRIVE (echo Build folder: !DXS_ANDROID! ^(temporary drive for short paths^)) else (echo WARNING: no free drive letter; a deep project folder may exceed the 260-character path limit.)
+
+pushd "%DXS_ANDROID%"
 rem Offline first (fast, no network); online retry downloads missing plugins/packages.
 call "%DXS_GRADLE%" --offline --no-daemon -PdxsNdkVersion=%DXS_NDK% :app:assembleDebug
 if errorlevel 1 (
@@ -86,6 +110,10 @@ if errorlevel 1 (
 )
 set "DXS_GRADLE_RESULT=!ERRORLEVEL!"
 popd
+if defined DXS_DRIVE (
+    subst %DXS_DRIVE% /d >nul 2>&1
+    del "%DXS_DRIVE_FILE%" >nul 2>&1
+)
 if not "%DXS_GRADLE_RESULT%"=="0" (echo ERROR: Gradle build failed ^(see the output above^).& exit /b %DXS_GRADLE_RESULT%)
 copy /y android\app\build\outputs\apk\debug\app-debug.apk build-android\DxStudio-Android-debug.apk >nul
 if errorlevel 1 (echo ERROR: Could not copy the APK.& exit /b 1)

@@ -133,6 +133,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         SendMessageW(e->componentChoice, CB_SETCURSEL, 0, 0);
         e->status = e->Make(L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS | SS_NOPREFIX);
         e->statusRight = e->Make(L"STATIC", L"", SS_RIGHT | SS_NOPREFIX);
+        e->progressGauge = e->Make(L"STATIC", L"", SS_OWNERDRAW);
+        ShowWindow(e->progressGauge, SW_HIDE);
         e->ApplyTheme();
         e->LoadSettings();
         e->EnsureProjectPrimitives();
@@ -258,7 +260,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         if (PtInRect(&r, pt)) return SendMessageW(e->viewport, message, wp, lp);
         break;
     }
-    case WM_TIMER: e->Draw(); return 0;
+    case WM_TIMER:
+        if (wp == TASK_STATUS_TIMER) {
+            Debug::DispatchPending();
+            e->UpdateTaskStatus();
+        }
+        else e->Draw();
+        return 0;
+    case WM_DXS_TASK_DONE:
+        Debug::DispatchPending(); // messages the worker logged
+        e->FinishBackgroundTask();
+        return 0;
     case WM_DRAWITEM: {
         auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
         const int id = static_cast<int>(item->CtlID);
@@ -273,6 +285,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         }
         if (item->CtlType == ODT_COMBOBOX) {
             e->DrawEnumItem(*item);
+            return TRUE;
+        }
+        if (item->CtlType == ODT_STATIC && item->hwndItem == e->progressGauge) {
+            e->DrawProgressGauge(*item);
             return TRUE;
         }
         if (item->CtlType == ODT_STATIC) {
@@ -351,6 +367,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         for (HMENU menu : e->menuPopups)
             if (menu) DestroyMenu(menu);
         KillTimer(hwnd, 1);
+        e->CancelBackgroundTask(true); // closing stops a running build
         e->renderer.Shutdown();
         PostQuitMessage(0);
         return 0;
@@ -364,6 +381,7 @@ using namespace editor;
 
 int RunEditor(HINSTANCE instance, const std::filesystem::path& baseDir, const std::filesystem::path& initialProjectFile) {
     RegisterProjectComponents();
+    Debug::SetMainThread(); // Console updates stay on the UI thread
     INITCOMMONCONTROLSEX commonControls{sizeof(commonControls), ICC_WIN95_CLASSES | ICC_STANDARD_CLASSES};
     InitCommonControlsEx(&commonControls);
     theme::EnableDarkMode();
