@@ -1,10 +1,22 @@
-// Child window procedures: hierarchy list, splitters, dock panels and the
-// DirectX viewport (mouse picking, gizmo drags, camera navigation).
+//==================================================================================
+//
+// エディターの子ウィンドウのソースファイル [EditorPanels.cpp]
+//
+// 子ウィンドウのプロシージャ: Hierarchy のリスト、スプリッター、ドックのパネル、
+// DirectX のビューポート（マウスでの選択、ギズモのドラッグ、カメラの操作）。
+//
+//==================================================================================
 
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "EditorWindow.h"
 
 namespace dxs::editor {
 
+//==================================================================================
+// --- Hierarchy のリストのサブクラスプロシージャ（折りたたみ、ドラッグでの親子付け） ---
+//==================================================================================
 LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR data) {
     auto* e = reinterpret_cast<Editor*>(data);
     if (!e) return DefSubclassProc(hwnd, message, wp, lp);
@@ -13,7 +25,7 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
         const DWORD hit = static_cast<DWORD>(SendMessageW(hwnd, LB_ITEMFROMPOINT, 0, lp));
         const int row = HIWORD(hit) ? -1 : static_cast<int>(LOWORD(hit));
 
-        // Clicking the foldout arrow expands / collapses children (Unity).
+        // 折りたたみの矢印をクリックすると、子を開く / 閉じる（Unity と同じ）
         if (row >= 0 && static_cast<size_t>(row) < e->vHierarchyRows.size() && e->vHierarchyHasChildren[row]) {
             const int arrowX = 6 + e->vHierarchyDepths[row] * 14;
             const int x = GET_X_LPARAM(lp);
@@ -62,10 +74,10 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
 
         break;
     case WM_LBUTTONUP:
-        // Some input sources coalesce the mouse-move message into the final
-        // button-up.  Treat a meaningful start/end displacement as a drag as
-        // well, so hierarchy parenting is not dependent on an intermediate
-        // WM_MOUSEMOVE being delivered.
+        // 入力によっては、マウスの移動のメッセージが最後のボタンを離すメッセージに
+        // まとめられることがある。開始と終了の位置が十分に離れていればドラッグとみなし、
+        // 途中の WM_MOUSEMOVE が届かなくても Hierarchy での親子付けが
+        // できるようにする。
         if ((e->bHierarchyDragging || (e->nHierarchyDrag >= 0 && (std::abs(GET_X_LPARAM(lp) - e->hierarchyDragStart.x) > 5 ||
                                                                   std::abs(GET_Y_LPARAM(lp) - e->hierarchyDragStart.y) > 5))) &&
             e->nHierarchyDrag >= 0) {
@@ -77,9 +89,9 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
             if (!SetEntityParent(e->scene, child, parent, error)) {
                 Error(e->window, error);
             } else {
-                // Preserve the dragged object as the active selection. The
-                // list is rebuilt depth-first so a successful drop is visible
-                // immediately as a parent/child indentation change.
+                // ドラッグした物体をアクティブな選択のままにする。リストは深さ優先で
+                // 作り直すので、落とした結果は親子の字下げの変化として
+                // すぐに見える。
                 e->nSelected = child;
                 e->vSelectedIndices = {child};
                 e->Populate();
@@ -95,8 +107,8 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
 
         break;
     case WM_CAPTURECHANGED:
-        // Only a capture loss during our own drag cancels it; the list box
-        // also takes and releases capture while it tracks a selection click.
+        // ドラッグを取り消すのは、自分のドラッグ中にキャプチャーを失ったときだけ。リストボックスも
+        // 選択のクリックを追跡する間にキャプチャーを取ったり離したりするため。
         if (e->bHierarchyDragging && reinterpret_cast<HWND>(lp) != hwnd) {
             e->bHierarchyDragging = false;
             e->nHierarchyDrag = -1;
@@ -111,8 +123,11 @@ LRESULT CALLBACK HierarchySubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
     return DefSubclassProc(hwnd, message, wp, lp);
 }
 
-// Unity-style scrubbing: drag a field label horizontally to change the value
-// of the matching Inspector field. Shift = 10x, Alt = 0.1x.
+//==================================================================================
+// --- ラベルのドラッグのサブクラスプロシージャ ---
+//==================================================================================
+// Unity 風: 欄のラベルを横にドラッグして、対応するインスペクターの欄の値を
+// 変える。Shift で 10 倍、Alt で 0.1 倍。
 LRESULT CALLBACK LabelDragSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR field, DWORD_PTR data) {
     auto* e = reinterpret_cast<Editor*>(data);
     const int index = static_cast<int>(field);
@@ -145,7 +160,7 @@ LRESULT CALLBACK LabelDragSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
             POINT cursor{};
             GetCursorPos(&cursor);
 
-            // Per-pixel step: position 0.01, rotation 0.5 degrees, scale 0.01, colour 0.005.
+            // 1 ピクセルあたりの変化量: 位置 0.01、回転 0.5 度、拡大率 0.01、色 0.005
             float step = index >= 11 ? 0.005f : (index >= 5 && index <= 7) ? 0.5f : 0.01f;
             if (GetKeyState(VK_SHIFT) & 0x8000) {
                 step *= 10.0f;
@@ -163,7 +178,7 @@ LRESULT CALLBACK LabelDragSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
             wchar_t buffer[64];
             swprintf_s(buffer, L"%.6g", static_cast<double>(value));
             SetWindowTextW(e->edits[index], buffer);
-            SendMessageW(e->edits[index], EM_SETMODIFY, FALSE, 0); // already applied below
+            SendMessageW(e->edits[index], EM_SETMODIFY, FALSE, 0); // 下で反映済み（変更済みの印を消す）
             e->SetFieldValue(index, value);
             e->RequestRender();
             return 0;
@@ -188,6 +203,9 @@ LRESULT CALLBACK LabelDragSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARA
     return DefSubclassProc(hwnd, message, wp, lp);
 }
 
+//==================================================================================
+// --- スプリッター（パネルの境界）のサブクラスプロシージャ ---
+//==================================================================================
 LRESULT CALLBACK SplitterSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR splitter, DWORD_PTR data) {
     auto* e = reinterpret_cast<Editor*>(data);
     if (!e) return DefSubclassProc(hwnd, message, wp, lp);
@@ -239,6 +257,9 @@ LRESULT CALLBACK SplitterSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARAM
     return DefSubclassProc(hwnd, message, wp, lp);
 }
 
+//==================================================================================
+// --- パネルの枠のプロシージャ（タブ、タブのドラッグでのフロート / ドッキング、見出しの描画） ---
+//==================================================================================
 LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     auto* p = reinterpret_cast<EditorPanel*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
@@ -337,8 +358,8 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     case WM_MOUSEMOVE:
         if (p->bTabPressed && GetCapture() == hwnd &&
             (std::abs(GET_X_LPARAM(lp) - p->tabDragStart.x) > 12 || std::abs(GET_Y_LPARAM(lp) - p->tabDragStart.y) > 12)) {
-            // Tear the tab off: float the panel under the cursor and hand the
-            // drag to the system move loop (the button is still held down).
+            // タブを引きはがす: パネルをカーソルの下に浮かせ、ドラッグを
+            // システムの移動のループに渡す（ボタンはまだ押されたまま）
             p->bTabPressed = false;
             ReleaseCapture();
             POINT cursor{};
@@ -383,7 +404,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             GetClientRect(e->window, &dock);
             MapWindowPoints(e->window, nullptr, reinterpret_cast<POINT*>(&dock), 2);
             dock.top += TOP_CHROME_HEIGHT;
-            const int slot = GetAsyncKeyState(VK_CONTROL) < 0 ? -1 : e->DockSlotAt(cursor); // Ctrl keeps it floating
+            const int slot = GetAsyncKeyState(VK_CONTROL) < 0 ? -1 : e->DockSlotAt(cursor); // Ctrl を押していれば浮いたまま
             e->ShowDockPreview(-1);
             if (PtInRect(&dock, cursor) && slot >= 0) {
                 e->DockPanelInSlot(p->index, slot);
@@ -399,11 +420,11 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         const int header = theme::PANEL_HEADER_HEIGHT;
         const auto& fonts = theme::GetFonts();
 
-        // Dock tab strip (Unity: dark strip, the active tab merges with the body).
+        // ドックのタブの帯（Unity: 暗い帯、選択中のタブは本体とつながる）
         RECT strip{0, 0, r.right, header};
         theme::Fill(dc, strip, theme::COLOR_TAB_STRIP);
         theme::Line(dc, 0, header - 1, r.right, header - 1, theme::COLOR_SEPARATOR);
-        if (p->index != 3 && p->index != 1) { // panels 1 and 3 use tab buttons
+        if (p->index != 3 && p->index != 1) { // パネル 1 と 3 はタブのボタンを使う
             HGDIOBJ old = SelectObject(dc, fonts.hBold);
             SIZE size{};
             GetTextExtentPoint32W(dc, Tr(PANEL_NAMES[p->index]), static_cast<int>(wcslen(Tr(PANEL_NAMES[p->index]))), &size);
@@ -422,7 +443,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         }
 
         if (p->index == 0 && !p->collapsed) {
-            // Toolbar row and the Unity scene header row ("SampleScene").
+            // ツールバーの行と、Unity のシーンの見出しの行（"SampleScene"）
             RECT toolbar{0, header, r.right, header + 32};
             theme::Fill(dc, toolbar, theme::COLOR_TAB_ACTIVE);
             theme::Line(dc, 0, header + 31, r.right, header + 31, theme::COLOR_SEPARATOR);
@@ -449,7 +470,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
             theme::Fill(dc, toolbar, theme::COLOR_TAB_ACTIVE);
             theme::Line(dc, 0, header + 29, r.right, header + 29, theme::COLOR_SEPARATOR);
         } else if (p->index == 2 && !p->collapsed) {
-            // Unity: separator under the GameObject header and above "Add Component".
+            // Unity と同じ: GameObject の見出しの下と「Add Component」の上の区切り線
             theme::Line(dc, 0, e->nInspectorHeaderBottom - e->nInspectorScroll, r.right,
                         e->nInspectorHeaderBottom - e->nInspectorScroll, theme::COLOR_SEPARATOR);
             if (IsWindowVisible(e->componentAdd)) {
@@ -470,6 +491,9 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(hwnd, message, wp, lp);
 }
 
+//==================================================================================
+// --- シーンビューのプロシージャ（選択、ギズモ、カメラ） ---
+//==================================================================================
 LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     Editor* e = reinterpret_cast<Editor*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
@@ -479,9 +503,9 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
 
     if (!e) return DefWindowProcW(hwnd, message, wp, lp);
 
-    // Keys in the view are camera / tool shortcuts. Without this the dialog
-    // manager (IsDialogMessage in RunEditor) treats every fly key (WASDQE) and
-    // Alt+key as an unmatched mnemonic and beeps on each auto-repeat.
+    // ビューでのキーはカメラ / ツールのショートカット。これが無いと、ダイアログの
+    // 処理（RunEditor の IsDialogMessage）が移動のキー（WASDQE）や Alt + キーを
+    // 一致しないアクセスキーとみなし、キーリピートのたびにエラー音を鳴らす。
     if (message == WM_GETDLGCODE) return DLGC_WANTALLKEYS | DLGC_WANTCHARS;
     if (message == WM_CHAR || message == WM_SYSCHAR) return 0;
     if (e->bGameView) {
@@ -650,7 +674,7 @@ LRESULT CALLBACK ViewportProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
                         }
 
                         e->UpdateGroup(updated);
-                        e->RefreshTransformFields(); // full Inspect() per mouse move starved rendering
+                        e->RefreshTransformFields(); // マウスの移動ごとに Inspect() 全体を行うと描画が止まるため、表示だけ更新する
                         e->RequestRender();
                     }
                 }

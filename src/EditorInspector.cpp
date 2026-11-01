@@ -1,11 +1,24 @@
-// Hierarchy and Inspector: selection, tree rows, inspected values and Apply.
+//==================================================================================
+//
+// Hierarchy とインスペクターのソースファイル [EditorInspector.cpp]
+//
+// 選択、ツリーの行、インスペクターの値の表示と反映、コンポーネントの欄、
+// 数値欄のマウス操作、メッシュの選択と変換を扱う。
+//
+//==================================================================================
 
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "EditorWindow.h"
 
 #include <cwctype>
 
 namespace dxs::editor {
 
+//==================================================================================
+// --- Hierarchy の選択の表示をシーンに合わせる処理 ---
+//==================================================================================
 void Editor::SyncHierarchy() {
     SendMessageW(hierarchy, LB_SETSEL, FALSE, -1);
     for (size_t row = 0; row < vHierarchyRows.size(); ++row) {
@@ -19,6 +32,9 @@ void Editor::SyncHierarchy() {
     }
 }
 
+//==================================================================================
+// --- 選択の合成処理（Shift で追加、Ctrl で切り替え） ---
+//==================================================================================
 std::vector<int> Editor::MergeSelection(const std::vector<int>& hits) const {
     auto result = (bSelectionAdd || bSelectionToggle) ? vSelectionBeforeDrag : std::vector<int>{};
     for (int hit : hits) {
@@ -33,6 +49,9 @@ std::vector<int> Editor::MergeSelection(const std::vector<int>& hits) const {
     return result;
 }
 
+//==================================================================================
+// --- ドラッグの取り消し処理（Esc） ---
+//==================================================================================
 void Editor::RestoreDrag() {
     for (const auto& entry : vGizmoStartItems) {
         if (entry.first >= 0 && static_cast<size_t>(entry.first) < scene.vEntities.size()) {
@@ -43,6 +62,9 @@ void Editor::RestoreDrag() {
     Inspect();
 }
 
+//==================================================================================
+// --- ギズモの変化を選択中の物体すべてに適用する処理 ---
+//==================================================================================
 void Editor::UpdateGroup(const DrawItem& updated) {
     using namespace DirectX;
     const auto pivot = XMLoadFloat3(&gizmoStartItem.position);
@@ -87,6 +109,9 @@ void Editor::UpdateGroup(const DrawItem& updated) {
     }
 }
 
+//==================================================================================
+// --- 選択中の物体が見えるようにカメラを動かす処理（F キー） ---
+//==================================================================================
 void Editor::FrameSelection() {
     if (vSelectedIndices.empty()) return;
     DirectX::XMFLOAT3 min{FLT_MAX, FLT_MAX, FLT_MAX}, max{-FLT_MAX, -FLT_MAX, -FLT_MAX};
@@ -108,6 +133,9 @@ void Editor::FrameSelection() {
     SetStatus(L"Focused selection. W / E / R: Move / Rotate / Scale.");
 }
 
+//==================================================================================
+// --- Hierarchy の作り直し処理 ---
+//==================================================================================
 void Editor::Populate() {
     SendMessageW(hierarchy, LB_RESETCONTENT, 0, 0);
     vHierarchyRows.clear();
@@ -130,8 +158,8 @@ void Editor::Populate() {
         }
     }
 
-    // Depth-first tree rows. Collapsed parents hide their children unless
-    // a search is active (search always reveals matching descendants).
+    // 深さ優先でツリーの行を作る。折りたたんだ親の子は隠すが、
+    // 検索中は一致した子孫を必ず表示する。
     vCollapsedEntities.resize(scene.vEntities.size(), 0);
     vHierarchyDepths.clear();
     vHierarchyHasChildren.clear();
@@ -147,8 +175,8 @@ void Editor::Populate() {
             const auto& e = scene.vEntities[index];
             if (e.nParent != parent || !visible[index]) continue;
 
-            // The string keeps the old indented text so screen readers and
-            // LB_GETTEXT still describe the row; owner draw renders the tree.
+            // 文字列には以前の字下げ付きの文字を入れておく（画面の読み上げや
+            // LB_GETTEXT でも行が分かるように）。ツリーは自前の描画で描く。
             std::wstring name(static_cast<size_t>(depth) * 3, L' ');
             name += Wide(e.sName);
             SendMessageW(hierarchy, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
@@ -171,6 +199,9 @@ void Editor::Populate() {
     Inspect();
 }
 
+//==================================================================================
+// --- インスペクターの表示処理（選択中の物体の値を各欄に出す） ---
+//==================================================================================
 void Editor::Inspect() {
     bool valid = nSelected >= 0 && nSelected < static_cast<int>(scene.vEntities.size());
     const bool single = valid && vSelectedIndices.size() == 1;
@@ -256,12 +287,15 @@ void Editor::Inspect() {
     for (int i = 0; i < 13; ++i) {
         wchar_t buffer[64];
 
-        // Nine significant digits preserve a float when it is reapplied.
+        // 有効数字 9 桁なら、反映し直しても float の値が変わらない
         swprintf_s(buffer, L"%.9g", static_cast<double>(values[i]));
         SetWindowTextW(edits[i + 2], buffer);
     }
 }
 
+//==================================================================================
+// --- コンポーネントの欄の更新処理 ---
+//==================================================================================
 void Editor::RefreshComponentFields() {
     UpdateComponentViewValues();
     const int oldField = static_cast<int>(SendMessageW(componentFields, LB_GETCURSEL, 0, 0));
@@ -288,6 +322,9 @@ void Editor::RefreshComponentFields() {
     }
 }
 
+//==================================================================================
+// --- インスペクターの入力の反映処理 ---
+//==================================================================================
 bool Editor::Apply() {
     if (vSelectedIndices.size() != 1 || nSelected < 0 || nSelected >= static_cast<int>(scene.vEntities.size())) return true;
     std::string name = Utf8(Text(edits[0]));
@@ -377,7 +414,7 @@ bool Editor::Apply() {
     auto& d = entity.draw;
     d.position = {values[0], values[1], values[2]};
 
-    // Retain the original radians when an unchanged degree field is reapplied.
+    // 度の欄が変わっていなければ、元のラジアンの値をそのまま残す
     if (values[3] != DirectX::XMConvertToDegrees(d.rotation.x)) {
         d.rotation.x = DirectX::XMConvertToRadians(values[3]);
     }
@@ -397,10 +434,15 @@ bool Editor::Apply() {
     return true;
 }
 
-// ---- Unity-style component sections ------------------------------------------
-// Each attached component gets a titlebar (foldout, icon, title, ⋮) followed by
-// one property row per EditorField. The views are rebuilt only when the
-// selection or the attachment list changes; otherwise only values refresh.
+//**********************************************************************************
+// *** Unity 風のコンポーネントの欄 ***
+//**********************************************************************************
+// 付けているコンポーネントごとに、見出し（折りたたみ、アイコン、名前、⋮）と、
+// EditorField ごとに 1 行のプロパティを並べる。作り直すのは、選択または
+// 付けているコンポーネントが変わったときだけで、それ以外は値だけ更新する。
+//==================================================================================
+// --- コンポーネントの欄の作り直し処理 ---
+//==================================================================================
 void Editor::RebuildComponentViews() {
     const bool single = nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size() && vSelectedIndices.size() == 1;
     std::string signature;
@@ -410,7 +452,7 @@ void Editor::RebuildComponentViews() {
         for (size_t nIndex = 0; nIndex < selected.vComponents.size(); ++nIndex) {
             signature += "|" + selected.vComponents[nIndex];
 
-            // Rows depend on array sizes too.
+            // 行の数は配列のサイズにもよる
             if (IsComponentRegistered(selected.vComponents[nIndex])) {
                 for (const auto& info : ComponentFieldInfos(selected, nIndex)) {
                     signature += "," + info.sPath;
@@ -480,7 +522,7 @@ void Editor::RebuildComponentViews() {
         theme::SetButtonSpec(view.hHeader,
                              {theme::ButtonRole::HEADER, headerIcon, builtin ? theme::COLOR_TEXT : theme::COLOR_ICON_SCRIPT});
         if (!builtin) {
-            // Unity shows the MonoScript as a read-only object field.
+            // Unity と同じく、スクリプトを読み取り専用の欄で表示する
             view.hScriptLabel = make(L"STATIC", L"Script", SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, 0);
             view.hScriptValue = make(L"EDIT", Wide(view.sName), ES_AUTOHSCROLL | ES_READONLY, 0);
         }
@@ -494,7 +536,7 @@ void Editor::RebuildComponentViews() {
             for (const auto& info : ComponentFieldInfos(entity, nIndex)) {
                 const int nPartCount = info.type == EditorFieldType::Vector3 ? 3 : info.type == EditorFieldType::Vector2 ? 2 : 1;
                 if (nFieldId + nPartCount - 1 > ID_COMPONENT_FIELD_LAST) {
-                    view.bTruncated = true; // too many rows for the control id range
+                    view.bTruncated = true; // コントロール ID の範囲に収まらないほど行が多い
                     break;
                 }
 
@@ -509,7 +551,7 @@ void Editor::RebuildComponentViews() {
                 row.fMax = info.fMax;
                 const bool readOnly = info.bReadOnly;
                 if (info.bArrayHeader) {
-                    // Unity array foldout: "▼ Points".
+                    // Unity の配列の折りたたみ: 「▼ Points」
                     row.bHeader = true;
                     row.hLabel = make(L"BUTTON", Wide(info.sLabel), BS_OWNERDRAW, nFieldId++);
                     theme::SetButtonSpec(row.hLabel, {theme::ButtonRole::FOLDOUT, theme::Icon::NONE});
@@ -538,8 +580,8 @@ void Editor::RebuildComponentViews() {
                     row.hValue = make(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, nFieldId++);
                     theme::SetButtonSpec(row.hValue, {theme::ButtonRole::CHECKBOX, theme::Icon::NONE});
                 } else if (row.bEnum) {
-                    // Drop-down of the enum value names.
-                    // Owner-drawn so it matches the dark input fields (DrawEnumItem).
+                    // 列挙型の値の名前のドロップダウン
+                    // ダークの入力欄と揃えるため、自前で描く（DrawEnumItem）
                     row.hValue =
                         make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP,
                              nFieldId++);
@@ -556,7 +598,7 @@ void Editor::RebuildComponentViews() {
                     SendMessageW(row.hValue, CB_SETCURSEL, found == info.vEnumNames.end() ? -1 : found - info.vEnumNames.begin(),
                                  0);
                 } else if (nPartCount > 1) {
-                    // Vector2 / Vector3: X Y Z on one row (like Transform).
+                    // Vector2 / Vector3: X Y Z を 1 行に並べる（Transform と同じ）
                     const auto vValues = SplitVectorText(info.sValue, nPartCount);
                     const wchar_t* aAxis[] = {L"X", L"Y", L"Z"};
                     for (int nPart = 0; nPart < nPartCount; ++nPart) {
@@ -569,7 +611,7 @@ void Editor::RebuildComponentViews() {
                 } else if (row.bNumeric) {
                     row.hValue = numericEdit(Wide(DisplayValue(row, info.sValue)), nFieldId++);
                     if (info.bRange) {
-                        // Unity [Range]: slider + value box.
+                        // Unity の [Range]: スライダー + 値の欄
                         row.hSlider = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | TBS_BOTH | WS_TABSTOP, 0);
                         theme::ApplyDarkControl(row.hSlider);
                         SetWindowSubclass(row.hSlider, WheelToPanelSubclassProc, 1, 0);
@@ -598,6 +640,9 @@ void Editor::RebuildComponentViews() {
     LayoutPanel(2);
 }
 
+//==================================================================================
+// --- コンポーネントの欄の値の更新処理 ---
+//==================================================================================
 void Editor::UpdateComponentViewValues() {
     if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
     auto& entity = scene.vEntities[nSelected];
@@ -605,7 +650,7 @@ void Editor::UpdateComponentViewValues() {
         if (view.nComponentIndex >= entity.vComponents.size() || !IsComponentRegistered(view.sName)) continue;
         const auto vInfos = ComponentFieldInfos(entity, view.nComponentIndex);
 
-        // A script resized an array (Play Mode): rebuild the rows once idle.
+        // スクリプトが配列のサイズを変えた（Play 中）: 落ち着いてから行を作り直す
         size_t nRows = 0;
         for (const auto& row : view.vRows) {
             nRows += row.sField.empty() ? 0 : 1;
@@ -661,6 +706,9 @@ void Editor::UpdateComponentViewValues() {
     }
 }
 
+//==================================================================================
+// --- コントロール ID からプロパティの行を探す処理 ---
+//==================================================================================
 InspectorFieldRow* Editor::FindFieldRow(int controlId, InspectorComponentView** ppView) {
     auto matches = [controlId](HWND control) {
         return control && GetDlgCtrlID(control) == controlId;
@@ -685,6 +733,9 @@ InspectorFieldRow* Editor::FindFieldRow(int controlId, InspectorComponentView** 
     return nullptr;
 }
 
+//==================================================================================
+// --- コンポーネントのプロパティの入力欄かの判定処理 ---
+//==================================================================================
 bool Editor::IsComponentFieldEdit(HWND control) const {
     if (!control) return false;
     for (const auto& view : vComponentViews) {
@@ -698,8 +749,11 @@ bool Editor::IsComponentFieldEdit(HWND control) const {
     return false;
 }
 
-// Applies an edited property (Enter / focus loss / drop-down / slider) or a
-// toggled check box; an array header toggles its foldout.
+//==================================================================================
+// --- プロパティの反映処理 ---
+//==================================================================================
+// 編集したプロパティ（Enter / フォーカスが外れた / ドロップダウン / スライダー）または
+// 切り替えたチェックボックスを反映する。配列の見出しなら折りたたみを切り替える。
 void Editor::CommitComponentField(int controlId, bool bToggle) {
     InspectorComponentView* pView = nullptr;
     InspectorFieldRow* pRow = FindFieldRow(controlId, &pView);
@@ -742,7 +796,7 @@ void Editor::CommitComponentField(int controlId, bool bToggle) {
         SetStatus(L"Component value applied. Values stay live during Play Mode.");
     }
 
-    // A new array size adds / removes rows: rebuild after this notification returns.
+    // 配列のサイズが変わると行が増減するので、この通知が終わってから作り直す
     if (bStructural) {
         RequestInspectorRebuild();
         return;
@@ -752,6 +806,9 @@ void Editor::CommitComponentField(int controlId, bool bToggle) {
     RefreshComponentFields();
 }
 
+//==================================================================================
+// --- インスペクターの作り直しの予約 / 実行処理 ---
+//==================================================================================
 void Editor::RequestInspectorRebuild() {
     if (bInspectorRebuildPosted) return;
     bInspectorRebuildPosted = true;
@@ -765,6 +822,9 @@ void Editor::RebuildInspectorNow() {
     RefreshComponentFields();
 }
 
+//==================================================================================
+// --- スライダーの段階数 / 位置の設定処理 ---
+//==================================================================================
 int Editor::SliderSteps(const InspectorFieldRow& row) const {
     if (row.bInteger) return std::clamp(static_cast<int>(std::lround(row.fMax - row.fMin)), 1, 10000);
     return 1000;
@@ -787,7 +847,10 @@ void Editor::SetSliderFromValue(const InspectorFieldRow& row, const std::string&
     }
 }
 
-// Slider moved (WM_HSCROLL): write the value box and apply it live.
+//==================================================================================
+// --- スライダーの操作の処理 ---
+//==================================================================================
+// スライダーが動いた（WM_HSCROLL）: 値の欄に書き、その場で反映する
 void Editor::OnInspectorSlider(HWND hSlider) {
     for (auto& view : vComponentViews) {
         for (auto& row : view.vRows) {
@@ -810,9 +873,12 @@ void Editor::OnInspectorSlider(HWND hSlider) {
     }
 }
 
-// Sliders and drop-downs would change their value under the mouse wheel while
-// the Inspector is being scrolled; unless focused they pass it to the panel.
-// dwRefData: 1 for a combo box (its open list keeps the wheel).
+//==================================================================================
+// --- ホイールをパネルへ回すサブクラスプロシージャ ---
+//==================================================================================
+// スライダーとドロップダウンは、インスペクターをスクロールしている間にホイールで
+// 値が変わってしまうため、フォーカスが無ければホイールをパネルに渡す。
+// dwRefData: コンボボックスなら 1（開いたリストではホイールを使う）
 LRESULT CALLBACK WheelToPanelSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR uId, DWORD_PTR bComboBox) {
     if (message == WM_MOUSEWHEEL && GetFocus() != hwnd && !(bComboBox && SendMessageW(hwnd, CB_GETDROPPEDSTATE, 0, 0))) {
         return SendMessageW(GetParent(hwnd), WM_MOUSEWHEEL, wp, lp);
@@ -825,7 +891,10 @@ LRESULT CALLBACK WheelToPanelSubclassProc(HWND hwnd, UINT message, WPARAM wp, LP
     return DefSubclassProc(hwnd, message, wp, lp);
 }
 
-// Floats are stored with full precision ("0.800000012"); show them short ("0.8").
+//==================================================================================
+// --- 入力欄に表示する文字列の作成処理 ---
+//==================================================================================
+// float は全桁で保存される（"0.800000012"）ので、短く表示する（"0.8"）
 std::string DisplayValue(const InspectorFieldRow& row, const std::string& sValue) {
     if (row.type != EditorFieldType::Float) return sValue;
     try {
@@ -838,7 +907,10 @@ std::string DisplayValue(const InspectorFieldRow& row, const std::string& sValue
     }
 }
 
-// Enum drop-down (CBS_OWNERDRAWFIXED): dark field with a chevron, dark list.
+//==================================================================================
+// --- 列挙型のドロップダウンの描画処理 ---
+//==================================================================================
+// 列挙型のドロップダウン（CBS_OWNERDRAWFIXED）: ∨ 付きのダークの欄とダークのリスト
 void Editor::DrawEnumItem(const DRAWITEMSTRUCT& item) {
     const bool bField = (item.itemState & ODS_COMBOBOXEDIT) != 0;
     const bool bHighlighted = (item.itemState & ODS_SELECTED) != 0 && !bField;
@@ -854,7 +926,7 @@ void Editor::DrawEnumItem(const DRAWITEMSTRUCT& item) {
         }
     }
 
-    RECT textRect{rect.left + 4, rect.top, rect.right - 4, rect.bottom}; // the control draws its own arrow button
+    RECT textRect{rect.left + 4, rect.top, rect.right - 4, rect.bottom}; // 矢印のボタンはコントロール自身が描く
     const bool bDisabled = (item.itemState & ODS_DISABLED) != 0;
     theme::DrawLabel(item.hDC, sText, textRect,
                      bDisabled      ? theme::COLOR_TEXT_DISABLED
@@ -863,7 +935,10 @@ void Editor::DrawEnumItem(const DRAWITEMSTRUCT& item) {
                      theme::GetFonts().hRegular, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 }
 
-// "1,2,3" -> {"1","2","3"} (missing parts are empty).
+//==================================================================================
+// --- ベクトルの文字列の分割処理 ---
+//==================================================================================
+// "1,2,3" → {"1","2","3"}（足りない成分は空）
 std::vector<std::string> SplitVectorText(const std::string& sValue, int nCount) {
     std::vector<std::string> vParts;
     std::string sPart;
@@ -879,7 +954,7 @@ std::vector<std::string> SplitVectorText(const std::string& sValue, int nCount) 
     vParts.push_back(sPart);
     vParts.resize(static_cast<size_t>(std::max(nCount, 1)));
     for (auto& part : vParts) {
-        // Shorter display: 0.100000001 -> 0.1
+        // 短く表示する: 0.100000001 → 0.1
         try {
             size_t nUsed = 0;
             const float fValue = std::stof(part, &nUsed);
@@ -893,8 +968,11 @@ std::vector<std::string> SplitVectorText(const std::string& sValue, int nCount) 
     return vParts;
 }
 
-// Routes the titlebar's ⋮ / right-click to the legacy component menu by
-// selecting the matching row of the (hidden) component list first.
+//==================================================================================
+// --- コンポーネントの見出しからメニューの対象を選ぶ処理 ---
+//==================================================================================
+// 見出しの ⋮ / 右クリックを以前のコンポーネントのメニューに回す。
+// 先に（隠れた）コンポーネントの一覧の対応する行を選んでおく。
 bool Editor::SelectComponentForWindow(HWND control) {
     if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return false;
     const int offset = scene.vEntities[nSelected].renderer == Entity::RendererKind::None ? 0 : 1;
@@ -914,7 +992,10 @@ bool Editor::SelectComponentForWindow(HWND control) {
     return false;
 }
 
-// True when the cursor is over the ⋮ area at the right end of a titlebar.
+//==================================================================================
+// --- 見出しのメニューのボタンの上かの判定処理 ---
+//==================================================================================
+// カーソルが見出しの右端の ⋮ の上にあれば true
 bool Editor::IsOverTitlebarMenu(HWND header) const {
     POINT cursor{};
     GetCursorPos(&cursor);
@@ -923,11 +1004,14 @@ bool Editor::IsOverTitlebarMenu(HWND header) const {
     return PtInRect(&rect, cursor) && cursor.x >= rect.right - MulDiv(26, static_cast<int>(GetDpiForWindow(header)), 96);
 }
 
+//==================================================================================
+// --- 見出しのメニューの表示処理 ---
+//==================================================================================
 void Editor::ShowTitlebarMenu(HWND header) {
     RECT rect{};
     GetWindowRect(header, &rect);
     if (header == groupLabels[0]) {
-        // Transform: Unity's "Reset".
+        // Transform: Unity の「Reset」
         HMENU menu = CreatePopupMenu();
         AppendMenuL(menu, MF_STRING | (vSelectedIndices.size() == 1 ? 0 : MF_GRAYED), 1, L"Reset");
         const int choice =
@@ -950,7 +1034,10 @@ void Editor::ShowTitlebarMenu(HWND header) {
     }
 }
 
-// Unity's "Add Component" button opens a categorised list of components.
+//==================================================================================
+// --- Add Component のメニューの表示処理 ---
+//==================================================================================
+// Unity の「Add Component」ボタンは、分類したコンポーネントの一覧を開く
 void Editor::ShowAddComponentMenu() {
     RECT rect{};
     GetWindowRect(componentAdd, &rect);
@@ -989,9 +1076,12 @@ void Editor::ShowAddComponentMenu() {
     DestroyMenu(menu);
     if (choice <= 0) return;
     SendMessageW(componentChoice, CB_SETCURSEL, choice - 1, 0);
-    Command(ID_ADD_COMPONENT, BN_CLICKED); // existing attach logic
+    Command(ID_ADD_COMPONENT, BN_CLICKED); // 既存の追加の処理を使う
 }
 
+//==================================================================================
+// --- 基本図形のファイルの用意処理 ---
+//==================================================================================
 void Editor::EnsureProjectPrimitives() {
     std::string error;
     if (!EnsurePrimitiveAssets(projectRoot, error)) {
@@ -999,6 +1089,9 @@ void Editor::EnsureProjectPrimitives() {
     }
 }
 
+//==================================================================================
+// --- 基本図形のメニューの追加処理 ---
+//==================================================================================
 void Editor::AppendPrimitiveMenus(HMENU menu) {
     HMENU objects3D = CreatePopupMenu(), objects2D = CreatePopupMenu();
     for (size_t nIndex = 0; nIndex < PRIMITIVES.size(); ++nIndex) {
@@ -1012,6 +1105,9 @@ void Editor::AppendPrimitiveMenus(HMENU menu) {
     AppendMenuL(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(objects2D), L"2D Object");
 }
 
+//==================================================================================
+// --- 基本図形の物体の追加処理 ---
+//==================================================================================
 void Editor::AddPrimitive(PrimitiveShape shape) {
     if (!Apply()) return;
     EnsureProjectPrimitives();
@@ -1026,7 +1122,7 @@ void Editor::AddPrimitive(PrimitiveShape shape) {
     entity.sModelAsset = PrimitiveAssetPath(shape);
     for (const auto& info : PRIMITIVES) {
         if (info.shape == shape) {
-            entity.draw.bIs2D = info.bFlat; // quad stand-in for players without mesh support
+            entity.draw.bIs2D = info.bFlat; // メッシュに対応していないプレイヤー向けの四角形の代わり
         }
     }
 
@@ -1038,7 +1134,10 @@ void Editor::AddPrimitive(PrimitiveShape shape) {
     SetStatus(L"Object added with a MeshRenderer. Save the scene to keep it.");
 }
 
-// Unity object picker for the Mesh field: built-in primitives or any X / FBX.
+//==================================================================================
+// --- Mesh 欄の選択メニューの表示処理 ---
+//==================================================================================
+// Unity 風の Mesh 欄の選択: 組み込みの基本図形、または任意の X / FBX
 void Editor::ShowMeshPicker() {
     if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size() || vSelectedIndices.size() != 1) return;
     constexpr int BROWSE = 1000;
@@ -1074,7 +1173,7 @@ void Editor::ShowMeshPicker() {
             std::filesystem::weakly_canonical(source, ec).lexically_relative(std::filesystem::weakly_canonical(projectRoot, ec));
         std::filesystem::path relative;
         if (!inside.empty() && *inside.begin() != L"..") {
-            relative = inside; // already a project file: reference it in place
+            relative = inside; // 既にプロジェクトのファイルなら、その場所をそのまま参照する
         } else {
             std::wstring importError;
             if (!ImportProjectFile(projectRoot, folder, source, importError)) {
@@ -1196,18 +1295,24 @@ void Editor::ConvertFbxAsset(const std::filesystem::path& fbxFile, bool bAssign)
     SetStatus(L"Converted to an X file. Save the scene to keep it.");
 }
 
+//==================================================================================
+// --- 反映のエラーの通知処理 ---
+//==================================================================================
 void Editor::ReportApplyError(const std::string& message) {
     if (!bQuietApply) {
         Error(window, message);
         return;
     }
 
-    // Focus-loss apply: no modal box (it would steal focus again); the field
-    // is restored from the scene by the caller.
+    // フォーカスが外れたときの反映: メッセージボックスは出さない（またフォーカスを奪うため）。
+    // 欄は呼び出し側がシーンの値に戻す。
     Debug::LogWarning(message);
     SetStatus(Wide(message).c_str());
 }
 
+//==================================================================================
+// --- インスペクターの入力欄かの判定処理 ---
+//==================================================================================
 bool Editor::IsInspectorEdit(HWND control) const {
     if (!control) return false;
     if (control == materialEdit || control == textureEdit || control == meshEdit) return true;
@@ -1218,6 +1323,9 @@ bool Editor::IsInspectorEdit(HWND control) const {
     return false;
 }
 
+//==================================================================================
+// --- 未反映の入力があるかの判定処理 ---
+//==================================================================================
 bool Editor::InspectorHasPendingEdits() const {
     for (HWND control : {materialEdit, textureEdit, meshEdit}) {
         if (control && SendMessageW(control, EM_GETMODIFY, 0, 0)) return true;
@@ -1230,13 +1338,16 @@ bool Editor::InspectorHasPendingEdits() const {
     return false;
 }
 
+//==================================================================================
+// --- フォーカスが外れたときの反映処理 ---
+//==================================================================================
 void Editor::ApplyOnFocusLoss(HWND control) {
     if (bQuietApply || vSelectedIndices.size() != 1 || !SendMessageW(control, EM_GETMODIFY, 0, 0)) return;
     bQuietApply = true;
     const bool bApplied = Apply();
     bQuietApply = false;
     if (!bApplied) {
-        Inspect(); // invalid input: show the values the object really has
+        Inspect(); // 入力が正しくない: 物体の実際の値を表示し直す
     }
 }
 
@@ -1244,6 +1355,9 @@ void Editor::ApplyOnFocusLoss(HWND control) {
 
 namespace dxs::editor {
 
+//==================================================================================
+// --- 描画の要求処理（ドラッグ中は直接描く） ---
+//==================================================================================
 void Editor::RequestRender() {
     const ULONGLONG nNow = GetTickCount64();
     if (nNow - nLastRenderTick >= 15) {
@@ -1251,6 +1365,9 @@ void Editor::RequestRender() {
     }
 }
 
+//==================================================================================
+// --- Transform / Color の値の設定処理 ---
+//==================================================================================
 bool Editor::SetFieldValue(int field, float fValue) {
     if (field < 2 || field > 14 || vSelectedIndices.size() != 1 || nSelected < 0 ||
         static_cast<size_t>(nSelected) >= scene.vEntities.size() || !std::isfinite(fValue)) {
@@ -1261,14 +1378,17 @@ bool Editor::SetFieldValue(int field, float fValue) {
     float* apTargets[] = {&d.position.x, &d.position.y, &d.position.z, &d.rotation.x, &d.rotation.y, &d.rotation.z, &d.scale.x,
                           &d.scale.y,    &d.scale.z,    &d.color.x,    &d.color.y,    &d.color.z,    &d.color.w};
 
-    // Rotation fields show degrees; the scene stores radians.
+    // 回転の欄は度で表示し、シーンにはラジアンで保存する
     *apTargets[field - 2] = field >= 5 && field <= 7 ? DirectX::XMConvertToRadians(fValue) : fValue;
     return true;
 }
 
+//==================================================================================
+// --- 入力中の欄のその場での反映処理 ---
+//==================================================================================
 void Editor::ApplyFieldLive(int field) {
-    // Only the field the user is typing in; programmatic SetWindowText of
-    // other fields also sends EN_CHANGE and must not write back.
+    // ユーザーが入力している欄だけを反映する。プログラムからの SetWindowText でも
+    // EN_CHANGE が届くが、その場合は書き戻さない。
     if (field < 2 || field > 14 || GetFocus() != edits[field]) return;
     const std::wstring sText = Text(edits[field]);
     if (sText.empty()) return;
@@ -1278,12 +1398,15 @@ void Editor::ApplyFieldLive(int field) {
         ++pEnd;
     }
 
-    if (!pEnd || *pEnd || pEnd == sText.c_str()) return; // incomplete input such as "-" or "1e"
+    if (!pEnd || *pEnd || pEnd == sText.c_str()) return; // "-" や "1e" のような入力途中の値
     if (SetFieldValue(field, fValue)) {
         RequestRender();
     }
 }
 
+//==================================================================================
+// --- Transform / Color の表示の更新処理 ---
+//==================================================================================
 void Editor::RefreshTransformFields() {
     if (vSelectedIndices.size() != 1 || nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
     const auto& d = scene.vEntities[nSelected].draw;
@@ -1315,23 +1438,26 @@ void Editor::RefreshTransformFields() {
 
 namespace dxs::editor {
 
+//==================================================================================
+// --- 数値欄のマウス操作の変化量の取得処理 ---
+//==================================================================================
 float Editor::FieldScrubStep(UINT_PTR fieldId, bool bWheel) const {
-    float fStep = 0.01f; // position / scale per pixel
+    float fStep = 0.01f; // 位置 / 拡大率（1 ピクセルあたり）
     if (fieldId >= 5 && fieldId <= 7) {
-        fStep = 0.5f; // rotation (degrees)
+        fStep = 0.5f; // 回転（度）
     } else if (fieldId >= 11 && fieldId <= 14) {
-        fStep = 0.005f; // colour
+        fStep = 0.005f; // 色
     } else if (fieldId >= FIELD_SCRUB_COMPONENT) {
         const InspectorFieldRow* pRow =
             const_cast<Editor*>(this)->FindFieldRow(static_cast<int>(fieldId - FIELD_SCRUB_COMPONENT), nullptr);
-        fStep = pRow && pRow->bInteger ? 0.1f : 0.01f; // ints: 1 per 10 pixels
+        fStep = pRow && pRow->bInteger ? 0.1f : 0.01f; // 整数: 10 ピクセルで 1
         if (pRow && pRow->hSlider && !pRow->bInteger) {
-            fStep = std::max((pRow->fMax - pRow->fMin) / 200.0f, 1e-4f); // range: 200 px
+            fStep = std::max((pRow->fMax - pRow->fMin) / 200.0f, 1e-4f); // 範囲付き: 200 ピクセルで端から端まで
         }
     }
 
     if (bWheel) {
-        fStep *= 10.0f; // one notch = 10 pixels
+        fStep *= 10.0f; // ホイール 1 段 = 10 ピクセル分
     }
 
     if (GetKeyState(VK_SHIFT) & 0x8000) {
@@ -1345,6 +1471,9 @@ float Editor::FieldScrubStep(UINT_PTR fieldId, bool bWheel) const {
     return fStep;
 }
 
+//==================================================================================
+// --- マウス操作で変えた値の設定処理 ---
+//==================================================================================
 void Editor::SetScrubbedValue(UINT_PTR fieldId, HWND hEdit, float fValue) {
     wchar_t aBuffer[64];
     if (fieldId >= FIELD_SCRUB_COMPONENT) {
@@ -1366,16 +1495,19 @@ void Editor::SetScrubbedValue(UINT_PTR fieldId, HWND hEdit, float fValue) {
 
         swprintf_s(aBuffer, L"%.6g", static_cast<double>(fValue));
         SetWindowTextW(hEdit, aBuffer);
-        SendMessageW(hEdit, EM_SETMODIFY, FALSE, 0); // applied directly below
+        SendMessageW(hEdit, EM_SETMODIFY, FALSE, 0); // 下で直接反映する（変更済みの印を消す）
         SetFieldValue(field, fValue);
     }
 
     RequestRender();
 }
 
+//==================================================================================
+// --- 数値欄のサブクラスプロシージャ（ドラッグ / ホイール / クリックで入力） ---
+//==================================================================================
 LRESULT CALLBACK NumericFieldSubclassProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp, UINT_PTR fieldId, DWORD_PTR data) {
     auto* e = reinterpret_cast<Editor*>(data);
-    const bool bEditing = GetFocus() == hwnd; // typing mode: normal edit behaviour
+    const bool bEditing = GetFocus() == hwnd; // 入力中: 通常の入力欄として動く
     auto currentValue = [&](float& fValue) {
         const std::wstring sText = Text(hwnd);
         wchar_t* pEnd = nullptr;
@@ -1415,7 +1547,7 @@ LRESULT CALLBACK NumericFieldSubclassProc(HWND hwnd, UINT message, WPARAM wp, LP
             e->bFieldPressed = e->bFieldScrubbing = false;
             ReleaseCapture();
             if (!bWasScrubbing) {
-                // Plain click: start typing with the whole value selected.
+                // ドラッグしないクリック: 値全体を選択した状態で入力を始める
                 SetFocus(hwnd);
                 SendMessageW(hwnd, EM_SETSEL, 0, -1);
             }
@@ -1433,8 +1565,8 @@ LRESULT CALLBACK NumericFieldSubclassProc(HWND hwnd, UINT message, WPARAM wp, LP
     case WM_MOUSEWHEEL: {
         float fValue = 0.0f;
 
-        // Only a field in typing mode takes the wheel, so scrolling the
-        // Inspector never changes values by accident.
+        // ホイールを使うのは入力中の欄だけにし、インスペクターを
+        // スクロールしたときに誤って値が変わらないようにする。
         if (!bEditing || !IsWindowEnabled(hwnd) || !currentValue(fValue)) break;
         const float fNotches = static_cast<float>(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA;
         e->SetScrubbedValue(fieldId, hwnd, fValue + fNotches * e->FieldScrubStep(fieldId, true));
