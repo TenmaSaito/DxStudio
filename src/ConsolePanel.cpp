@@ -1,3 +1,12 @@
+//==================================================================================
+//
+// Console パネルのソースファイル [ConsolePanel.cpp]
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "ConsolePanel.h"
 #include "Core/Log.h"
 #include "EditorLocale.h"
@@ -12,13 +21,18 @@
 
 namespace dxs {
 namespace {
-constexpr wchar_t CONSOLE_WINDOW_CLASS[] = L"DxStudioConsolePanel";
-constexpr UINT WM_APP_LOG_CHANGED = WM_APP + 41;
+//**********************************************************************************
+// *** 定数宣言 ***
+//**********************************************************************************
+constexpr wchar_t CONSOLE_WINDOW_CLASS[] = L"DxStudioConsolePanel"; // ウィンドウクラス名
+constexpr UINT WM_APP_LOG_CHANGED = WM_APP + 41;                    // ログが増えた / 消えたときの通知
+// コントロールの ID（ログの一覧、Clear、Collapse、種類ごとの絞り込み）
 constexpr int ID_CONSOLE_LIST = 7201, ID_CONSOLE_CLEAR = 7202, ID_CONSOLE_COLLAPSE = 7203;
 constexpr int ID_CONSOLE_INFO = 7204, ID_CONSOLE_WARNING = 7205, ID_CONSOLE_ERROR = 7206;
-constexpr int TOOLBAR_HEIGHT = 28;
-constexpr int ROW_HEIGHT = 22;
+constexpr int TOOLBAR_HEIGHT = 28; // 上のツールバーの高さ
+constexpr int ROW_HEIGHT = 22;     // ログ 1 行の高さ
 
+// --- UTF-8 → UTF-16 の変換処理 ---
 std::wstring Wide(const std::string& sValue) {
     if (sValue.empty()) return {};
     const int nLength = MultiByteToWideChar(CP_UTF8, 0, sValue.data(), static_cast<int>(sValue.size()), nullptr, 0);
@@ -27,25 +41,34 @@ std::wstring Wide(const std::string& sValue) {
     return sResult;
 }
 
+//**********************************************************************************
+// *** 一覧の 1 行（Collapse 中は同じログをまとめる） ***
+//**********************************************************************************
 struct ConsoleRow {
-    LogEntry entry;
-    int nCount = 1; // > 1 when collapsed
+    LogEntry entry; // ログ
+    int nCount = 1; // まとめた件数（Collapse 中は 1 より大きくなる）
 };
 
+//**********************************************************************************
+// *** Console パネルクラス ***
+//**********************************************************************************
 class ConsolePanel {
 public:
-    HWND m_hWindow = nullptr;
-    HWND m_hList = nullptr;
-    HWND m_hClear = nullptr, m_hCollapse = nullptr;
-    HWND m_hFilters[3]{};
+    HWND m_hWindow = nullptr;                       // パネルのウィンドウ
+    HWND m_hList = nullptr;                         // ログの一覧
+    HWND m_hClear = nullptr, m_hCollapse = nullptr; // Clear / Collapse のボタン
+    HWND m_hFilters[3]{};                           // 種類（情報 / 警告 / エラー）ごとの絞り込みのボタン
     HINSTANCE m_hInstance = nullptr;
-    bool m_bCollapse = false;
-    bool m_bShow[3] = {true, true, true};
-    std::uint64_t m_nClearedBefore = 0; // entries up to this sequence were cleared
-    std::vector<ConsoleRow> m_vRows;
-    int m_aCounts[3]{};
-    ScopedDelegateHandle m_logSubscription;
+    bool m_bCollapse = false;                       // 同じログをまとめるか
+    bool m_bShow[3] = {true, true, true};           // 種類ごとに表示するか
+    std::uint64_t m_nClearedBefore = 0; // この通し番号までのログは消去済み
+    std::vector<ConsoleRow> m_vRows;        // 表示中の行
+    int m_aCounts[3]{};                     // 種類ごとの件数
+    ScopedDelegateHandle m_logSubscription; // ログの通知の登録（パネルの破棄で解除）
 
+    //==============================================================================
+    // --- 子コントロールの作成処理 ---
+    //==============================================================================
     HWND Make(const wchar_t* pClass, const wchar_t* pText, DWORD dwStyle, int nId) {
         HWND hControl =
             CreateWindowExW(0, pClass, editor::LocalizedControlText(pClass, pText), WS_CHILD | WS_VISIBLE | dwStyle, 0, 0, 1, 1,
@@ -54,6 +77,9 @@ public:
         return hControl;
     }
 
+    //==============================================================================
+    // --- パネルの中身の作成処理 ---
+    //==============================================================================
     void Create() {
         m_hClear = Make(L"BUTTON", L"Clear", BS_OWNERDRAW, ID_CONSOLE_CLEAR);
         m_hCollapse = Make(L"BUTTON", L"Collapse", BS_OWNERDRAW, ID_CONSOLE_COLLAPSE);
@@ -77,8 +103,8 @@ public:
         SendMessageW(m_hList, LB_SETITEMHEIGHT, 0, ROW_HEIGHT);
         theme::ApplyDarkControl(m_hList);
 
-        // The log can be written from any thread: the handler only posts a
-        // message and the UI thread re-reads Debug::History().
+        // ログはどのスレッドからも書かれるため、通知ではメッセージを送るだけにし、
+        // UI スレッドで Debug::History() を読み直す。
         HWND hWindow = m_hWindow;
         m_logSubscription = ScopedDelegateHandle(Debug::OnLog(), Debug::OnLog().AddLambda([hWindow](const LogEntry&) {
             PostMessageW(hWindow, WM_APP_LOG_CHANGED, 0, 0);
@@ -86,6 +112,9 @@ public:
         Rebuild();
     }
 
+    //==============================================================================
+    // --- 一覧の作り直し処理（絞り込み / Collapse を適用） ---
+    //==============================================================================
     void Rebuild() {
         m_vRows.clear();
         std::fill(std::begin(m_aCounts), std::end(m_aCounts), 0);
@@ -126,6 +155,9 @@ public:
         }
     }
 
+    //==============================================================================
+    // --- 一番下までスクロールしているか（新しいログで自動スクロールするため） ---
+    //==============================================================================
     bool IsScrolledToBottom() const {
         const int nCount = static_cast<int>(SendMessageW(m_hList, LB_GETCOUNT, 0, 0));
         if (nCount <= 0) return true;
@@ -135,12 +167,18 @@ public:
         return static_cast<int>(SendMessageW(m_hList, LB_GETTOPINDEX, 0, 0)) + nVisible >= nCount - 1;
     }
 
+    //==============================================================================
+    // --- ログの消去処理 ---
+    //==============================================================================
     void Clear() {
         const auto vHistory = Debug::History();
         m_nClearedBefore = vHistory.empty() ? m_nClearedBefore : vHistory.back().nSequence;
         Rebuild();
     }
 
+    //==============================================================================
+    // --- 配置処理 ---
+    //==============================================================================
     void Layout() {
         RECT client{};
         GetClientRect(m_hWindow, &client);
@@ -156,6 +194,9 @@ public:
         MoveWindow(m_hList, 0, TOOLBAR_HEIGHT, nWidth, std::max(1, nHeight - TOOLBAR_HEIGHT), TRUE);
     }
 
+    //==============================================================================
+    // --- 1 行の描画処理（アイコン、メッセージ、まとめた件数） ---
+    //==============================================================================
     void DrawRow(const DRAWITEMSTRUCT& item) {
         HDC hDc = item.hDC;
         RECT rect = item.rcItem;
@@ -197,6 +238,9 @@ public:
         }
     }
 
+    //==============================================================================
+    // --- 選択中のログのコピー処理（Ctrl + C） ---
+    //==============================================================================
     void CopySelection() {
         const int nIndex = static_cast<int>(SendMessageW(m_hList, LB_GETCURSEL, 0, 0));
         if (nIndex < 0 || static_cast<size_t>(nIndex) >= m_vRows.size() || !OpenClipboard(m_hWindow)) return;
@@ -214,6 +258,9 @@ public:
     }
 };
 
+//==================================================================================
+// --- ウィンドウプロシージャ ---
+//==================================================================================
 LRESULT CALLBACK ConsoleWindowProc(HWND hWindow, UINT uMessage, WPARAM wParam, LPARAM lParam) {
     auto* pPanel = reinterpret_cast<ConsolePanel*>(GetWindowLongPtrW(hWindow, GWLP_USERDATA));
     if (uMessage == WM_NCCREATE) {
@@ -230,7 +277,7 @@ LRESULT CALLBACK ConsoleWindowProc(HWND hWindow, UINT uMessage, WPARAM wParam, L
         return 0;
     case WM_SIZE: pPanel->Layout(); return 0;
     case WM_APP_LOG_CHANGED: {
-        // Coalesce bursts of log messages into one rebuild.
+        // 短い間に続いたログは、まとめて 1 回で作り直す
         MSG pending{};
         while (PeekMessageW(&pending, hWindow, WM_APP_LOG_CHANGED, WM_APP_LOG_CHANGED, PM_REMOVE)) {
         }
@@ -318,6 +365,9 @@ LRESULT CALLBACK ConsoleWindowProc(HWND hWindow, UINT uMessage, WPARAM wParam, L
 }
 } // namespace
 
+//==================================================================================
+// --- Console パネルの作成処理 ---
+//==================================================================================
 HWND CreateConsolePanel(HWND hParent, HINSTANCE hInstance) {
     WNDCLASSEXW windowClass{sizeof(windowClass)};
     windowClass.lpfnWndProc = ConsoleWindowProc;
@@ -336,6 +386,9 @@ HWND CreateConsolePanel(HWND hParent, HINSTANCE hInstance) {
     return hWindow;
 }
 
+//==================================================================================
+// --- Console パネルの消去処理 ---
+//==================================================================================
 void ClearConsolePanel(HWND hPanel) {
     if (auto* pPanel = reinterpret_cast<ConsolePanel*>(GetWindowLongPtrW(hPanel, GWLP_USERDATA))) {
         pPanel->Clear();

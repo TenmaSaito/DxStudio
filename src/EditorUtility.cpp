@@ -1,3 +1,12 @@
+//==================================================================================
+//
+// エディターの補助関数のソースファイル [EditorUtility.cpp]
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "EditorUtility.h"
 #include "EditorLocale.h"
 #include "Core/Log.h"
@@ -11,6 +20,9 @@
 
 namespace dxs::editor {
 
+//==================================================================================
+// --- UTF-8 → UTF-16 の変換処理 ---
+//==================================================================================
 std::wstring Wide(const std::string& value) {
     if (value.empty()) return {};
     int n = MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0);
@@ -20,6 +32,9 @@ std::wstring Wide(const std::string& value) {
     return result;
 }
 
+//==================================================================================
+// --- UTF-16 → UTF-8 の変換処理 ---
+//==================================================================================
 std::string Utf8(const std::wstring& value) {
     if (value.empty()) return {};
     int n = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
@@ -29,6 +44,9 @@ std::string Utf8(const std::wstring& value) {
     return result;
 }
 
+//==================================================================================
+// --- ウィンドウの文字列の取得処理 ---
+//==================================================================================
 std::wstring Text(HWND control) {
     int n = GetWindowTextLengthW(control);
     std::wstring result(static_cast<size_t>(n) + 1, L'\0');
@@ -37,14 +55,20 @@ std::wstring Text(HWND control) {
     return result;
 }
 
+//==================================================================================
+// --- エラーの表示処理（メッセージボックス + Console） ---
+//==================================================================================
 void Error(HWND window, const std::string& rawMessage) {
     const std::string message = TrUtf8(rawMessage); // 表示言語に翻訳（訳が無ければ英語のまま）
     Debug::LogError(message);
     MessageBoxL(window, Wide(message).c_str(), L"DxStudio", MB_ICONERROR | MB_OK);
 }
 
-// The shell folder picker creates a real filesystem directory selection and
-// avoids treating a cancelled dialog as a failed export.
+//==================================================================================
+// --- 書き出し先のフォルダーの選択処理 ---
+//==================================================================================
+// シェルのフォルダー選択ダイアログを使うと、実際のフォルダーを確実に選べ、
+// キャンセルしたことを書き出しの失敗と区別できる。
 bool ChooseExportFolder(HWND owner, const std::filesystem::path& initial, std::filesystem::path& result, std::string& error) {
     error.clear();
     HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
@@ -107,6 +131,9 @@ bool ChooseExportFolder(HWND owner, const std::filesystem::path& initial, std::f
     return !result.empty();
 }
 
+//==================================================================================
+// --- モデルファイル（X / FBX）の選択処理 ---
+//==================================================================================
 bool ChooseModelFile(HWND owner, std::filesystem::path& result) {
     wchar_t path[32768]{};
     OPENFILENAMEW dialog{sizeof(dialog)};
@@ -120,6 +147,9 @@ bool ChooseModelFile(HWND owner, std::filesystem::path& result) {
     return true;
 }
 
+//==================================================================================
+// --- プロジェクトファイル（.dxproject）の選択処理 ---
+//==================================================================================
 bool ChooseProjectDescriptor(HWND owner, bool save, const std::filesystem::path& initial, std::filesystem::path& result,
                              std::string& error) {
     error.clear();
@@ -175,9 +205,13 @@ bool ChooseProjectDescriptor(HWND owner, bool save, const std::filesystem::path&
     return !result.empty();
 }
 
+//==================================================================================
+// --- プロジェクトファイルの保存処理 ---
+//==================================================================================
 bool SaveProjectDescriptor(const std::filesystem::path& path, const std::filesystem::path& root, std::string& error) {
     error.clear();
     std::error_code ec;
+    // プロジェクトのフォルダーは .dxproject からの相対パスで保存する（フォルダーごと移動しても開ける）
     auto relative = std::filesystem::relative(root, path.parent_path(), ec);
     const auto stored = ec ? root : relative;
     auto temp = path;
@@ -191,6 +225,7 @@ bool SaveProjectDescriptor(const std::filesystem::path& path, const std::filesys
         return false;
     }
 
+    // 書式: DXPROJECT 1 "プロジェクトのフォルダー"（一時ファイルに書いてから置き換える）
     file << "DXPROJECT 1\n" << std::quoted(storedText) << '\n';
     file.close();
     if (!file || !MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
@@ -202,6 +237,9 @@ bool SaveProjectDescriptor(const std::filesystem::path& path, const std::filesys
     return true;
 }
 
+//==================================================================================
+// --- プロジェクトファイルの読み込み処理 ---
+//==================================================================================
 bool LoadProjectDescriptor(const std::filesystem::path& path, std::filesystem::path& root, std::string& error) {
     error.clear();
     std::ifstream file(path, std::ios::binary);
