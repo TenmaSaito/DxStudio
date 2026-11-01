@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- エディター（DxStudio.exe）。project\Scripts のコンポーネントも一緒にビルドする。 -->
+<Project DefaultTargets="Build" ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{6E3C1A10-2B7D-4F0A-9C1E-0D5A7B1E1002}</ProjectGuid>
+    <RootNamespace>DxStudio</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <!-- VS2019 は v142、VS2022 で開いた場合は v143 を使う -->
+    <PlatformToolset Condition="'$(VisualStudioVersion)'=='16.0'">v142</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioVersion)'!='16.0'">v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="DxStudio.props" />
+  </ImportGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalDependencies>comctl32.lib;comdlg32.lib;ole32.lib;uuid.lib;dwmapi.lib;uxtheme.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\EditorMain.cpp" />
+    <ClCompile Include="..\src\Editor.cpp" />
+    <ClCompile Include="..\src\EditorPanels.cpp" />
+    <ClCompile Include="..\src\EditorChrome.cpp" />
+    <ClCompile Include="..\src\EditorLayout.cpp" />
+    <ClCompile Include="..\src\EditorActions.cpp" />
+    <ClCompile Include="..\src\EditorInspector.cpp" />
+    <ClCompile Include="..\src\EditorTheme.cpp" />
+    <ClCompile Include="..\src\EditorUtility.cpp" />
+    <ClCompile Include="..\src\EditorLocale.cpp" />
+    <ClCompile Include="..\src\ConsolePanel.cpp" />
+    <ClCompile Include="..\src\ProjectPanel.cpp" />
+    <!-- ユーザーのスクリプト（ファイルを追加したらソリューションを開き直す） -->
+    <ClCompile Include="..\project\Scripts\*.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\Editor.h" />
+    <ClInclude Include="..\src\EditorWindow.h" />
+    <ClInclude Include="..\src\EditorCommands.h" />
+    <ClInclude Include="..\src\EditorInteraction.h" />
+    <ClInclude Include="..\src\EditorLocale.h" />
+    <ClInclude Include="..\src\EditorTheme.h" />
+    <ClInclude Include="..\src\EditorUtility.h" />
+    <ClInclude Include="..\src\ConsolePanel.h" />
+    <ClInclude Include="..\src\ProjectPanel.h" />
+    <ClInclude Include="..\project\Scripts\*.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="DxStudioEngine.vcxproj">
+      <Project>{6E3C1A10-2B7D-4F0A-9C1E-0D5A7B1E1001}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

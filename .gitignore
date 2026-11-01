@@ -24,3 +24,4 @@
 
 # Left behind when a test aborts
 dxstudio-scene-test-*/
+/build-vs/
