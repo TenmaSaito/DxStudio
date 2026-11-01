@@ -1,3 +1,16 @@
+//==================================================================================
+//
+// Project パネル（アセットのブラウザー）のソースファイル [ProjectPanel.cpp]
+//
+// プロジェクトのフォルダーのツリーと中身の一覧、ファイルの取り込み、C++ コンポーネントの作成、
+// スクリプトエディターの選択、Visual Studio のプロジェクトの生成を扱う。
+// 安全のため、プロジェクトのフォルダーの外とリパースポイント（シンボリックリンクなど）は扱わない。
+//
+//==================================================================================
+
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "ProjectPanel.h"
 #include "EditorLocale.h"
 #include "EditorTheme.h"
@@ -22,13 +35,21 @@ namespace dxs {
 namespace {
 namespace fs = std::filesystem;
 using Microsoft::WRL::ComPtr;
+//**********************************************************************************
+// *** 定数宣言 ***
+//**********************************************************************************
+// コントロール / メニューの ID
 constexpr int TreeId = 7101, ListId = 7102, SearchId = 7103, RefreshId = 7104, ImportId = 7105;
 constexpr int NewComponentId = 7106, ChooseEditorId = 7107, AutomaticEditorId = 7108, OpenId = 7109;
 constexpr int CreateMaterialId = 7110, ConvertToXId = 7111; // X → マテリアル / FBX → X
-constexpr wchar_t WindowClass[] = L"DxStudioProjectPanel";
-constexpr int TOOLBAR_HEIGHT = 30;    // action / search strip
-constexpr int SEARCH_INSET_LEFT = 20; // room for the magnifier icon
+constexpr wchar_t WindowClass[] = L"DxStudioProjectPanel"; // ウィンドウクラス名
+constexpr int TOOLBAR_HEIGHT = 30;    // 操作 / 検索の帯の高さ
+constexpr int SEARCH_INSET_LEFT = 20; // 虫めがねのアイコンの場所
 
+//**********************************************************************************
+// *** 補助関数 ***
+//**********************************************************************************
+// --- 環境変数の取得処理 ---
 std::wstring Environment(const wchar_t* name) {
     const DWORD length = GetEnvironmentVariableW(name, nullptr, 0);
     if (!length) return {};
@@ -39,6 +60,7 @@ std::wstring Environment(const wchar_t* name) {
     return value;
 }
 
+// --- 自動で選ぶスクリプトエディター（Visual Studio）の場所の取得処理 ---
 fs::path AutomaticEditor() {
     std::error_code ec;
     for (const auto* version : {L"2022", L"2019"}) {
@@ -56,17 +78,20 @@ fs::path AutomaticEditor() {
     return {};
 }
 
+// --- エディターの設定のフォルダー（%LOCALAPPDATA%\DxStudio）の取得処理 ---
 fs::path EditorSettingsFolder() {
     const auto local = Environment(L"LOCALAPPDATA");
     if (local.empty()) return {};
     return fs::path(local) / L"DxStudio";
 }
 
+// --- 小文字への変換処理 ---
 std::wstring Lower(std::wstring value) {
     std::transform(value.begin(), value.end(), value.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
     return value;
 }
 
+// --- ウィンドウの文字列の取得処理 ---
 std::wstring Text(HWND h) {
     const int size = GetWindowTextLengthW(h);
     std::wstring result(static_cast<size_t>(size) + 1, L'\0');
@@ -75,13 +100,14 @@ std::wstring Text(HWND h) {
     return result;
 }
 
+// モーダルな操作の間、エディター全体を無効にする（デストラクタで元に戻す）
 struct ModalRoot {
     HWND owner{}, main{};
     bool reenable = false;
 
     explicit ModalRoot(HWND panel) : owner(GetAncestor(panel, GA_ROOT)), main(GetAncestor(panel, GA_ROOTOWNER)) {
-        // A detached Project window is owned by the editor. Disable that editor
-        // too, so it cannot destroy the panel during a nested modal loop.
+        // 切り離した Project のウィンドウはエディターが所有する。そのエディターも
+        // 無効にし、入れ子のモーダルなループ中にパネルが破棄されないようにする。
         reenable = main && main != owner && IsWindowEnabled(main);
         if (reenable) {
             EnableWindow(main, FALSE);
@@ -95,16 +121,19 @@ struct ModalRoot {
     }
 };
 
+// --- エラーの表示処理 ---
 void Error(HWND h, const std::wstring& msg) {
     ModalRoot modal(h);
     editor::MessageBoxL(modal.owner ? modal.owner : h, msg.c_str(), L"Project", MB_OK | MB_ICONERROR);
 }
 
+// --- リパースポイント（シンボリックリンクなど）かの判定処理 ---
 bool Reparse(const fs::path& path) {
     const DWORD attributes = GetFileAttributesW(path.c_str());
     return attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
 }
 
+// --- child が parent の中（または同じ）かの判定処理 ---
 bool Within(const fs::path& parent, const fs::path& child) {
     auto p = parent.begin(), c = child.begin();
     for (; p != parent.end(); ++p, ++c) {
@@ -114,6 +143,7 @@ bool Within(const fs::path& parent, const fs::path& child) {
     return true;
 }
 
+// --- プロジェクトの中の、扱ってよいパスかの判定処理 ---
 bool AllowedPath(const fs::path& root, const fs::path& path) {
     std::error_code ec;
     fs::path absolute = fs::absolute(path, ec).lexically_normal();
@@ -131,21 +161,25 @@ bool AllowedPath(const fs::path& root, const fs::path& path) {
     return !ec && Within(root, resolved);
 }
 
+// 一覧の 1 項目
 struct Entry {
-    fs::path path;
-    bool folder;
+    fs::path path; // パス
+    bool folder;   // フォルダーか
 };
 
+// ツリーの 1 項目（TreeView の lParam が指す）
 struct Node {
-    fs::path path;
+    fs::path path; // フォルダーのパス
 };
 
+// コンポーネント名の入力ダイアログの状態
 struct NamePrompt {
-    HWND edit{};
-    std::wstring value;
-    bool accepted = false;
+    HWND edit{};           // 入力欄
+    std::wstring value;    // 入力された名前
+    bool accepted = false; // OK で閉じたか
 };
 
+// --- コンポーネント名の入力ダイアログのプロシージャ ---
 LRESULT CALLBACK NamePromptProc(HWND window, UINT message, WPARAM wp, LPARAM lp) {
     auto* prompt = reinterpret_cast<NamePrompt*>(GetWindowLongPtrW(window, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
@@ -186,6 +220,9 @@ LRESULT CALLBACK NamePromptProc(HWND window, UINT message, WPARAM wp, LPARAM lp)
     return DefWindowProcW(window, message, wp, lp);
 }
 
+//==================================================================================
+// --- コンポーネント名の入力処理（モーダルなダイアログ） ---
+//==================================================================================
 bool PromptComponentName(HWND panel, HINSTANCE instance, std::wstring& value) {
     WNDCLASSEXW wc{sizeof(wc)};
     wc.hInstance = instance;
@@ -255,16 +292,22 @@ bool PromptComponentName(HWND panel, HINSTANCE instance, std::wstring& value) {
     return prompt.accepted;
 }
 
+//**********************************************************************************
+// *** Project パネル ***
+//**********************************************************************************
 struct Panel {
-    HWND window{}, title{}, search{}, refresh{}, import{}, breadcrumb{}, tree{}, list{};
+    HWND window{}, title{}, search{}, refresh{}, import{}, breadcrumb{}, tree{}, list{}; // ウィンドウとコントロール
     HINSTANCE instance{};
-    HFONT font{}, bold{};
-    HBRUSH background{}, input{};
-    fs::path root, current, scriptEditor, engineRoot;
-    std::vector<std::unique_ptr<Node>> nodes;
-    std::vector<Entry> entries;
-    HTREEITEM currentNode{};
+    HFONT font{}, bold{};                             // フォント（テーマが所有）
+    HBRUSH background{}, input{};                     // ブラシ（テーマが所有）
+    fs::path root, current, scriptEditor, engineRoot; // プロジェクト / 表示中のフォルダー / スクリプトエディター / エンジン
+    std::vector<std::unique_ptr<Node>> nodes;         // ツリーの項目
+    std::vector<Entry> entries;                       // 一覧の項目
+    HTREEITEM currentNode{};                          // 表示中のフォルダーのツリーの項目
 
+    //==============================================================================
+    // --- 子コントロールの作成処理 ---
+    //==============================================================================
     HWND Make(const wchar_t* cls, const wchar_t* text, DWORD style, int id = 0, DWORD ex = 0) {
         HWND h = CreateWindowExW(ex, cls, editor::LocalizedControlText(cls, text), WS_CHILD | WS_VISIBLE | style, 0, 0, 1, 1,
                                  window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
@@ -272,10 +315,13 @@ struct Panel {
         return h;
     }
 
-    // Reject reparse points in every component, including a path that was
-    // replaced after it was shown in the tree, then check the resolved path.
+    // パスのどの部分にもリパースポイントを許さない（ツリーに表示した後で
+    // 置き換えられたパスも含む）。その後、解決したパスを確認する。
     bool Allowed(const fs::path& path) const { return AllowedPath(root, path); }
 
+    //==============================================================================
+    // --- フォルダーの中身の取得処理（フォルダーが先、名前順） ---
+    //==============================================================================
     std::vector<Entry> Enumerate(const fs::path& folder) const {
         std::vector<Entry> out;
         if (!Allowed(folder)) return out;
@@ -301,6 +347,9 @@ struct Panel {
         return out;
     }
 
+    //==============================================================================
+    // --- ツリーの項目の追加処理 ---
+    //==============================================================================
     HTREEITEM AddNode(HTREEITEM parent, const fs::path& path, const std::wstring& label) {
         auto node = std::make_unique<Node>();
         node->path = path;
@@ -318,6 +367,9 @@ struct Panel {
         return item;
     }
 
+    //==============================================================================
+    // --- サブフォルダーのツリーへの追加処理 ---
+    //==============================================================================
     void AddSubfolders(HTREEITEM parent, const fs::path& path, unsigned depth) {
         if (depth >= 16 || nodes.size() >= 2000) return;
         for (const auto& e : Enumerate(path)) {
@@ -332,6 +384,9 @@ struct Panel {
         }
     }
 
+    //==============================================================================
+    // --- 一覧の作り直し処理（検索中は一致する物だけ） ---
+    //==============================================================================
     void PopulateList() {
         ListView_DeleteAllItems(list);
         entries.clear();
@@ -373,6 +428,9 @@ struct Panel {
         }
     }
 
+    //==============================================================================
+    // --- 表示の更新処理 ---
+    //==============================================================================
     void Refresh() {
         TreeView_DeleteAllItems(tree);
         nodes.clear();
@@ -400,12 +458,15 @@ struct Panel {
         PopulateList();
     }
 
+    //==============================================================================
+    // --- スクリプトエディターの設定の読み込み処理 ---
+    //==============================================================================
     void LoadEditor() {
         const auto folder = EditorSettingsFolder();
         const auto settings = folder / L"script-editor.txt";
 
-        // External-editor preferences belong to this Windows user, not to an
-        // imported project that could otherwise nominate an executable.
+        // 外部エディターの設定はこの Windows ユーザーの物で、プロジェクトには保存しない
+        // （取り込んだプロジェクトが実行ファイルを指定できてしまうため）
         if (folder.empty() || Reparse(folder) || !AllowedPath(folder, settings)) return;
         std::error_code ec;
         if (fs::file_size(settings, ec) > 32768 || ec) return;
@@ -421,6 +482,9 @@ struct Panel {
         }
     }
 
+    //==============================================================================
+    // --- スクリプトエディターの設定の保存処理 ---
+    //==============================================================================
     bool SaveEditor(const fs::path& path) {
         const auto folder = EditorSettingsFolder();
         std::error_code ec;
@@ -435,8 +499,8 @@ struct Panel {
 
         const auto settings = folder / L"script-editor.txt";
 
-        // OPEN_ALWAYS plus OPEN_REPARSE_POINT lets us inspect the actual entry
-        // before truncation, without following an existing symbolic link.
+        // OPEN_ALWAYS と OPEN_REPARSE_POINT で、既存のシンボリックリンクをたどらずに
+        // 中身を消す前に実体を確認できる。
         HANDLE file = CreateFileW(settings.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
                                   FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
         if (file == INVALID_HANDLE_VALUE) {
@@ -465,6 +529,9 @@ struct Panel {
         return true;
     }
 
+    //==============================================================================
+    // --- スクリプトエディターの選択処理 ---
+    //==============================================================================
     void ChooseEditor() {
         HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
         const bool uninit = SUCCEEDED(init);
@@ -526,6 +593,9 @@ struct Panel {
         SaveEditor(chosen);
     }
 
+    //==============================================================================
+    // --- 新しいコンポーネントの作成処理 ---
+    //==============================================================================
     void NewComponent() {
         std::wstring name, error;
         if (!PromptComponentName(window, instance, name)) return;
@@ -558,6 +628,9 @@ struct Panel {
             L"Component created", MB_OK | MB_ICONINFORMATION);
     }
 
+    //==============================================================================
+    // --- 右クリックメニューの表示処理 ---
+    //==============================================================================
     void ContextMenu(HWND origin, POINT screen) {
         if (screen.x == -1 && screen.y == -1) {
             RECT bounds{};
@@ -629,6 +702,9 @@ struct Panel {
         }
     }
 
+    //==============================================================================
+    // --- 項目を開く処理（フォルダーなら移動、ファイルならエディターで開く） ---
+    //==============================================================================
     void OpenEntry(int index) {
         if (index < 0 || static_cast<size_t>(index) >= entries.size()) return;
         const auto entry = entries[static_cast<size_t>(index)];
@@ -687,6 +763,9 @@ struct Panel {
         }
     }
 
+    //==============================================================================
+    // --- ファイルの取り込み処理 ---
+    //==============================================================================
     void ImportFile() {
         if (!Allowed(current)) {
             Error(window, L"The destination folder is unavailable or outside the project.");
@@ -715,10 +794,10 @@ struct Panel {
                     hr = dialog->SetTitle(L"Import a file into the selected project folder");
                 }
 
-                // The panel is a child window. Owning the dialog by that child
-                // leaves the editor's top-level window interactive, so closing
-                // it could destroy this Panel while Show's modal loop is active.
-                // Disable the whole editor until the file picker returns.
+                // パネルは子ウィンドウなので、ダイアログの持ち主をパネルにすると
+                // エディターの最上位のウィンドウが操作できたままになり、閉じると
+                // Show のモーダルなループ中にこのパネルが破棄されてしまう。
+                // ファイルの選択から戻るまで、エディター全体を無効にする。
                 ModalRoot modal(window);
                 if (SUCCEEDED(hr)) {
                     hr = dialog->Show(modal.owner ? modal.owner : window);
@@ -759,13 +838,16 @@ struct Panel {
         Refresh();
     }
 
+    //==============================================================================
+    // --- 配置処理 ---
+    //==============================================================================
     void Layout() {
         RECT r{};
         GetClientRect(window, &r);
         const int w = r.right, h = r.bottom;
 
-        // Unity Project window: toolbar (actions left, search right), folder
-        // tree on the left, breadcrumb + contents on the right.
+        // Unity の Project ウィンドウ: ツールバー（左に操作、右に検索）、左に
+        // フォルダーのツリー、右にパンくずリスト + 中身
         MoveWindow(title, 8, 5, 80, 22, TRUE);
         MoveWindow(import, 4, 3, 112, 24, TRUE); // 「インポート...」が収まる幅
         MoveWindow(refresh, 120, 3, 86, 24, TRUE);
@@ -781,6 +863,9 @@ struct Panel {
     }
 };
 
+//==================================================================================
+// --- Project パネルのウィンドウプロシージャ ---
+//==================================================================================
 LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     Panel* p = reinterpret_cast<Panel*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
@@ -792,14 +877,14 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     if (!p) return DefWindowProcW(hwnd, message, wp, lp);
     switch (message) {
     case WM_CREATE: {
-        // Fonts and brushes come from the shared editor theme (Unity Dark).
+        // フォントとブラシはエディター共通のテーマ（Unity の Dark）から取る
         p->font = theme::GetFonts().hRegular;
         p->bold = theme::GetFonts().hBold;
         p->background = theme::Brush(theme::COLOR_PANEL);
         p->input = theme::Brush(theme::COLOR_INPUT);
 
-        // The dock tab already says "Project"; the old caption stays for
-        // compatibility but is hidden.
+        // ドックのタブに「Project」と出るので、以前の見出しは
+        // 互換性のために残すが非表示にする。
         p->title = p->Make(L"STATIC", L"PROJECT", SS_LEFT);
         ShowWindow(p->title, SW_HIDE);
         p->import = p->Make(L"BUTTON", L"Import...", BS_OWNERDRAW | WS_TABSTOP, ImportId);
@@ -907,7 +992,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         theme::Fill(dc, toolbar, theme::COLOR_TAB_ACTIVE);
         theme::Line(dc, 0, TOOLBAR_HEIGHT - 1, r.right, TOOLBAR_HEIGHT - 1, theme::COLOR_SEPARATOR);
 
-        // Search box with magnifier, drawn around the borderless edit.
+        // 虫めがね付きの検索欄（枠の無い入力欄の周りに描く）
         RECT box{};
         GetWindowRect(p->search, &box);
         MapWindowPoints(nullptr, hwnd, reinterpret_cast<POINT*>(&box), 2);
@@ -922,7 +1007,7 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         return 1;
     }
     case WM_NCDESTROY:
-        // Fonts and brushes are owned by the editor theme cache.
+        // フォントとブラシはエディターのテーマのキャッシュが持つ
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         delete p;
         return DefWindowProcW(hwnd, message, wp, lp);
@@ -932,6 +1017,9 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
 }
 } // namespace
 
+//==================================================================================
+// --- Visual Studio のプロジェクトの生成処理 ---
+//==================================================================================
 bool GenerateVisualStudioProject(const fs::path& projectRoot, const fs::path& engineRoot, std::wstring& error) {
     error.clear();
     std::error_code ec;
@@ -1040,8 +1128,8 @@ Global
 EndGlobal
 )";
 
-    // Write UTF-8 explicitly: a locale-dependent wofstream fails on systems
-    // whose ANSI code page cannot encode the text (e.g. Japanese CP932).
+    // UTF-8 で明示的に書く: 地域設定に依存する wofstream は、ANSI のコードページで
+    // 表せない文字があると失敗する（日本語の CP932 など）
     auto write = [&](const fs::path& path, const std::wstring& text) {
         const int nBytes =
             WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
@@ -1061,6 +1149,9 @@ EndGlobal
     return true;
 }
 
+//==================================================================================
+// --- C++ コンポーネントのファイルの作成処理 ---
+//==================================================================================
 bool CreateProjectComponent(const fs::path& projectRoot, const std::wstring& name, std::wstring& error) {
     error.clear();
     const auto letter = [](wchar_t c) {
@@ -1097,7 +1188,7 @@ bool CreateProjectComponent(const fs::path& projectRoot, const std::wstring& nam
     std::string identifier;
     identifier.reserve(name.size());
     for (wchar_t c : name) {
-        identifier.push_back(static_cast<char>(c)); // Validated ASCII above.
+        identifier.push_back(static_cast<char>(c)); // 上で ASCII だと確認済み
     }
 
     const std::string header = "#pragma once\n#include \"Engine.h\"\n\nclass " + identifier +
@@ -1120,8 +1211,8 @@ bool CreateProjectComponent(const fs::path& projectRoot, const std::wstring& nam
     bool success = true;
     DWORD failure = ERROR_SUCCESS;
     for (int i = 0; i < 2; ++i) {
-        // No replacement, even if another program creates the name now. DELETE
-        // access lets rollback remove only our own newly created file by handle.
+        // 他のプログラムが今同じ名前を作っても置き換えない。DELETE の権限があれば、
+        // 取り消すときに自分が新しく作ったファイルだけをハンドルで消せる。
         files[i] = CreateFileW(paths[i].c_str(), GENERIC_WRITE | DELETE, FILE_SHARE_READ, nullptr, CREATE_NEW,
                                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
         if (files[i] == INVALID_HANDLE_VALUE) {
@@ -1162,6 +1253,9 @@ bool CreateProjectComponent(const fs::path& projectRoot, const std::wstring& nam
     return success;
 }
 
+//==================================================================================
+// --- Settings メニューから呼ぶコマンド（パネルに任せる） ---
+//==================================================================================
 void ChooseProjectScriptEditor(HWND panel) {
     auto* p = reinterpret_cast<Panel*>(GetWindowLongPtrW(panel, GWLP_USERDATA));
     if (p) {
@@ -1190,6 +1284,9 @@ void NewProjectComponent(HWND panel) {
     }
 }
 
+//==================================================================================
+// --- ファイルのプロジェクトへのコピー処理（上書きしない） ---
+//==================================================================================
 bool ImportProjectFile(const fs::path& projectRoot, const fs::path& destinationFolder, const fs::path& source,
                        std::wstring& error) {
     error.clear();
@@ -1211,8 +1308,8 @@ bool ImportProjectFile(const fs::path& projectRoot, const fs::path& destinationF
         return false;
     }
 
-    // CREATE_NEW semantics of CopyFileW(..., TRUE) prevent replacing existing
-    // files, including a file created after the destination was checked.
+    // CopyFileW(..., TRUE) は新規作成のみなので、確認した後で作られたファイルも
+    // 含めて、既存のファイルを置き換えない。
     if (!CopyFileW(source.c_str(), (destinationFolder / filename).c_str(), TRUE)) {
         const DWORD code = GetLastError();
         if (code == ERROR_FILE_EXISTS || code == ERROR_ALREADY_EXISTS) {
@@ -1227,6 +1324,9 @@ bool ImportProjectFile(const fs::path& projectRoot, const fs::path& destinationF
     return true;
 }
 
+//==================================================================================
+// --- Project パネルの作成処理 ---
+//==================================================================================
 HWND CreateProjectPanel(HWND parent, HINSTANCE instance, const fs::path& projectRoot, const fs::path& engineRoot) {
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_TREEVIEW_CLASSES | ICC_LISTVIEW_CLASSES};
     if (!InitCommonControlsEx(&controls)) return nullptr;
@@ -1251,7 +1351,7 @@ HWND CreateProjectPanel(HWND parent, HINSTANCE instance, const fs::path& project
     panel->current = root;
     panel->engineRoot = engineRoot.empty() ? root.parent_path() : engineRoot;
 
-    // The window takes ownership during WM_NCCREATE.
+    // WM_NCCREATE でウィンドウが Panel を所有する
     Panel* raw = panel.release();
     return CreateWindowExW(0, WindowClass, L"Project", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, 0, 1, 1, parent, nullptr,
                            instance, raw);
