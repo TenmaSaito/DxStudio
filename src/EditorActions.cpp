@@ -1,18 +1,31 @@
-// Editor actions: menu/toolbar commands, Play Mode, graphics API, projects and per-frame update.
+//==================================================================================
+//
+// エディターの操作のソースファイル [EditorActions.cpp]
+//
+// メニュー / ツールバーのコマンド、Play モード、グラフィックス API の切り替え、
+// プロジェクト、バックグラウンドの作業（ビルド / 書き出し）、毎フレームの描画を扱う。
+//
+//==================================================================================
 
+//**********************************************************************************
+// *** インクルードファイル ***
+//**********************************************************************************
 #include "EditorWindow.h"
 
 #include <fstream>
 
 namespace dxs::editor {
 
+//==================================================================================
+// --- 画面（メニュー / パネル / レイアウト）のコマンドの処理（処理したら true） ---
+//==================================================================================
 bool Editor::ShellCommand(int id) {
-    if (id == ID_LANGUAGE_ENGLISH || id == ID_LANGUAGE_JAPANESE) {
+    if (id == ID_LANGUAGE_ENGLISH || id == ID_LANGUAGE_JAPANESE) { // 表示言語の切り替え
         ApplyLanguage(id == ID_LANGUAGE_JAPANESE ? EditorLanguage::JAPANESE : EditorLanguage::ENGLISH);
         return true;
     }
 
-    if (id == ID_EXIT) {
+    if (id == ID_EXIT) { // 終了
         SendMessageW(window, WM_CLOSE, 0, 0);
         return true;
     }
@@ -22,7 +35,7 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
 
-    if (id == ID_DRAW_MODE_MENU || id == ID_ASPECT_MENU) {
+    if (id == ID_DRAW_MODE_MENU || id == ID_ASPECT_MENU) { // ビューのドロップダウン
         ShowViewDropdown(id);
         return true;
     }
@@ -47,7 +60,7 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
 
-    if (id == ID_SHOW_CONSOLE) {
+    if (id == ID_SHOW_CONSOLE) { // Console を表示
         auto& p = panels[3];
         p.hidden = p.collapsed = false;
         ShowWindow(p.window, p.floating ? SW_RESTORE : SW_SHOW);
@@ -56,17 +69,17 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
 
-    if (id == ID_CLEAR_CONSOLE) {
+    if (id == ID_CLEAR_CONSOLE) { // Console を消去
         ClearConsolePanel(consolePanel);
         return true;
     }
 
-    if (id == ID_PAUSE) {
+    if (id == ID_PAUSE) { // 一時停止
         TogglePause();
         return true;
     }
 
-    if (id == ID_STEP) {
+    if (id == ID_STEP) { // 1 フレーム進める
         StepFrame();
         return true;
     }
@@ -78,7 +91,7 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
 
-    if (id == ID_GRAPHICS_MENU || id == ID_LAYOUT_MENU) {
+    if (id == ID_GRAPHICS_MENU || id == ID_LAYOUT_MENU) { // ツールバーのドロップダウン（API / レイアウト）
         ShowToolbarDropdown(id);
         return true;
     }
@@ -93,7 +106,7 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
 
-    if (id == ID_OPEN_README) {
+    if (id == ID_OPEN_README) { // README を開く
         const auto readme = base / L"README.md";
         if (reinterpret_cast<INT_PTR>(ShellExecuteW(window, L"open", readme.c_str(), nullptr, base.c_str(), SW_SHOWNORMAL)) <=
             32) {
@@ -103,7 +116,7 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
 
-    if (id == ID_ABOUT) {
+    if (id == ID_ABOUT) { // バージョン情報
         const std::wstring text = L"DxStudio\n\nUnity / Unreal style C++20 editor.\nRenderer: " +
                                   Wide(GraphicsApiDisplayName(renderer.Api())) +
                                   L"\nSwitch backends in Edit > Project Settings > Graphics API.";
@@ -132,7 +145,7 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
 
-    if (id == ID_ADD_COMPONENT) {
+    if (id == ID_ADD_COMPONENT) { // コンポーネントの追加
         ShowAddComponentMenu();
         return true;
     }
@@ -143,7 +156,7 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
 
-    if (id == ID_RESET_LAYOUT) {
+    if (id == ID_RESET_LAYOUT) { // レイアウトを初期状態に戻す
         for (int i = 0; i < 4; ++i) {
             if (panels[i].floating) {
                 FloatPanel(i);
@@ -160,7 +173,7 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
 
-    if (id == ID_SAVE_LAYOUT) {
+    if (id == ID_SAVE_LAYOUT) { // レイアウトの保存
         const auto path = projectRoot / L"EditorLayout.dxl";
         auto temp = path;
         temp += L".tmp";
@@ -190,7 +203,7 @@ bool Editor::ShellCommand(int id) {
         return true;
     }
 
-    if (id == ID_LOAD_LAYOUT) {
+    if (id == ID_LOAD_LAYOUT) { // レイアウトの読み込み
         const auto path = projectRoot / L"EditorLayout.dxl";
         std::ifstream file(path, std::ios::binary);
         std::string magic;
@@ -269,6 +282,9 @@ bool Editor::ShellCommand(int id) {
     return true;
 }
 
+//==================================================================================
+// --- 物体の右クリックメニューの表示処理 ---
+//==================================================================================
 void Editor::ShowObjectMenu(POINT point) {
     if (point.x == -1 && point.y == -1) {
         GetCursorPos(&point);
@@ -289,6 +305,9 @@ void Editor::ShowObjectMenu(POINT point) {
     }
 }
 
+//==================================================================================
+// --- コンポーネントの右クリックメニューの表示処理 ---
+//==================================================================================
 void Editor::ShowComponentMenu(POINT point) {
     if (point.x == -1 && point.y == -1) {
         GetCursorPos(&point);
@@ -314,13 +333,16 @@ void Editor::ShowComponentMenu(POINT point) {
     }
 }
 
+//==================================================================================
+// --- 再生操作のボタンの表示の更新処理 ---
+//==================================================================================
 void Editor::RefreshTransport() {
     theme::SetButtonIcon(controls[9], bPlaying ? theme::Icon::STOP : theme::Icon::PLAY);
     for (HWND button : {controls[9], pauseButton, stepButton}) {
         InvalidateRect(button, nullptr, FALSE);
     }
 
-    // The toolbar tints blue while playing, as a clear Play Mode cue.
+    // Play 中はツールバーを青くし、Play モードだと分かるようにする
     RECT r{};
     GetClientRect(window, &r);
     RECT top{0, 0, r.right, TOP_CHROME_HEIGHT};
@@ -334,6 +356,9 @@ void Editor::RefreshTransport() {
     }
 }
 
+//==================================================================================
+// --- Play の開始 / 終了処理（終了時は開始前のシーンに戻す） ---
+//==================================================================================
 void Editor::TogglePlay() {
     if (!bPlaying) {
         if (!Apply()) return;
@@ -370,6 +395,9 @@ void Editor::TogglePlay() {
     RefreshTransport();
 }
 
+//==================================================================================
+// --- 一時停止の切り替え処理 ---
+//==================================================================================
 void Editor::TogglePause() {
     bPaused = !bPaused;
     bStepRequested = false;
@@ -380,6 +408,9 @@ void Editor::TogglePause() {
     RefreshTransport();
 }
 
+//==================================================================================
+// --- 1 フレームだけ進める処理 ---
+//==================================================================================
 void Editor::StepFrame() {
     if (!bPlaying) {
         TogglePlay();
@@ -396,6 +427,9 @@ void Editor::StepFrame() {
     RefreshTransport();
 }
 
+//==================================================================================
+// --- グラフィックス API の切り替え処理 ---
+//==================================================================================
 void Editor::SwitchGraphicsApi(GraphicsApi api) {
     if (api == projectSettings.graphicsApi && renderer.IsInitialized() && renderer.Api() == api) return;
     projectSettings.graphicsApi = api;
@@ -411,13 +445,19 @@ void Editor::SwitchGraphicsApi(GraphicsApi api) {
     }
 }
 
+//==================================================================================
+// --- ツールバーの API 表示の更新処理 ---
+//==================================================================================
 void Editor::UpdateGraphicsBadge() {
     SetWindowTextW(graphicsButton,
                    Wide(GraphicsApiShortName(renderer.IsInitialized() ? renderer.Api() : projectSettings.graphicsApi)).c_str());
     InvalidateRect(graphicsButton, nullptr, FALSE);
-    Layout(); // the badge width follows its label
+    Layout(); // 表示の幅は文字に合わせる
 }
 
+//==================================================================================
+// --- 選択中の物体へのコンポーネントの追加処理 ---
+//==================================================================================
 void Editor::AttachToSelection(const std::string& name) {
     if (vSelectedIndices.size() != 1 || nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) {
         Error(window, "Select exactly one GameObject to add a component.");
@@ -434,6 +474,9 @@ void Editor::AttachToSelection(const std::string& name) {
     SetStatus(L"Component attached. Save or export to keep it.");
 }
 
+//==================================================================================
+// --- プロジェクトの設定の読み込み処理 ---
+//==================================================================================
 void Editor::LoadSettings() {
     projectSettings = {};
     std::string error;
@@ -444,6 +487,9 @@ void Editor::LoadSettings() {
     }
 }
 
+//==================================================================================
+// --- プロジェクトの切り替え処理 ---
+//==================================================================================
 bool Editor::SwitchProject(const std::filesystem::path& descriptor) {
     if (bPlaying) {
         TogglePlay();
@@ -492,6 +538,9 @@ bool Editor::SwitchProject(const std::filesystem::path& descriptor) {
     return true;
 }
 
+//==================================================================================
+// --- 新しいプロジェクトの作成処理 ---
+//==================================================================================
 bool Editor::NewProject() {
     std::filesystem::path requested;
     std::string error;
@@ -563,6 +612,9 @@ bool Editor::NewProject() {
     return SwitchProject(descriptor);
 }
 
+//==================================================================================
+// --- ビルドのスクリプトの実行処理（バックグラウンド） ---
+//==================================================================================
 bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
     const auto script = base / scriptName;
     if (!std::filesystem::is_regular_file(script)) {
@@ -577,13 +629,13 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
 
     std::wstring command = L"cmd.exe /d /s /c \"\"" + script.wstring() + L"\" \"" + projectRoot.wstring() + L"\"\"";
 
-    // Expected Gradle task count: from the previous successful build (read
-    // before the script overwrites the log), else a typical full build.
+    // 予想される Gradle のタスク数: 前回成功したビルドのログから（スクリプトが
+    // ログを上書きする前に読む）。無ければ通常のビルドの数を使う。
     const int nPreviousTasks = CountBuildLogTasks(base / std::filesystem::path(scriptName).stem() / L"build.log");
     const int nExpectedTasks = nPreviousTasks > 0 ? nPreviousTasks : 40;
 
-    // The script, Gradle and its Java processes go into one job object, so
-    // Cancel (or closing the editor) stops the whole tree.
+    // スクリプト、Gradle、Java のプロセスを 1 つのジョブオブジェクトに入れ、
+    // 中止（またはエディターを閉じる）でまとめて止められるようにする。
     HANDLE hJob = CreateJobObjectW(nullptr, nullptr);
     if (hJob) {
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
@@ -623,7 +675,7 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
         [this, hProcess, pExitCode, log, sLabel] {
             CloseHandle(hProcess);
             if (pTask && pTask->bCanceled) {
-                // The killed script could not unmap its temporary drive letter (see build-android.cmd).
+                // 止めたスクリプトは一時的なドライブ文字を外せないので、ここで外す（build-android.cmd を参照）
                 const auto driveFile = log.parent_path() / L"temp-drive.txt";
                 std::wifstream in(driveFile);
                 std::wstring sDrive;
@@ -663,8 +715,11 @@ bool Editor::RunBuildScript(const wchar_t* scriptName, const wchar_t* label) {
     return true;
 }
 
-// The useful part of a failed build log: Gradle's "What went wrong" block and
-// ERROR lines; otherwise the last lines.
+//==================================================================================
+// --- ビルドのログの要約処理 ---
+//==================================================================================
+// 失敗したビルドのログの役に立つ部分: Gradle の「What went wrong」の部分と
+// ERROR の行。無ければ最後の数行。
 std::string SummarizeBuildLog(const std::filesystem::path& log) {
     std::ifstream file(log, std::ios::binary);
     std::vector<std::string> vLines;
@@ -690,7 +745,7 @@ std::string SummarizeBuildLog(const std::filesystem::path& log) {
             }
         }
 
-        break; // the first failure is the cause
+        break; // 最初の失敗が原因
     }
 
     for (const auto& line : vLines) {
@@ -719,6 +774,9 @@ std::string SummarizeBuildLog(const std::filesystem::path& log) {
     return sText;
 }
 
+//==================================================================================
+// --- バックグラウンドの作業の開始処理 ---
+//==================================================================================
 bool Editor::StartBackgroundTask(std::wstring sLabel, std::function<void()> work, std::function<void()> onDone, HANDLE hJob) {
     if (IsTaskRunning()) {
         if (hJob) {
@@ -738,13 +796,16 @@ bool Editor::StartBackgroundTask(std::wstring sLabel, std::function<void()> work
         work();
         PostMessageW(hWindow, WM_DXS_TASK_DONE, 0, 0);
     });
-    SetTimer(window, TASK_STATUS_TIMER, 100, nullptr); // smooth gauge
-    Layout();                                          // make room for the gauge
+    SetTimer(window, TASK_STATUS_TIMER, 100, nullptr); // ゲージを滑らかに動かす
+    Layout();                                          // ゲージの場所を空ける
     UpdateTaskStatus();
     Debug::Log(Utf8(pTask->sLabel) + " started in the background.");
     return true;
 }
 
+//==================================================================================
+// --- バックグラウンドの作業の終了処理（UI スレッド） ---
+//==================================================================================
 void Editor::FinishBackgroundTask() {
     if (!pTask) return;
     if (pTask->worker.joinable()) {
@@ -753,7 +814,7 @@ void Editor::FinishBackgroundTask() {
 
     KillTimer(window, TASK_STATUS_TIMER);
     if (pTask->onDone) {
-        pTask->onDone(); // may read pTask (e.g. bCanceled)
+        pTask->onDone(); // pTask（bCanceled など）を読むことがある
     }
 
     if (pTask && pTask->hJob) {
@@ -761,9 +822,12 @@ void Editor::FinishBackgroundTask() {
     }
 
     pTask.reset();
-    Layout(); // hide the gauge
+    Layout(); // ゲージを隠す
 }
 
+//==================================================================================
+// --- バックグラウンドの作業の中止処理 ---
+//==================================================================================
 void Editor::CancelBackgroundTask(bool bWaitForWorker) {
     if (!pTask) return;
     if (pTask->hJob) {
@@ -776,7 +840,7 @@ void Editor::CancelBackgroundTask(bool bWaitForWorker) {
         return;
     }
 
-    // Shutting down: wait for the worker, drop the completion callback.
+    // 終了時: 作業スレッドの終わりを待ち、終了後の処理は行わない
     if (pTask->worker.joinable()) {
         pTask->worker.join();
     }
@@ -788,6 +852,9 @@ void Editor::CancelBackgroundTask(bool bWaitForWorker) {
     pTask.reset();
 }
 
+//==================================================================================
+// --- 作業の進度の表示の更新処理 ---
+//==================================================================================
 void Editor::UpdateTaskStatus() {
     if (!pTask) return;
     if (pTask->progress) {
@@ -808,7 +875,10 @@ void Editor::UpdateTaskStatus() {
     InvalidateRect(progressGauge, nullptr, FALSE);
 }
 
-// Status-bar gauge: filled share + "42%", or a sliding bar when unknown.
+//==================================================================================
+// --- 進度のゲージの描画処理 ---
+//==================================================================================
+// ステータスバーのゲージ: 進んだ分を塗って「42%」、進度が分からなければ動くバー
 void Editor::DrawProgressGauge(const DRAWITEMSTRUCT& item) {
     RECT rect = item.rcItem;
     const HDC hDc = item.hDC;
@@ -822,7 +892,7 @@ void Editor::DrawProgressGauge(const DRAWITEMSTRUCT& item) {
     if (fProgress >= 0.0f) {
         fill.right = track.left + static_cast<int>(static_cast<float>(nWidth) * std::clamp(fProgress, 0.0f, 1.0f));
     } else {
-        // Unknown length (export): a 30% block moving back and forth.
+        // 長さが分からない（書き出し）: 30% のブロックを左右に動かす
         const int nBlock = std::max(8, nWidth * 3 / 10);
         const double dPhase = static_cast<double>(GetTickCount64() % 1600) / 1600.0;
         const double dPosition = dPhase < 0.5 ? dPhase * 2.0 : 2.0 - dPhase * 2.0;
@@ -843,7 +913,10 @@ void Editor::DrawProgressGauge(const DRAWITEMSTRUCT& item) {
 }
 
 namespace {
-// Reads a log that the build is still writing (shared access).
+//==================================================================================
+// --- 書き込み中のログの読み込み処理 ---
+//==================================================================================
+// ビルドが書き込み中のログを読む（共有モードで開く）
 std::vector<std::string> ReadSharedLines(const std::filesystem::path& log) {
     std::vector<std::string> vLines;
     HANDLE hFile = CreateFileW(log.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
@@ -874,12 +947,15 @@ std::vector<std::string> ReadSharedLines(const std::filesystem::path& log) {
 }
 } // namespace
 
+//==================================================================================
+// --- 成功したビルドのタスク数の取得処理 ---
+//==================================================================================
 int CountBuildLogTasks(const std::filesystem::path& log) {
     int nTasks = 0;
     bool bSucceeded = false;
     for (const auto& line : ReadSharedLines(log)) {
         if (line.rfind("Offline build failed", 0) == 0) {
-            nTasks = 0; // the online retry starts over
+            nTasks = 0; // オンラインでの再試行は最初から数え直す
         }
 
         if (line.rfind("> Task ", 0) == 0) {
@@ -894,9 +970,12 @@ int CountBuildLogTasks(const std::filesystem::path& log) {
     return bSucceeded ? nTasks : 0;
 }
 
+//==================================================================================
+// --- ビルドの進度の取得処理 ---
+//==================================================================================
 float BuildLogProgress(const std::filesystem::path& log, int nExpectedTasks) {
-    // Script checks (SDK, NDK, Java, Gradle) ~5%, Gradle tasks up to 98%;
-    // 100% only when the task has finished.
+    // スクリプトの確認（SDK、NDK、Java、Gradle）で約 5%、Gradle のタスクで 98% まで。
+    // 100% は作業が終わったときだけ。
     int nTasks = 0;
     bool bGradleStarted = false;
     for (const auto& line : ReadSharedLines(log)) {
@@ -918,6 +997,9 @@ float BuildLogProgress(const std::filesystem::path& log, int nExpectedTasks) {
     return std::min(0.05f + 0.93f * fTasks, 0.98f);
 }
 
+//==================================================================================
+// --- シーンビューの描画の初期化処理 ---
+//==================================================================================
 bool Editor::InitRenderer() {
     renderer.Shutdown();
     bRendererReady = false;
@@ -946,6 +1028,9 @@ bool Editor::InitRenderer() {
     return true;
 }
 
+//==================================================================================
+// --- 1 フレームの処理（Play 中の更新 + 描画） ---
+//==================================================================================
 void Editor::Draw() {
     TickCamera();
     nLastRenderTick = GetTickCount64();
@@ -955,7 +1040,7 @@ void Editor::Draw() {
         float dt = std::clamp(static_cast<float>(now - nPlayTick) / 1000.0f, 0.0f, 0.1f);
         nPlayTick = now;
 
-        // Paused: the scene is frozen; Step advances exactly one 1/60 s frame.
+        // 一時停止中: シーンは止まり、Step でちょうど 1/60 秒だけ進める
         if (!bPaused || bStepRequested) {
             if (bStepRequested) {
                 dt = 1.0f / 60.0f;
@@ -985,6 +1070,9 @@ void Editor::Draw() {
     UpdateFrameStats();
 }
 
+//==================================================================================
+// --- ステータスバーの右側の表示の更新処理 ---
+//==================================================================================
 void Editor::UpdateFrameStats() {
     ++nFpsFrames;
     const ULONGLONG now = GetTickCount64();
@@ -1002,8 +1090,11 @@ void Editor::UpdateFrameStats() {
     SetWindowTextW(statusRight, text);
 }
 
+//==================================================================================
+// --- コマンドの処理（WM_COMMAND） ---
+//==================================================================================
 void Editor::Command(int id, int notification) {
-    if (id == ID_BUILD_DEBUG) {
+    if (id == ID_BUILD_DEBUG) { // Windows 用のビルドと書き出し
         TogglePlay();
         return;
     }
@@ -1014,7 +1105,7 @@ void Editor::Command(int id, int notification) {
         return;
     }
 
-    if (id == ID_PERSPECTIVE || id == ID_ORTHOGRAPHIC || id == ID_FRONT_VIEW) {
+    if (id == ID_PERSPECTIVE || id == ID_ORTHOGRAPHIC || id == ID_FRONT_VIEW) { // 投影の切り替え / 正面から見る
         camera.bOrthographic = id != ID_PERSPECTIVE;
         if (id == ID_FRONT_VIEW) {
             camera.fYaw = 0;
@@ -1032,27 +1123,27 @@ void Editor::Command(int id, int notification) {
         return;
     }
 
-    if (id == ID_FRAME_SELECTION) {
+    if (id == ID_FRAME_SELECTION) { // 選択中の物体にカメラを合わせる
         FrameSelection();
         return;
     }
 
-    if (id == ID_NEW_PROJECT) {
+    if (id == ID_NEW_PROJECT) { // 新しいプロジェクト
         NewProject();
         return;
     }
 
-    if (id == ID_CHOOSE_SCRIPT_EDITOR) {
+    if (id == ID_CHOOSE_SCRIPT_EDITOR) { // スクリプトエディターの選択
         ChooseProjectScriptEditor(projectPanel);
         return;
     }
 
-    if (id == ID_AUTOMATIC_SCRIPT_EDITOR) {
+    if (id == ID_AUTOMATIC_SCRIPT_EDITOR) { // スクリプトエディターを自動で選ぶ
         UseAutomaticProjectScriptEditor(projectPanel);
         return;
     }
 
-    if (id == ID_OPEN_PROJECT) {
+    if (id == ID_OPEN_PROJECT) { // プロジェクトを開く
         std::filesystem::path descriptor;
         std::string error;
         if (ChooseProjectDescriptor(window, false, projectFile.empty() ? projectRoot : projectFile, descriptor, error)) {
@@ -1064,7 +1155,7 @@ void Editor::Command(int id, int notification) {
         return;
     }
 
-    if (id == ID_SAVE_PROJECT_AS) {
+    if (id == ID_SAVE_PROJECT_AS) { // プロジェクトファイルを別名で保存
         std::filesystem::path descriptor;
         std::string error;
         if (ChooseProjectDescriptor(window, true, projectFile.empty() ? projectRoot : projectFile, descriptor, error)) {
@@ -1081,7 +1172,7 @@ void Editor::Command(int id, int notification) {
         return;
     }
 
-    if (id == ID_CANCEL_BUILD) {
+    if (id == ID_CANCEL_BUILD) { // ビルドの中止
         if (IsTaskRunning()) {
             CancelBackgroundTask(false);
         } else {
@@ -1091,12 +1182,12 @@ void Editor::Command(int id, int notification) {
         return;
     }
 
-    if (id == ID_BUILD_ANDROID) {
+    if (id == ID_BUILD_ANDROID) { // Android のビルド
         RunBuildScript(L"build-android.cmd", L"Android Debug APK");
         return;
     }
 
-    if (id == ID_PLATFORM_INFO) {
+    if (id == ID_PLATFORM_INFO) { // ビルド対象のプラットフォームの情報
         MessageBoxL(window,
                     L"Windows x64: DirectX 12 export and in-editor Play Mode are available.\n\n"
                     L"Android: OpenGL ES Debug APK build is available when Android SDK/NDK are installed.\n\n"
@@ -1121,8 +1212,8 @@ void Editor::Command(int id, int notification) {
         const int caretRow = static_cast<int>(SendMessageW(hierarchy, LB_GETCARETINDEX, 0, 0));
         const int caret = caretRow >= 0 && static_cast<size_t>(caretRow) < vHierarchyRows.size() ? vHierarchyRows[caretRow] : -1;
 
-        // Apply only typed-but-unapplied values: Apply() rebuilds the list,
-        // which would break a drag that starts with this click.
+        // 入力済みで未反映の値があるときだけ Apply する（Apply() はリストを作り直すので、
+        // このクリックで始まるドラッグが壊れてしまう）
         if (InspectorHasPendingEdits() && !Apply()) {
             SyncHierarchy();
             return;
@@ -1165,14 +1256,14 @@ void Editor::Command(int id, int notification) {
     }
 
     if (notification != BN_CLICKED) return;
-    if (id == ID_CREATE_MENU) {
+    if (id == ID_CREATE_MENU) { // Hierarchy の「+」メニュー
         RECT r{};
         GetWindowRect(controls[0], &r);
         ShowObjectMenu({r.left, r.bottom});
         return;
     }
 
-    if (id == ID_APPLY_COMPONENT_VALUE) {
+    if (id == ID_APPLY_COMPONENT_VALUE) { // コンポーネントの値の反映
         if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size()) return;
         auto& entity = scene.vEntities[nSelected];
         const int listIndex = static_cast<int>(SendMessageW(componentList, LB_GETCURSEL, 0, 0));
@@ -1298,13 +1389,13 @@ void Editor::Command(int id, int notification) {
         SetStatus(L"Drag a colored axis to transform. Esc cancels a drag.");
     } else if (id >= ID_ADD_PRIMITIVE_FIRST && id < ID_ADD_PRIMITIVE_FIRST + static_cast<int>(PRIMITIVES.size())) {
         AddPrimitive(PRIMITIVES[static_cast<size_t>(id - ID_ADD_PRIMITIVE_FIRST)].shape);
-    } else if (id == ID_ADD_CUBE) {
+    } else if (id == ID_ADD_CUBE) { // 立方体の追加
         AddPrimitive(PrimitiveShape::CUBE);
-    } else if (id == ID_MESH_PICK) {
+    } else if (id == ID_MESH_PICK) { // Mesh 欄の選択メニュー
         ShowMeshPicker();
-    } else if (id == ID_MESH_CONVERT) {
+    } else if (id == ID_MESH_CONVERT) { // X → マテリアルの作成 / FBX → X の変換
         ConvertSelectedMesh();
-    } else if (id == ID_ADD_SPRITE || id == ID_ADD_EMPTY) {
+    } else if (id == ID_ADD_SPRITE || id == ID_ADD_EMPTY) { // スプライト / 空の物体の追加
         if (!Apply()) return;
         Entity entity;
         entity.sName = id == ID_ADD_CUBE ? "Cube" : id == ID_ADD_SPRITE ? "Sprite" : "Empty";
@@ -1317,7 +1408,7 @@ void Editor::Command(int id, int notification) {
         vSelectedIndices = {nSelected};
         Populate();
         SetStatus(L"Object added. Save the scene to keep it.");
-    } else if (id == ID_ADD_MODEL) {
+    } else if (id == ID_ADD_MODEL) { // モデルの追加
         std::filesystem::path source;
         if (!ChooseModelFile(window, source)) return;
         const auto folder = projectRoot / L"Assets" / L"Models";
@@ -1382,9 +1473,9 @@ void Editor::Command(int id, int notification) {
         nSelected = -1;
         Populate();
         SetStatus(L"Selected objects removed. Save to keep changes.");
-    } else if (id == ID_APPLY) {
+    } else if (id == ID_APPLY) { // インスペクターの入力の反映
         Apply();
-    } else if (id == ID_SAVE) {
+    } else if (id == ID_SAVE) { // シーンの保存
         if (bSceneProtected) {
             Error(window, "The existing scene could not be loaded. Fix it and use Load before saving.");
             return;
@@ -1397,7 +1488,7 @@ void Editor::Command(int id, int notification) {
         } else {
             SetStatus(L"Scene saved to the active project.");
         }
-    } else if (id == ID_LOAD) {
+    } else if (id == ID_LOAD) { // シーンの読み込み
         Scene loaded;
         std::string error;
         if (!LoadScene(projectRoot / L"scene.dxs", loaded, error)) {
@@ -1415,7 +1506,7 @@ void Editor::Command(int id, int notification) {
             Populate();
             SetStatus(L"Scene loaded.");
         }
-    } else if (id == ID_EXPORT) {
+    } else if (id == ID_EXPORT) { // ゲームの書き出し
         if (bSceneProtected) {
             Error(window, "The existing scene could not be loaded. Fix it and use Load before exporting.");
             return;
@@ -1456,8 +1547,8 @@ void Editor::Command(int id, int notification) {
             return;
         }
 
-        // Export on a worker thread from a copy of the scene, so editing and
-        // Play stay responsive while shaders compile and files are copied.
+        // シーンのコピーから作業スレッドで書き出す。シェーダーのコンパイルや
+        // ファイルのコピー中も、編集と Play が止まらないようにする。
         auto pError = std::make_shared<std::string>();
         auto pOk = std::make_shared<bool>(false);
         Scene snapshot = scene;
@@ -1474,7 +1565,7 @@ void Editor::Command(int id, int notification) {
                 SetStatus(L"Export complete. Run Game.exe in the selected folder.");
                 MessageBoxL(window, (L"Exported to:\n" + destination.wstring()).c_str(), L"Export complete", MB_OK);
             });
-    } else if (id == ID_RELOAD_SHADER) {
+    } else if (id == ID_RELOAD_SHADER) { // シェーダーの読み込み直し
         InitRenderer();
     }
 }
