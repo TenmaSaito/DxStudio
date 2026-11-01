@@ -90,6 +90,11 @@ constexpr TranslationPair JAPANESE_TEXT[] = {
     {L"Input", L"入力"}, {L"Scripts", L"スクリプト"}, {L"Components", L"コンポーネント"}, {L"Rendering / Color", L"レンダリング / 色"},
     {L"Mesh Renderer", L"Mesh Renderer"}, {L"Model Renderer", L"Model Renderer"}, {L"Polygon Renderer", L"Polygon Renderer"},
     {L"Image", L"Image"}, {L" (Script)", L" (スクリプト)"}, {L"Browse X / FBX...", L"X / FBX を参照..."},
+    {L"Create Material (Direct3D 11 / 12)", L"マテリアルを作成（Direct3D 11 / 12）"}, {L"Convert to X File", L"X ファイルに変換"},
+    {L"Material created. Save the scene to keep it.", L"マテリアルを作成しました。残すにはシーンを保存してください。"},
+    {L"Converted to an X file. Save the scene to keep it.", L"X ファイルに変換しました。残すにはシーンを保存してください。"},
+    {L"Cannot create a material from the X file: ", L"X ファイルからマテリアルを作成できません: "},
+    {L"Cannot convert the FBX file to an X file: ", L"FBX ファイルを X ファイルに変換できません: "},
     {L"Active (visible in the scene)", L"有効（シーンに表示）"}, {L"Size", L"サイズ"}, {L"Element ", L"要素 "},
     {L"The associated script can not be loaded. Register the class and rebuild.", L"関連付けられたスクリプトを読み込めません。クラスを登録してビルドし直してください。"},
     // 組み込みコンポーネントのフィールド

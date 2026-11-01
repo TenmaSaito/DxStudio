@@ -159,6 +159,7 @@ void Editor::Inspect() {
             SetWindowTextW(e, L"");
         }
     EnableWindow(meshPick, single);
+    EnableWindow(meshConvert, single);
     for (auto control : {materialEdit, textureEdit, meshEdit}) {
         EnableWindow(control, single);
         SetWindowTextW(control, L"");
@@ -898,6 +899,98 @@ void Editor::ShowMeshPicker() {
 } // namespace dxs::editor
 
 namespace dxs::editor {
+
+//==================================================================================
+// --- メッシュ欄のアセットの拡張子の取得処理 ---
+//==================================================================================
+std::wstring Editor::SelectedMeshExtension() const {
+    if (nSelected < 0 || static_cast<size_t>(nSelected) >= scene.vEntities.size() || vSelectedIndices.size() != 1) {
+        return {};
+    }
+
+    std::wstring sExtension = std::filesystem::u8path(scene.vEntities[nSelected].sModelAsset).extension().wstring();
+    std::transform(sExtension.begin(), sExtension.end(), sExtension.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+    return sExtension;
+}
+
+//==================================================================================
+// --- 選択中の物体のメッシュの変換処理（Mesh 欄の下のボタン） ---
+//==================================================================================
+void Editor::ConvertSelectedMesh() {
+    const std::wstring sExtension = SelectedMeshExtension();
+    if (sExtension != L".x" && sExtension != L".fbx") {
+        return;
+    }
+
+    // 入力途中の値を先に反映する
+    if (InspectorHasPendingEdits() && !Apply()) {
+        return;
+    }
+
+    const auto asset = projectRoot / std::filesystem::u8path(scene.vEntities[nSelected].sModelAsset);
+    if (sExtension == L".x") {
+        CreateMaterialFromX(asset, true);
+    } else {
+        ConvertFbxAsset(asset, true);
+    }
+}
+
+//==================================================================================
+// --- X ファイルからのマテリアルの作成処理 ---
+//==================================================================================
+void Editor::CreateMaterialFromX(const std::filesystem::path& xFile, bool bAssign) {
+    std::vector<std::string> vCreated;
+    std::string error;
+    if (!CreateMaterialsFromX(projectRoot, xFile, vCreated, error)) {
+        Error(window, "Cannot create a material from the X file: " + error);
+        return;
+    }
+
+    for (const auto& sAsset : vCreated) {
+        Debug::Log("Created material " + sAsset + " (Direct3D 11 / 12 compatible) from " + Utf8(xFile.filename().wstring()));
+    }
+
+    // 選択中の物体に、最初のマテリアルを設定する
+    if (bAssign && !vCreated.empty() && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size()) {
+        scene.vEntities[nSelected].sMaterialAsset = vCreated.front();
+        Populate();
+    }
+
+    RefreshProjectPanel(projectPanel);
+    SetStatus(L"Material created. Save the scene to keep it.");
+}
+
+//==================================================================================
+// --- FBX → X ファイルの変換処理 ---
+//==================================================================================
+void Editor::ConvertFbxAsset(const std::filesystem::path& fbxFile, bool bAssign) {
+    // 出力先: FBX と同じフォルダーの <名前>.x（既にあれば <名前>_1.x ...）
+    const auto output = UniqueFilePath(fbxFile.parent_path(), fbxFile.stem().wstring(), L".x");
+    std::string error;
+    if (!ConvertFbxToX(fbxFile, output, error)) {
+        Error(window, "Cannot convert the FBX file to an X file: " + error);
+        return;
+    }
+
+    // プロジェクトからの相対パス
+    std::error_code ec;
+    auto relative = std::filesystem::weakly_canonical(output, ec).lexically_relative(std::filesystem::weakly_canonical(projectRoot, ec));
+    if (relative.empty() || *relative.begin() == L"..") {
+        relative = output;
+    }
+    const auto u8 = relative.generic_u8string();
+    const std::string sAsset(reinterpret_cast<const char*>(u8.data()), u8.size());
+    Debug::Log("Converted " + Utf8(fbxFile.filename().wstring()) + " to " + sAsset);
+
+    // 選択中の物体のメッシュを X に差し替える
+    if (bAssign && nSelected >= 0 && static_cast<size_t>(nSelected) < scene.vEntities.size()) {
+        scene.vEntities[nSelected].sModelAsset = sAsset;
+        Populate();
+    }
+
+    RefreshProjectPanel(projectPanel);
+    SetStatus(L"Converted to an X file. Save the scene to keep it.");
+}
 
 void Editor::ReportApplyError(const std::string& message) {
     if (!bQuietApply) {

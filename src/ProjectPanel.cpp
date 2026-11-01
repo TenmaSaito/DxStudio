@@ -24,6 +24,7 @@ namespace fs = std::filesystem;
 using Microsoft::WRL::ComPtr;
 constexpr int TreeId = 7101, ListId = 7102, SearchId = 7103, RefreshId = 7104, ImportId = 7105;
 constexpr int NewComponentId = 7106, ChooseEditorId = 7107, AutomaticEditorId = 7108, OpenId = 7109;
+constexpr int CreateMaterialId = 7110, ConvertToXId = 7111; // X → マテリアル / FBX → X
 constexpr wchar_t WindowClass[] = L"DxStudioProjectPanel";
 constexpr int TOOLBAR_HEIGHT = 30;    // action / search strip
 constexpr int SEARCH_INSET_LEFT = 20; // room for the magnifier icon
@@ -465,6 +466,19 @@ struct Panel {
         HMENU menu = CreatePopupMenu();
         const int selected = ListView_GetNextItem(list, -1, LVNI_SELECTED);
         editor::AppendMenuL(menu, MF_STRING | (selected < 0 ? MF_GRAYED : 0), OpenId, L"Open");
+
+        // 選択中のファイルが X / FBX なら、変換のコマンドを出す
+        fs::path selectedFile;
+        if (selected >= 0 && static_cast<size_t>(selected) < entries.size() && !entries[static_cast<size_t>(selected)].folder) {
+            selectedFile = entries[static_cast<size_t>(selected)].path;
+        }
+        const auto selectedExtension = Lower(selectedFile.extension().wstring());
+        if (selectedExtension == L".x") {
+            editor::AppendMenuL(menu, MF_STRING, CreateMaterialId, L"Create Material (Direct3D 11 / 12)");
+        } else if (selectedExtension == L".fbx") {
+            editor::AppendMenuL(menu, MF_STRING, ConvertToXId, L"Convert to X File");
+        }
+
         editor::AppendMenuL(menu, MF_SEPARATOR, 0, nullptr);
         editor::AppendMenuL(menu, MF_STRING, NewComponentId, L"Create > C++ Component...");
         editor::AppendMenuL(menu, MF_STRING, ImportId, L"Import file...");
@@ -487,6 +501,12 @@ struct Panel {
             ChooseEditor();
         else if (command == AutomaticEditorId)
             SaveEditor({});
+        else if (command == CreateMaterialId || command == ConvertToXId) {
+            // 変換はエンジンの機能なので、エディターのウィンドウに任せる
+            const WPARAM action = command == CreateMaterialId ? PROJECT_ASSET_CREATE_MATERIAL : PROJECT_ASSET_CONVERT_TO_X;
+            SendMessageW(GetAncestor(window, GA_ROOT), WM_DXS_PROJECT_ASSET_COMMAND, action, reinterpret_cast<LPARAM>(&selectedFile));
+            Refresh();
+        }
     }
     void OpenEntry(int index) {
         if (index < 0 || static_cast<size_t>(index) >= entries.size()) return;

@@ -13,6 +13,13 @@
 #include <string>
 
 namespace dxs {
+// Project パネルから、パネルを持つ最上位のウィンドウ（エディター）へ送るメッセージ。
+//   wParam : PROJECT_ASSET_CREATE_MATERIAL（X → .dxmat）または PROJECT_ASSET_CONVERT_TO_X（FBX → X）
+//   lParam : 対象のファイル（const std::filesystem::path*。SendMessage の間だけ有効）
+constexpr UINT WM_DXS_PROJECT_ASSET_COMMAND = WM_APP + 43;
+constexpr WPARAM PROJECT_ASSET_CREATE_MATERIAL = 1;
+constexpr WPARAM PROJECT_ASSET_CONVERT_TO_X = 2;
+
 // 単独で動く子ウィンドウを作る。大きさは MoveWindow で変え、親を破棄すると
 // パネルも破棄される。ブラウザーは projectRoot の外には出ない。
 HWND CreateProjectPanel(HWND parent, HINSTANCE instance, const std::filesystem::path& projectRoot,

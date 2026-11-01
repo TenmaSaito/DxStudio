@@ -1022,6 +1022,8 @@ void Editor::Command(int id, int notification) {
         AddPrimitive(PrimitiveShape::CUBE);
     } else if (id == ID_MESH_PICK) {
         ShowMeshPicker();
+    } else if (id == ID_MESH_CONVERT) {
+        ConvertSelectedMesh();
     } else if (id == ID_ADD_SPRITE || id == ID_ADD_EMPTY) {
         if (!Apply()) return;
         Entity entity;

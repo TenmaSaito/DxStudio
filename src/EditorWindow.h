@@ -28,6 +28,7 @@
 #include "EditorTheme.h"
 #include "EditorUtility.h"
 #include "ConsolePanel.h"
+#include "ModelConvert.h"
 
 #include <algorithm>
 #include <cmath>
@@ -208,6 +209,15 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     void ShowTitlebarMenu(HWND header);
     void ShowAddComponentMenu();
     void ShowMeshPicker();
+    // ---- X / FBX の変換（ModelConvert.h） --------------------------------------
+    // 選択中の物体のメッシュ（.x → マテリアル作成 / .fbx → X 変換）
+    void ConvertSelectedMesh();
+    // X ファイルから .dxmat を作る。bAssign = true なら選択中の物体に最初のマテリアルを設定する。
+    void CreateMaterialFromX(const std::filesystem::path& xFile, bool bAssign);
+    // FBX を X に変換する。bAssign = true なら選択中の物体のメッシュを X に差し替える。
+    void ConvertFbxAsset(const std::filesystem::path& fbxFile, bool bAssign);
+    // メッシュ欄のアセットの拡張子（小文字。".x" / ".fbx" / ...）
+    std::wstring SelectedMeshExtension() const;
     // 組み込みの基本図形のメッシュを使う MeshRenderer の物体を作る
     void AddPrimitive(PrimitiveShape shape);
     void AppendPrimitiveMenus(HMENU menu);
@@ -295,6 +305,7 @@ struct Editor : public IPlayModeCallbacks, public IGraphicsCallbacks {
     HWND projectionButtons[2]{}, rowLabels[3]{}, inspectorHint{};
     HWND materialLabel{}, materialEdit{}, textureLabel{}, textureEdit{};
     HWND meshLabel{}, meshEdit{}, meshPick{}; // Mesh Renderer / Model Renderer のアセットの欄
+    HWND meshConvert{};                        // Mesh 欄の下の変換ボタン（.x / .fbx のときだけ表示）
     HWND inspectorEnabled{}, inspectorIcon{}, inspectorTagLabel{}, inspectorTagValue{};
     HWND inspectorLayerLabel{}, inspectorLayerValue{};
     bool aSectionOpen[3]{true, true, true};       // インスペクターの各欄が開いているか

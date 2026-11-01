@@ -29,6 +29,7 @@ constexpr int ID_CREATE_MENU = 140;
 constexpr int ID_HIERARCHY_SEARCH = 141;
 constexpr int ID_INSPECTOR_ENABLED = 142;
 constexpr int ID_MESH_PICK = 143;               // Mesh 欄の「o」ボタン（基本図形 / X / FBX の選択）
+constexpr int ID_MESH_CONVERT = 144;            // Mesh 欄の下のボタン（X → マテリアル作成 / FBX → X 変換）
 constexpr int ID_ADD_PRIMITIVE_FIRST = 1100;    // GameObject > 3D / 2D Object（PRIMITIVES の項目ごとに 1 つ）
 constexpr int ID_ADD_PRIMITIVE_LAST = 1199;
 // パネル / レイアウト

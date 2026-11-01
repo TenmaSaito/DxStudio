@@ -414,6 +414,18 @@ void Editor::LayoutPanel(int index) {
         place(meshEdit, fieldX, y, std::max(S(20), fieldW - box - S(2)), box, showMesh);
         place(meshPick, fieldX + fieldW - box, y, box, box, showMesh);
         if (showMesh) y += line + gap;
+
+        // メッシュが X なら「マテリアルの作成」、FBX なら「X に変換」のボタンを出す
+        const std::wstring meshExtension = showMesh ? SelectedMeshExtension() : std::wstring();
+        const bool showConvert = meshExtension == L".x" || meshExtension == L".fbx";
+        if (showConvert) {
+            SetWindowTextW(meshConvert, Tr(meshExtension == L".x" ? L"Create Material (Direct3D 11 / 12)" : L"Convert to X File"));
+        }
+        place(meshConvert, fieldX, y, fieldW, box, showConvert);
+        if (showConvert) {
+            y += line + gap;
+        }
+
         place(colorLabel, indent, y, labelWidth - S(4), line, showRenderer);
         multiField(11, 4, y, showRenderer);
         if (showRenderer) y += line + gap;

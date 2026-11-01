@@ -95,7 +95,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         e->meshLabel = e->Make(L"STATIC", L"Mesh", SS_LEFT);
         e->meshEdit = e->Make(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP);
         e->meshPick = e->Make(L"BUTTON", L"\x25CE", BS_OWNERDRAW | WS_TABSTOP, ID_MESH_PICK);
-        for (auto control : {e->materialLabel, e->materialEdit, e->textureLabel, e->textureEdit, e->meshLabel, e->meshEdit, e->meshPick})
+        e->meshConvert = e->Make(L"BUTTON", L"Create Material (Direct3D 11 / 12)", BS_OWNERDRAW | WS_TABSTOP, ID_MESH_CONVERT);
+        for (auto control : {e->materialLabel, e->materialEdit, e->textureLabel, e->textureEdit, e->meshLabel, e->meshEdit, e->meshPick,
+                             e->meshConvert})
             SetParent(control, e->panels[2].window);
         const wchar_t* rowNames[] = {L"Position", L"Rotation °", L"Scale"};
         const wchar_t* sections[] = {L"Transform", L"Rendering / Color", L"Components"};
@@ -195,6 +197,22 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     case WM_DXS_REBUILD_INSPECTOR:
         e->RebuildInspectorNow();
         return 0;
+
+    case WM_DXS_PROJECT_ASSET_COMMAND: {
+        // Project パネルの右クリックメニューからの変換（物体には設定しない）
+        const auto* pFile = reinterpret_cast<const std::filesystem::path*>(lp);
+        if (!pFile) {
+            return 0;
+        }
+
+        if (wp == PROJECT_ASSET_CREATE_MATERIAL) {
+            e->CreateMaterialFromX(*pFile, false);
+        } else if (wp == PROJECT_ASSET_CONVERT_TO_X) {
+            e->ConvertFbxAsset(*pFile, false);
+        }
+        return 0;
+    }
+
     case WM_COMMAND:
         // Inputs draw their own focus border; repaint it on focus changes.
         if ((HIWORD(wp) == EN_SETFOCUS || HIWORD(wp) == EN_KILLFOCUS) && lp)
