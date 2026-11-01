@@ -58,6 +58,13 @@ Unity 2022 の Dark スキン配色（パネル `#383838`、タブ帯 `#282828`�
 - メッシュは面の向きで 8 段階に陰影が付き、立体感が出ます。2D 図形は XY 平面上にあり、選択・アウトラインも 2D として扱われます。
 - **透明度**: Color の A を 1 未満にするとアルファブレンドで半透明になります（Polygon / Mesh / Model 共通、DX12 / 11 / 9 対応）。不透明物体の後に、カメラから遠い順に描画します。
 
+### X / FBX の変換（src/ModelConvert.h）
+
+- **X → マテリアル**: Mesh が `.x` の物体を選ぶと、Mesh 欄の下に **Create Material (Direct3D 11 / 12)** ボタンが出ます。X ファイルの `Material`（Direct3D 9 の形式。拡散色・テクスチャ名）を読み取り、Direct3D 12 / 11 / 9 のどれでも使える `.dxmat` を X ファイルと同じフォルダーに作って、最初のマテリアルを物体に設定します。マテリアルが複数あれば `<名前>_<マテリアル名>.dxmat` を 1 つずつ作ります。既存のファイルは上書きせず `_1`、`_2` … を付けます。
+- **FBX → X**: Mesh が `.fbx` の物体では **Convert to X File** ボタンになり、FBX をテキスト形式の X ファイル（頂点・法線・UV・面ごとのマテリアル）に変換して、Mesh を X に差し替えます。座標はエンジンが FBX を描くときと同じなので、見た目は変わりません。
+- どちらも Project ウィンドウでファイルを右クリックして実行できます（その場合は物体には設定しません）。
+- 制限: テキスト形式の X のみ対応（バイナリ形式は読めません）。エンジンが使うのは物体ごとに 1 つのマテリアルの基本色です（テクスチャ名は記録しますが、まだ描画には使いません）。FBX のアニメーションは変換せず、基本の姿勢を書き出します。
+
 ### 当たり判定と物理（src/Physics.h）
 
 - **Add Component > Physics** に Rigidbody、BoxCollider、SphereCollider、MeshCollider を追加しました（Unity と同じ構成）。
@@ -133,6 +140,8 @@ Unity C# のコルーチンと同じ感覚で書けます。`StartCoroutine` は
 
 - 約2,900行あった `Editor.cpp` を役割ごとに分割しました: `EditorWindow.h`（エディターの状態）、`Editor.cpp`（メインウィンドウと起動）、`EditorPanels.cpp`（Viewport・Hierarchy・ドックパネルのウィンドウプロシージャ）、`EditorChrome.cpp`（テーマ・メニュー・行の描画）、`EditorLayout.cpp`（ドッキング配置）、`EditorActions.cpp`（コマンド・Play Mode・グラフィックスAPI・プロジェクト）、`EditorInspector.cpp`（選択・Hierarchy・Inspector）。コマンドIDは `EditorCommands.h`、ファイルダイアログや文字列変換は `EditorUtility.h/.cpp` にあります。`.clang-format` を追加し、1行に複数の文を詰め込んでいたコードを整形しています。
 - 新しく書いたコードは cpp_TKG の命名規則に従っています（メンバー `m_` 接頭辞、型接頭辞 `n` / `f` / `b` / `p` / `v` / `s` / `d` / `a`、`constexpr` 定数と列挙子は UPPER_CASE、関数は PascalCase）。命名規則にある「既存の違反を一括修正しない」方針に従い、ユーザーのスクリプトが使っている公開API（`entity.draw.position` など）の名前は変えていません。
+- すべてのソースに cpp_TKG 形式の日本語コメントを付けています（ファイルの見出し、`*** インクルードファイル ***` などの区切り、関数ごとの `--- 〇〇処理 ---`、メンバーの説明）。
+- `if` / `for` / `while` の本体は `{}` で囲み、処理のまとまりの間に空行を入れています（early return / `continue` / `break` だけの `if` は 1 行のまま）。整形は `powershell -ExecutionPolicy Bypass -File tools\tidy.ps1` で行います（clang-format の後に 1 行の early return と空行を整えるので、clang-format だけを実行しないでください）。
 - ビルドに使うソースの一覧は `build-sources.cmd` にまとめ、`build-direct.cmd` / `build-debug.cmd` / `test.cmd` から共通で使います。
 
 ## Project ウィンドウ
@@ -174,7 +183,7 @@ Unity風ショートカットとして、`Ctrl+D` は選択オブジェクトを
 
 ## 現在の範囲
 
-これは Unity 風の配置を持つ初期プロトタイプです。色付きの平面・立方体、X/FBXモデル、基本Transform、親子階層、複数プロジェクト、Play Mode、マテリアル/テクスチャ参照管理に対応しています。既定背景は空色のプロシージャル・スカイです（キューブマップ画像ではありません）。現段階ではテクスチャ画像のDirectX 12サンプリング、物理、音声、汎用入力API、透明合成は未実装です。GPU同期は毎フレーム待機する簡易実装です。
+これは Unity 風の配置を持つ初期プロトタイプです。色付きの平面・立方体、X/FBXモデル、基本Transform、親子階層、複数プロジェクト、Play Mode、マテリアル/テクスチャ参照管理に対応しています。既定背景は空色のプロシージャル・スカイです（キューブマップ画像ではありません）。物理（Rigidbody / コライダー）、入力システム、半透明の描画、X / FBX の変換にも対応しています。現段階ではテクスチャ画像のサンプリングと音声は未実装です。GPU同期は毎フレーム待機する簡易実装です。
 
 Windows向けは DirectX 12 の x64 実行ファイル、Android向けは OpenGL ES 3 のデバッグAPKを生成できます。ツールバーの `Play` はエディタ内動作確認、`Android` は arm64-v8a / x86_64 APK生成です。PDB付きWindowsデバッグ実行ファイルが必要な場合は `build-debug.cmd` を利用できます。Android SDK/NDK、Gradle、互換JDKが必要です。
 
